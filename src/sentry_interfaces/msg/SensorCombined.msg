@@ -1,0 +1,11 @@
+uint32 timestamp_ms
+float32 air_temp
+float32 air_humi
+uint16 air_co2
+float32 soil_temp
+float32 soil_humi
+uint16 soil_ec
+uint16 soil_n
+uint16 soil_p
+uint16 soil_k
+float32 soil_ph
