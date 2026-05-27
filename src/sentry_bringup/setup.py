@@ -1,16 +1,25 @@
 from setuptools import find_packages, setup
+import os
+from glob import glob
 
 package_name = 'sentry_bringup'
 
 setup(
     name=package_name,
-    version='0.1.0',
+    version='0.2.0',
     packages=find_packages(),
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/sentry.launch.py']),
+        ('share/' + package_name + '/launch', [
+            'launch/sentry.launch.py',
+            'launch/sentry_v2.launch.py',
+        ]),
+        ('share/' + package_name + '/config', [
+            '../../config/crop_profiles.yaml',
+            '../../config/mission_params.yaml',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -24,6 +33,7 @@ setup(
             'uart_bridge_node = sentry_bringup.uart_bridge_node:main',
             'gps_node = sentry_bringup.gps_node:main',
             'camera_node = sentry_bringup.camera_node:main',
+            'mipi_camera_node = sentry_bringup.mipi_camera_node:main',
             'ai_inference_node = sentry_bringup.ai_inference_node:main',
         ],
     },

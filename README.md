@@ -75,7 +75,7 @@ cd ..
 
 # 2. 安装依赖
 rosdep install --from-paths src --ignore-src -r -y
-pip install -r src/smart-agri-sentry/requirements.txt
+pip install -r src/smart_agri_sentry/requirements.txt
 
 # 3. 编译
 colcon build --packages-select sentry_interfaces sentry_bringup \
@@ -118,7 +118,7 @@ ros2 bag play records/critical_20250430_143022/
 ## 项目结构
 
 ```
-smart-agri-sentry/
+smart_agri_sentry/
 ├── README.md                     # 本文档
 ├── scheme1.md                    # v2.0 详细设计方案
 ├── config/

@@ -8,14 +8,21 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/AiDiagnosis.msg"
-  "msg/SensorCombined.msg"
-  "msg/FinalDiagnosis.msg"
-  "msg/ServoCmd.msg"
+  "msg/Diagnosis.msg"
+  "msg/PlantDetection.msg"
+  "msg/Environment.msg"
+  "msg/SoilNutrition.msg"
+  "msg/FusionResult.msg"
+  "msg/ForecastAlert.msg"
+  "msg/AdvisoryAction.msg"
+  "msg/MissionStatus.msg"
   "msg/ChassisStatus.msg"
-  DEPENDENCIES std_msgs
+  "msg/ServoCmd.msg"
+  DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
 
 ament_export_dependencies(rosidl_default_runtime)

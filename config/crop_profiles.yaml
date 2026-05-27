@@ -1,0 +1,53 @@
+# Crop-specific profiles for fusion node
+tomato:
+  lwd_threshold_hours: 6.0
+  high_humidity_threshold: 85.0
+  drought_threshold: 30.0
+  optimal_temp_min: 18.0
+  optimal_temp_max: 25.0
+  weights:
+    vision: 0.5
+    env: 0.3
+    interaction: 0.2
+  disease_risk_classes:
+    - bacterial_spot
+    - early_blight
+    - late_blight
+    - leaf_mold
+    - septoria_leaf_spot
+    - spider_mites_two-spotted_spider_mite
+    - target_spot
+    - tomato_mosaic_virus
+    - tomato_yellow_leaf_curl_virus
+
+wheat:
+  lwd_threshold_hours: 8.0
+  high_humidity_threshold: 80.0
+  drought_threshold: 25.0
+  optimal_temp_min: 15.0
+  optimal_temp_max: 22.0
+  weights:
+    vision: 0.5
+    env: 0.3
+    interaction: 0.2
+  disease_risk_classes:
+    - powdery_mildew
+    - stripe_rust
+    - leaf_rust
+    - fusarium_head_blight
+
+strawberry:
+  lwd_threshold_hours: 10.0
+  high_humidity_threshold: 85.0
+  drought_threshold: 35.0
+  optimal_temp_min: 15.0
+  optimal_temp_max: 25.0
+  weights:
+    vision: 0.5
+    env: 0.3
+    interaction: 0.2
+  disease_risk_classes:
+    - gray_mold
+    - powdery_mildew
+    - leaf_scorch
+    - anthracnose
