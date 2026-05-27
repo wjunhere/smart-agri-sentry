@@ -53,17 +53,35 @@ class MipiCameraNode(Node):
             f'sensor={self.sensor_width}x{self.sensor_height}'
         )
 
+        # RDK Camera API requires at least two output channels in the list.
+        # Channel 0: main resolution for publishing
+        # Channel 1: auxiliary (used by the VSE pipeline, can be any valid size)
+        out_w = [self.width, self.width]
+        out_h = [self.height, self.height]
+
+        self.get_logger().info(
+            f'Calling open_cam(0, -1, -1, out_w={out_w}, out_h={out_h}, '
+            f'sensor_h={self.sensor_height}, sensor_w={self.sensor_width})'
+        )
+
         ret = self.cam.open_cam(
             0,                      # device_id
             -1,                     # fps (auto)
             -1,                     # format (auto, usually NV12)
-            [self.width],           # output width list
-            [self.height],          # output height list
+            out_w,                  # output width list
+            out_h,                  # output height list
             self.sensor_height,     # sensor height
             self.sensor_width,      # sensor width
         )
         if ret != 0:
-            self.get_logger().error('Failed to open MIPI camera')
+            self.get_logger().error(
+                f'Failed to open MIPI camera (ret={ret}).\n'
+                'Common causes:\n'
+                '  - Camera already in use by another process\n'
+                '  - Resolution not supported by the sensor\n'
+                '  - MIPI pipeline not released after previous crash (reboot required)\n'
+                'Try: sudo reboot, then run again.'
+            )
             rclpy.shutdown()
             sys.exit(1)
 

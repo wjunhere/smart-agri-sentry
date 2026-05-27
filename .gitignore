@@ -39,3 +39,8 @@ Thumbs.db
 #claude
 .claude/
 CLAUDE.md
+
+# Project docs & examples
+docs/
+example/
+PLAN.md
