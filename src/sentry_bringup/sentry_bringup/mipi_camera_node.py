@@ -13,7 +13,6 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
-import signal
 import sys
 
 
@@ -146,60 +145,65 @@ class MipiCameraNode(Node):
         return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
 
     def capture(self):
-        # type=2 corresponds to the FIRST output channel (index 0).
-        # With [512, 1920] this returns the 512x512 frame.
-        img_buf = self.cam.get_img(2, 512, 512)
-        if img_buf is None:
-            self.get_logger().warn('get_img returned None')
-            return
+        try:
+            # type=2 corresponds to the FIRST output channel (index 0).
+            # With [512, 1920] this returns the 512x512 frame.
+            img_buf = self.cam.get_img(2, 512, 512)
+            if img_buf is None:
+                self.get_logger().warn('get_img returned None')
+                return
 
-        actual_size = len(img_buf)
-        if actual_size == 0:
-            self.get_logger().warn('get_img returned empty buffer')
-            return
+            actual_size = len(img_buf)
+            if actual_size == 0:
+                self.get_logger().warn('get_img returned empty buffer')
+                return
 
-        # Convert 512x512 NV12 -> BGR
-        frame_512 = self._nv12_to_bgr(img_buf, 512, 512, actual_size)
-        if frame_512 is None:
-            return
+            # Convert 512x512 NV12 -> BGR
+            frame_512 = self._nv12_to_bgr(img_buf, 512, 512, actual_size)
+            if frame_512 is None:
+                return
 
-        # Upscale to target publish resolution (1920x1080)
-        # TODO: experiment with get_img(0, 1920, 1080) to fetch directly from
-        # the second output channel and avoid this CPU resize.
-        frame = cv2.resize(frame_512, (self.width, self.height))
+            # Upscale to target publish resolution (1920x1080)
+            # TODO: experiment with get_img(0, 1920, 1080) to fetch directly
+            # from the second output channel and avoid this CPU resize.
+            frame = cv2.resize(frame_512, (self.width, self.height))
 
-        msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self.frame_id
-        self.pub.publish(msg)
+            msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = self.frame_id
+            self.pub.publish(msg)
 
-        self.frame_count += 1
-        if self.frame_count % 30 == 0:
-            self.get_logger().info(f'Published {self.frame_count} frames')
+            self.frame_count += 1
+            if self.frame_count % 30 == 0:
+                self.get_logger().info(
+                    f'Published {self.frame_count} frames'
+                )
+        except Exception as e:
+            self.get_logger().error(f'Capture error: {e}')
 
     def destroy_node(self):
         self.get_logger().info('Closing MIPI camera...')
+        # Cancel timer first so capture() stops firing during teardown
+        if hasattr(self, 'timer') and self.timer is not None:
+            self.timer.cancel()
+        # close_cam() with guard against double-close
         if hasattr(self, 'cam') and self.cam is not None:
-            self.cam.close_cam()
+            try:
+                self.cam.close_cam()
+            except Exception as e:
+                self.get_logger().warn(f'close_cam warning (may already be closed): {e}')
+            self.cam = None
         super().destroy_node()
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = MipiCameraNode()
-
-    def signal_handler(sig, frame):
-        node.get_logger().info('SIGINT received, shutting down...')
-        node.destroy_node()
-        rclpy.shutdown()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
