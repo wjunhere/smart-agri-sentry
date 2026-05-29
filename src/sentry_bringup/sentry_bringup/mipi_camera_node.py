@@ -55,13 +55,13 @@ class MipiCameraNode(Node):
             f'sensor={self.sensor_width}x{self.sensor_height}'
         )
 
-        # RDK Camera API requires two output channels with DIFFERENT resolutions.
-        # Channel 0 (index 0, accessed via get_img type=2): main resolution
-        # Channel 1 (index 1, accessed via get_img type=0): auxiliary
-        # Passing identical resolutions causes VSE init failure (ret=-10).
-        # See forum post Section 3 & 7.1.
-        out_w = [self.width, 512]
-        out_h = [self.height, 512]
+        # RDK Camera API: the FIRST output channel resolution is limited by ISP
+        # tuning. The official sample puts the SMALL resolution (512x512) first
+        # and the FULL resolution (1920x1080) second.
+        # Reversing the order causes vp_isp_init failure (ret=-10).
+        # See forum analysis: https://forum.d-robotics.cc/t/topic/34355
+        out_w = [512, self.width]
+        out_h = [512, self.height]
 
         self.get_logger().info(
             f'Calling open_cam(0, -1, -1, out_w={out_w}, out_h={out_h}, '
@@ -146,9 +146,9 @@ class MipiCameraNode(Node):
         return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
 
     def capture(self):
-        # type=2 accesses the first output channel (index 0) defined in open_cam.
-        # In the official HDMI sample this is 512x512 for AI; here it is 1920x1080.
-        img_buf = self.cam.get_img(2, self.width, self.height)
+        # type=2 corresponds to the FIRST output channel (index 0).
+        # With [512, 1920] this returns the 512x512 frame.
+        img_buf = self.cam.get_img(2, 512, 512)
         if img_buf is None:
             self.get_logger().warn('get_img returned None')
             return
@@ -158,14 +158,15 @@ class MipiCameraNode(Node):
             self.get_logger().warn('get_img returned empty buffer')
             return
 
-        self.get_logger().debug(
-            f'get_img returned {actual_size} bytes '
-            f'(expected {int(self.width * self.height * 1.5)})'
-        )
-
-        frame = self._nv12_to_bgr(img_buf, self.width, self.height, actual_size)
-        if frame is None:
+        # Convert 512x512 NV12 -> BGR
+        frame_512 = self._nv12_to_bgr(img_buf, 512, 512, actual_size)
+        if frame_512 is None:
             return
+
+        # Upscale to target publish resolution (1920x1080)
+        # TODO: experiment with get_img(0, 1920, 1080) to fetch directly from
+        # the second output channel and avoid this CPU resize.
+        frame = cv2.resize(frame_512, (self.width, self.height))
 
         msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
         msg.header.stamp = self.get_clock().now().to_msg()
