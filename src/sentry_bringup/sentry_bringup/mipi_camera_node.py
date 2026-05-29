@@ -3,6 +3,8 @@
 
 Publishes BGR8 images from the MIPI camera to /camera/image_raw.
 Requires hobot_vio which is only available on the RDK X5 board.
+
+Reference: https://forum.d-robotics.cc/t/topic/34355
 """
 
 import rclpy
@@ -53,11 +55,13 @@ class MipiCameraNode(Node):
             f'sensor={self.sensor_width}x{self.sensor_height}'
         )
 
-        # RDK Camera API requires at least two output channels in the list.
-        # Channel 0: main resolution for publishing
-        # Channel 1: auxiliary (used by the VSE pipeline, can be any valid size)
-        out_w = [self.width, self.width]
-        out_h = [self.height, self.height]
+        # RDK Camera API requires two output channels with DIFFERENT resolutions.
+        # Channel 0 (index 0, accessed via get_img type=2): main resolution
+        # Channel 1 (index 1, accessed via get_img type=0): auxiliary
+        # Passing identical resolutions causes VSE init failure (ret=-10).
+        # See forum post Section 3 & 7.1.
+        out_w = [self.width, 512]
+        out_h = [self.height, 512]
 
         self.get_logger().info(
             f'Calling open_cam(0, -1, -1, out_w={out_w}, out_h={out_h}, '
@@ -95,32 +99,75 @@ class MipiCameraNode(Node):
         self.timer = self.create_timer(timer_period, self.capture)
         self.frame_count = 0
 
-    def capture(self):
-        # get_img(type=2, w, h) -> NV12 format
-        # type 2 corresponds to NV12 in hobot_vio
-        img_buf = self.cam.get_img(2, self.width, self.height)
-        if img_buf is None or len(img_buf) == 0:
-            self.get_logger().warn('Failed to get image from MIPI camera')
-            return
+    def _nv12_to_bgr(self, nv12_data, width, height, actual_size):
+        """Convert NV12 bytes to BGR, handling stride alignment.
 
-        # NV12 layout: Y plane (h * w) + UV plane (h * w / 2)
-        # Total bytes = w * h * 1.5
-        expected_size = int(self.width * self.height * 1.5)
-        if len(img_buf) != expected_size:
-            self.get_logger().warn(
-                f'NV12 buffer size mismatch: got {len(img_buf)}, expected {expected_size}'
+        The camera hardware may pad each row to 64-byte or 32-byte boundaries.
+        We must inspect actual_size and derive the real stride before reshaping.
+        See forum post Section 4.3.
+        """
+        expected_size = int(width * height * 1.5)
+
+        if actual_size == expected_size:
+            # No padding — width is already stride-aligned (e.g. 1920 % 64 == 0)
+            yuv = np.frombuffer(nv12_data, dtype=np.uint8).reshape(
+                (int(height * 1.5), width)
             )
+            return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
+
+        # Try 64-byte stride alignment first
+        stride = (width + 63) // 64 * 64
+        y_aligned = stride * height
+        uv_aligned = stride * height // 2
+        if actual_size == y_aligned + uv_aligned:
+            pass  # stride confirmed
+        else:
+            # Fall back to 32-byte alignment
+            stride = (width + 31) // 32 * 32
+            y_aligned = stride * height
+            uv_aligned = stride * height // 2
+            if actual_size != y_aligned + uv_aligned:
+                self.get_logger().warn(
+                    f'NV12 size mismatch: actual={actual_size}, '
+                    f'expected={expected_size}, stride64={stride} gives '
+                    f'{y_aligned + uv_aligned}. Skipping frame.'
+                )
+                return None
+
+        raw = np.frombuffer(nv12_data, dtype=np.uint8)
+        y_plane = raw[:y_aligned].reshape((height, stride))[:, :width]
+        uv_plane = raw[y_aligned:y_aligned + uv_aligned].reshape(
+            (height // 2, stride)
+        )[:, :width]
+
+        yuv = np.zeros((int(height * 1.5), width), dtype=np.uint8)
+        yuv[:height, :] = y_plane
+        yuv[height:, :] = uv_plane
+        return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
+
+    def capture(self):
+        # type=2 accesses the first output channel (index 0) defined in open_cam.
+        # In the official HDMI sample this is 512x512 for AI; here it is 1920x1080.
+        img_buf = self.cam.get_img(2, self.width, self.height)
+        if img_buf is None:
+            self.get_logger().warn('get_img returned None')
             return
 
-        # Convert to numpy array and reshape for OpenCV
-        img_arr = np.frombuffer(img_buf, dtype=np.uint8)
-        img_nv12 = img_arr.reshape((int(self.height * 1.5), self.width))
+        actual_size = len(img_buf)
+        if actual_size == 0:
+            self.get_logger().warn('get_img returned empty buffer')
+            return
 
-        # NV12 -> BGR8
-        img_bgr = cv2.cvtColor(img_nv12, cv2.COLOR_YUV2BGR_NV12)
+        self.get_logger().debug(
+            f'get_img returned {actual_size} bytes '
+            f'(expected {int(self.width * self.height * 1.5)})'
+        )
 
-        # Build ROS Image message
-        msg = self.bridge.cv2_to_imgmsg(img_bgr, encoding='bgr8')
+        frame = self._nv12_to_bgr(img_buf, self.width, self.height, actual_size)
+        if frame is None:
+            return
+
+        msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.frame_id
         self.pub.publish(msg)
@@ -140,7 +187,6 @@ def main(args=None):
     rclpy.init(args=args)
     node = MipiCameraNode()
 
-    # Ensure clean shutdown on SIGINT (Ctrl+C)
     def signal_handler(sig, frame):
         node.get_logger().info('SIGINT received, shutting down...')
         node.destroy_node()
