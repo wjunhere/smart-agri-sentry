@@ -19,6 +19,9 @@ def generate_launch_description():
     lidar_launch_path = os.path.join(
         get_package_share_directory('sentry_lidar'), 'launch', 'stl19p.launch.py')
 
+    imu_launch_path = os.path.join(
+        get_package_share_directory('sentry_sensors'), 'launch', 'imu.launch.py')
+
     return LaunchDescription([
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
@@ -66,6 +69,11 @@ def generate_launch_description():
         # LiDAR
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(lidar_launch_path)
+        ),
+
+        # IMU
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(imu_launch_path)
         ),
 
         # Fusion node
