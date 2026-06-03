@@ -37,7 +37,8 @@ colcon-*
 Thumbs.db
 
 #claude
-.claude/
+.claude/*
+!.claude/PROJECT_CONTEXT.md
 CLAUDE.md
 
 # Project docs & examples
