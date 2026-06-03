@@ -41,6 +41,10 @@ LDLidarDriver::~LDLidarDriver() {
   if (comm_serial_ != nullptr) {
     delete comm_serial_;
   }
+
+  if (comm_udp_network_ != nullptr) {
+    delete comm_udp_network_;
+  }
 }
 
 std::string LDLidarDriver::GetLidarSdkVersionNumber(void) {
@@ -192,12 +196,54 @@ bool LDLidarDriver::Start(LDType product_name,
   return true;
 }*/
 
+bool LDLidarDriver::Start(LDType product_name, 
+            std::string server_ip, 
+            int server_port,
+            std::string client_ip, 
+            int client_port,
+            std::string group_ip) {
+            
+            
+  comm_udp_network_ = new CmdNetInterfaceLinux(server_ip,server_port,client_ip,client_port,group_ip,client_port);
+
+  if (is_start_flag_) {
+    return true;
+  }
+
+  if (LDType::NO_VERSION == product_name) {
+    LD_LOG_ERROR("input <product_name> is abnormal.","");
+    return false;
+  }
+
+
+  if (register_get_timestamp_handle_ == nullptr) {
+    LD_LOG_ERROR("get timestamp fuctional is not register.","");
+    return false;
+  }
+
+  comm_pkg_->ClearDataProcessStatus();
+  comm_pkg_->RegisterTimestampGetFunctional(register_get_timestamp_handle_);
+  comm_pkg_->SetProductType(product_name);
+  
+  //
+  comm_udp_network_->SetReadCallback(std::bind(&LiPkg::CommReadCallback, comm_pkg_, std::placeholders::_1, std::placeholders::_2));
+
+   
+  is_start_flag_ = true;
+
+  SetIsOkStatus(true);
+  
+  return true;
+}
+
 bool LDLidarDriver::Stop(void) {
   if (!is_start_flag_) {
     return true;
   }
 
-  comm_serial_->Close();
+  comm_serial_->Close(); 
+  //comm_tcp_network_->CloseSocket();
+  comm_udp_network_->CloseSocket();
   
   is_start_flag_ = false;
 

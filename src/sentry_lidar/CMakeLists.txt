@@ -20,6 +20,7 @@ set(LDLIDAR_SRCS
   src/ldlidar_driver.cpp
   src/lipkg.cpp
   src/serial_interface_linux.cpp
+  src/cmd_net_interface_linux.cpp
   src/tofbf.cpp
   src/log_module.cpp
   src/obstacle_processor.cpp

@@ -25,6 +25,7 @@
 #include <functional>
 
 #include "serial_interface_linux.h"
+#include "cmd_net_interface_linux.h"
 #include "lipkg.h"
 #include "log_module.h"
 
@@ -71,11 +72,16 @@ class LDLidarDriver {
             uint32_t serial_baudrate = 115200,
             CommunicationModeTypeDef comm_mode = COMM_SERIAL_MODE);
 
-//  bool Start(LDType product_name,
-//            const char* server_ip,
+//  bool Start(LDType product_name, 
+//            const char* server_ip, 
 //            const char* server_port,
 //            CommunicationModeTypeDef comm_mode = COMM_TCP_CLIENT_MODE);
-  // Network mode not supported in this build
+bool Start(LDType product_name, 
+            std::string server_ip, 
+            int server_port,
+            std::string client_ip, 
+            int client_port,
+            std::string group_ip);
 
   /**
    * @brief stop lidar device handle node
@@ -153,6 +159,8 @@ class LDLidarDriver {
   std::function<uint64_t(void)> register_get_timestamp_handle_;
   LiPkg* comm_pkg_;
   SerialInterfaceLinux* comm_serial_;
+  //TCPSocketInterfaceLinux* comm_tcp_network_;
+  CmdNetInterfaceLinux* comm_udp_network_;
   std::chrono::_V2::steady_clock::time_point last_pubdata_times_;
 };
 
