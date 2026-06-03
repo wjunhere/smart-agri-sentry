@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -14,6 +15,9 @@ def generate_launch_description():
 
     crop_profiles_path = os.path.join(config_dir, 'crop_profiles.yaml')
     mission_params_path = os.path.join(config_dir, 'mission_params.yaml')
+
+    lidar_launch_path = os.path.join(
+        get_package_share_directory('sentry_lidar'), 'launch', 'stl19p.launch.py')
 
     return LaunchDescription([
         DeclareLaunchArgument('crop_type', default_value='tomato'),
@@ -57,6 +61,11 @@ def generate_launch_description():
             name='uart_bridge_node',
             parameters=[{'uart_port': '/dev/ttyS2', 'baudrate': 115200}],
             output='screen',
+        ),
+
+        # LiDAR
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(lidar_launch_path)
         ),
 
         # Fusion node

@@ -1,0 +1,6 @@
+std_msgs/Header header
+float32 front_min_distance
+float32 front_avg_distance
+bool obstacle_detected
+float32 danger_threshold
+int32 front_point_count

@@ -1,0 +1,15 @@
+sentry_lidar:
+  ros__parameters:
+    product_name: "LDLiDAR_LD19"
+    port_name: "/dev/wheeltec_lidar"
+    port_baudrate: 230400
+    frame_id: "laser"
+    laser_scan_dir: true
+    enable_angle_crop_func: false
+    angle_crop_min: 135.0
+    angle_crop_max: 225.0
+    min_range: 0.3
+    max_range: 20.0
+    front_sector_half_angle: 30.0
+    danger_threshold: 0.5
+    enable_filter: false

@@ -1,0 +1,62 @@
+#include <gtest/gtest.h>
+#include "obstacle_processor.h"
+#include "ldlidar_datatype.h"
+#include "sentry_interfaces/msg/obstacle_info.hpp"
+#include <cmath>
+#include <limits>
+
+using namespace ldlidar;
+using sentry_interfaces::msg::ObstacleInfo;
+
+TEST(ObstacleProcessorTest, EmptyInput) {
+  Points2D points;
+  ObstacleInfo info = ObstacleProcessor::process(points, 30.0f, 0.5f);
+  EXPECT_TRUE(std::isnan(info.front_min_distance));
+  EXPECT_TRUE(std::isnan(info.front_avg_distance));
+  EXPECT_FALSE(info.obstacle_detected);
+  EXPECT_EQ(info.front_point_count, 0);
+  EXPECT_FLOAT_EQ(info.danger_threshold, 0.5f);
+}
+
+TEST(ObstacleProcessorTest, FrontObstacleDetected) {
+  Points2D points;
+  points.emplace_back(10.0f, 300, 100, 0);
+  points.emplace_back(350.0f, 400, 100, 0);
+  points.emplace_back(180.0f, 1000, 100, 0);
+
+  ObstacleInfo info = ObstacleProcessor::process(points, 30.0f, 0.5f);
+
+  EXPECT_FLOAT_EQ(info.front_min_distance, 0.3f);
+  EXPECT_NEAR(info.front_avg_distance, 0.35f, 0.01f);
+  EXPECT_TRUE(info.obstacle_detected);
+  EXPECT_EQ(info.front_point_count, 2);
+}
+
+TEST(ObstacleProcessorTest, FrontClear) {
+  Points2D points;
+  points.emplace_back(10.0f, 800, 100, 0);
+  points.emplace_back(350.0f, 1000, 100, 0);
+
+  ObstacleInfo info = ObstacleProcessor::process(points, 30.0f, 0.5f);
+
+  EXPECT_FLOAT_EQ(info.front_min_distance, 0.8f);
+  EXPECT_FALSE(info.obstacle_detected);
+  EXPECT_EQ(info.front_point_count, 2);
+}
+
+TEST(ObstacleProcessorTest, OutOfSectorIgnored) {
+  Points2D points;
+  points.emplace_back(180.0f, 100, 100, 0);
+  points.emplace_back(90.0f, 100, 100, 0);
+
+  ObstacleInfo info = ObstacleProcessor::process(points, 30.0f, 0.5f);
+
+  EXPECT_TRUE(std::isnan(info.front_min_distance));
+  EXPECT_FALSE(info.obstacle_detected);
+  EXPECT_EQ(info.front_point_count, 0);
+}
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
