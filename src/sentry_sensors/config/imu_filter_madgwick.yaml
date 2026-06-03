@@ -1,0 +1,9 @@
+imu_filter_madgwick:
+  ros__parameters:
+    fixed_frame: "odom"
+    use_mag: true
+    publish_tf: false
+    world_frame: "enu"
+    gain: 0.1
+    zeta: 0.0
+    stateless: false

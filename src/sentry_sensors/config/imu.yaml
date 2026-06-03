@@ -1,0 +1,9 @@
+imu_node:
+  ros__parameters:
+    port: "/dev/myimu"
+    frame_id: "imu_link"
+    pub_rate_hz: 100.0
+    use_mag: true
+    linear_accel_cov: [0.0005, 0.0, 0.0, 0.0, 0.0005, 0.0, 0.0, 0.0, 0.0008]
+    angular_vel_cov: [0.00002, 0.0, 0.0, 0.0, 0.00002, 0.0, 0.0, 0.0, 0.00005]
+    orientation_cov: [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.2]
