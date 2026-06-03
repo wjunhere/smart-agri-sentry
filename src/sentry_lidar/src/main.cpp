@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
   auto node = std::make_shared<rclcpp::Node>("sentry_lidar");
 
   std::string product_name;
-  std::string topic_name;
+  std::string topic_name = "scan";
   std::string port_name;
   int serial_port_baudrate;
   bool enable_serial;
