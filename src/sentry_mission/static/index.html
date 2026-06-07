@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentry AGV Remote</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 { margin-bottom: 20px; color: #00d4ff; }
+  .panel {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 10px 0;
+    width: 100%;
+    max-width: 400px;
+  }
+  .status {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    font-size: 14px;
+  }
+  .status .label { color: #8899aa; }
+  .status .value { font-weight: bold; }
+  .mode-AUTO .value { color: #00ff88; }
+  .mode-MANUAL .value { color: #ffaa00; }
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    margin: 5px 0;
+    transition: opacity 0.2s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-auto { background: #00ff88; color: #1a1a2e; }
+  .btn-manual { background: #ffaa00; color: #1a1a2e; }
+  .btn-stop { background: #ff4444; color: #fff; }
+  .dpad {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-top: 15px;
+  }
+  .dpad .btn { padding: 20px; font-size: 20px; }
+  .dpad .empty { visibility: hidden; }
+  .speed {
+    margin-top: 15px;
+  }
+  .speed label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 14px;
+    color: #8899aa;
+  }
+  .speed input {
+    width: 100%;
+    accent-color: #00d4ff;
+  }
+</style>
+</head>
+<body>
+<h1>🚜 Sentry AGV Remote</h1>
+
+<div class="panel">
+  <div class="status" id="status-mode">
+    <span class="label">Mode:</span>
+    <span class="value" id="mode-value">--</span>
+  </div>
+  <div class="status">
+    <span class="label">Linear:</span>
+    <span class="value" id="linear-value">0.00</span>
+  </div>
+  <div class="status">
+    <span class="label">Angular:</span>
+    <span class="value" id="angular-value">0.00</span>
+  </div>
+  <div class="status">
+    <span class="label">Service:</span>
+    <span class="value" id="service-value">--</span>
+  </div>
+</div>
+
+<div class="panel">
+  <button class="btn btn-auto" onclick="setMode(true)">🤖 AUTO MODE</button>
+  <button class="btn btn-manual" onclick="setMode(false)">🎮 MANUAL MODE</button>
+  <button class="btn btn-stop" onclick="emergencyStop()">🛑 EMERGENCY STOP</button>
+</div>
+
+<div class="panel">
+  <div class="dpad">
+    <div class="empty"></div>
+    <button class="btn" onmousedown="move(0.3, 0)" onmouseup="stop()" ontouchstart="move(0.3, 0)" ontouchend="stop()">▲</button>
+    <div class="empty"></div>
+    <button class="btn" onmousedown="move(0, 0.5)" onmouseup="stop()" ontouchstart="move(0, 0.5)" ontouchend="stop()">◀</button>
+    <button class="btn" onmousedown="move(0, 0)" onmouseup="stop()" ontouchstart="move(0, 0)" ontouchend="stop()">●</button>
+    <button class="btn" onmousedown="move(0, -0.5)" onmouseup="stop()" ontouchstart="move(0, -0.5)" ontouchend="stop()">▶</button>
+    <div class="empty"></div>
+    <button class="btn" onmousedown="move(-0.3, 0)" onmouseup="stop()" ontouchstart="move(-0.3, 0)" ontouchend="stop()">▼</button>
+    <div class="empty"></div>
+  </div>
+  <div class="speed">
+    <label>Max Linear Speed: <span id="linear-max">0.50</span> m/s</label>
+    <input type="range" min="0.1" max="1.0" step="0.1" value="0.5" onchange="updateMax(this.value, 'linear')">
+  </div>
+  <div class="speed">
+    <label>Max Angular Speed: <span id="angular-max">1.00</span> rad/s</label>
+    <input type="range" min="0.2" max="2.0" step="0.1" value="1.0" onchange="updateMax(this.value, 'angular')">
+  </div>
+</div>
+
+<script>
+let maxLinear = 0.5;
+let maxAngular = 1.0;
+
+function updateMax(val, type) {
+  if (type === 'linear') {
+    maxLinear = parseFloat(val);
+    document.getElementById('linear-max').textContent = val;
+  } else {
+    maxAngular = parseFloat(val);
+    document.getElementById('angular-max').textContent = val;
+  }
+}
+
+function setMode(auto) {
+  fetch('/mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auto: auto })
+  }).then(r => r.json()).then(data => {
+    console.log('Mode:', data);
+  }).catch(e => console.error(e));
+}
+
+function emergencyStop() {
+  fetch('/stop', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => console.log('Stop:', data))
+    .catch(e => console.error(e));
+}
+
+function move(linear, angular) {
+  fetch('/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      linear: linear * maxLinear / 0.5,
+      angular: angular * maxAngular / 1.0
+    })
+  }).catch(e => console.error(e));
+}
+
+function stop() {
+  fetch('/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ linear: 0, angular: 0 })
+  }).catch(e => console.error(e));
+}
+
+function updateStatus() {
+  fetch('/status')
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('mode-value').textContent = data.mode;
+      document.getElementById('linear-value').textContent = data.linear.toFixed(2);
+      document.getElementById('angular-value').textContent = data.angular.toFixed(2);
+      document.getElementById('service-value').textContent = data.service_ready ? 'OK' : 'N/A';
+      const modeEl = document.getElementById('status-mode');
+      modeEl.className = 'status mode-' + data.mode;
+    })
+    .catch(() => {
+      document.getElementById('mode-value').textContent = 'OFFLINE';
+      document.getElementById('service-value').textContent = 'N/A';
+    });
+}
+
+setInterval(updateStatus, 500);
+</script>
+</body>
+</html>

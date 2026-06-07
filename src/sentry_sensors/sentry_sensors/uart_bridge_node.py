@@ -90,13 +90,31 @@ def decode_chassis_frame(frame: bytes):
         return None
     if frame_type != TYPE_CHASSIS:
         return None
-    (ls, rs, bv, alarm) = struct.unpack('<hhHB', payload)
-    return {
-        'left_speed': ls / 1000.0,
-        'right_speed': rs / 1000.0,
-        'battery_voltage': bv / 100.0,
-        'alarm_bits': alarm,
-    }
+    # 兼容旧版 (7 bytes) 和新版 (19 bytes)
+    if length == 7:
+        (ls, rs, bv, alarm) = struct.unpack('<hhHB', payload)
+        return {
+            'left_speed': ls / 1000.0,
+            'right_speed': rs / 1000.0,
+            'battery_voltage': bv / 100.0,
+            'alarm_bits': alarm,
+            'left_pulse': 0,
+            'right_pulse': 0,
+            'encoder_timestamp': 0,
+        }
+    elif length == 19:
+        (ls, rs, bv, alarm, lp, rp, ts) = struct.unpack('<hhHBIII', payload)
+        return {
+            'left_speed': ls / 1000.0,
+            'right_speed': rs / 1000.0,
+            'battery_voltage': bv / 100.0,
+            'alarm_bits': alarm,
+            'left_pulse': lp,
+            'right_pulse': rp,
+            'encoder_timestamp': ts,
+        }
+    else:
+        return None
 
 
 class UartBridgeNode(Node):
@@ -123,7 +141,7 @@ class UartBridgeNode(Node):
             ChassisStatus, '/sentry/chassis/status', qos)
 
         self.sub_cmd_vel = self.create_subscription(
-            Twist, '/sentry/cmd_vel', self.on_cmd_vel, 10)
+            Twist, '/cmd_vel', self.on_cmd_vel, 10)
         self.sub_servo = self.create_subscription(
             ServoCmd, '/sentry/servo_cmd', self.on_servo, 10)
 
@@ -189,6 +207,9 @@ class UartBridgeNode(Node):
                 msg.right_speed = data['right_speed']
                 msg.battery_voltage = data['battery_voltage']
                 msg.alarm_bits = data['alarm_bits']
+                msg.left_pulse = data['left_pulse']
+                msg.right_pulse = data['right_pulse']
+                msg.encoder_timestamp = data['encoder_timestamp']
                 self.pub_chassis.publish(msg)
 
     def on_cmd_vel(self, msg: Twist):

@@ -22,6 +22,11 @@ def generate_launch_description():
     imu_launch_path = os.path.join(
         get_package_share_directory('sentry_sensors'), 'launch', 'imu.launch.py')
 
+    mission_pkg = get_package_share_directory('sentry_mission')
+    ekf_config = os.path.join(mission_pkg, 'config', 'ekf.yaml')
+    nav2_config = os.path.join(mission_pkg, 'config', 'nav2_no_map.yaml')
+    waypoints_config = os.path.join(mission_pkg, 'config', 'waypoints.yaml')
+
     return LaunchDescription([
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
@@ -76,6 +81,40 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(imu_launch_path)
         ),
 
+        # Wheel odometry
+        Node(
+            package='sentry_mission',
+            executable='wheel_odom_node',
+            name='wheel_odom_node',
+            parameters=[{
+                'wheel_base': 0.4,
+                'pulses_per_meter': 1000,
+            }],
+            output='screen',
+        ),
+
+        # EKF fusion
+        Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_filter',
+            output='screen',
+            parameters=[ekf_config],
+        ),
+
+        # Nav2 bringup (mapless mode)
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(
+                    get_package_share_directory('nav2_bringup'),
+                    'launch', 'bringup_launch.py')
+            ),
+            launch_arguments={
+                'params_file': nav2_config,
+                'use_sim_time': 'False',
+            }.items(),
+        ),
+
         # Fusion node
         Node(
             package='sentry_fusion',
@@ -90,12 +129,28 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Mission control
+        # Mission control (Nav2 + waypoint + visual servoing)
         Node(
             package='sentry_mission',
             executable='mission_control_node',
             name='mission_control_node',
-            parameters=[mission_params_path],
+            parameters=[mission_params_path, {
+                'waypoints_file': waypoints_config,
+                'wheel_base': 0.4,
+                'pulses_per_meter': 1000,
+            }],
+            output='screen',
+        ),
+
+        # Web remote control
+        Node(
+            package='sentry_mission',
+            executable='web_remote_node',
+            name='web_remote_node',
+            parameters=[{
+                'max_linear': 0.5,
+                'max_angular': 1.0,
+            }],
             output='screen',
         ),
     ])
