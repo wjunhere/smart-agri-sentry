@@ -10,6 +10,14 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/config', [
+            'config/ekf.yaml',
+            'config/nav2_no_map.yaml',
+            'config/waypoints.yaml',
+        ]),
+        ('share/' + package_name + '/static', [
+            'static/index.html',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -21,6 +29,8 @@ setup(
     entry_points={
         'console_scripts': [
             'mission_control_node = sentry_mission.mission_control_node:main',
+            'wheel_odom_node = sentry_mission.wheel_odom_node:main',
+            'web_remote_node = sentry_mission.web_remote_node:main',
         ],
     },
 )
