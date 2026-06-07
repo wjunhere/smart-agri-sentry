@@ -1,29 +1,41 @@
 # 智农哨兵 - 项目上下文（PROJECT_CONTEXT）
 
 > 文档用途：供 Claude Code / 团队成员快速理解项目约束、接口定义和技术栈
-> 更新日期：2026-06-03
+> 更新日期：2026-06-08
 > 适用场景：嵌入式比赛项目，原型样机阶段
-> **架构版本：v2.0 三层解耦 + 事件驱动巡检**
+> **架构版本：v2.1 导航增强 + 事件驱动巡检**
 
 ---
 
 ## 版本变更记录
 
-### v2.0 → 本次更新（2026-06-03）
+### v2.1 → 本次更新（2026-06-07）
+1. **新增完整导航栈**：集成 Nav2 + EKF + 轮式里程计 + 航点巡航
+   - 新增 `wheel_odom_node`：从底盘编码器脉冲计算 dead reckoning，发布 `/wheel/odom`
+   - 新增 EKF（robot_localization）：融合 `/wheel/odom` + `/sensor/imu/data` → `/odom`
+   - 新增 Nav2：NavfnPlanner（全局）+ MPPIController（局部）+ 无地图 costmap 模式
+   - 重构 `mission_control_node`：PATROL（Nav2 航点巡航）→ APPROACHING（视觉伺服）→ STOPPED → ANALYZING → ACTION → RESUME → PATROL
+   - 新增 `web_remote_node`：Flask HTTP 遥控，支持 AUTO/MANUAL 模式切换和急停
+2. **扩展底盘帧协议**：`ChassisStatus` 新增 `left_pulse`, `right_pulse`, `encoder_timestamp`
+   - `TYPE_CHASSIS` payload 从 7 字节 → 19 字节（向后兼容旧版 7 字节帧）
+3. **统一 cmd_vel topic**：所有速度指令统一发布到 `/cmd_vel`（Nav2 / mission_control / web_remote）
+4. **航点管理**：默认弓字形全覆盖航点，支持 YAML 配置，病害检测触发时保存当前航点、分析完成后恢复
+
+### v2.0 → v2.1（2026-06-03）
 1. **新增 LiDAR 感知**：集成 STL19P 激光雷达（LDLiDAR SDK 迁移），发布 `/scan`（导航/避障）和 `/lidar/obstacle_info`（融合决策）
 2. **架构升级**：由"混合架构（GPS直连 + 传感器经STM32转发）"升级为**三层解耦 + 事件驱动巡检**
    - 引入固定环境节点（STM32L072 + SX1262 LoRa），解决移动传感器间歇工作导致的环境历史断档
    - 引入植株检测节点（YOLO-Nano），实现"停-拍-判-走"事件驱动巡检
    - 融合节点由"AI触发"改为"停车事件触发"，内部持续维护LWD窗口
    - 新增预测预警节点（简化趋势外推）和农艺建议节点（YAML规则引擎）
-2. **数据流重构**：由"异步订阅 + 时间戳对齐"升级为**事件驱动状态机**
+3. **数据流重构**：由"异步订阅 + 时间戳对齐"升级为**事件驱动状态机**
    - `mission_control_node` 管理 CRUISING → APPROACHING → STOPPED → ANALYZING → ACTION → RESUME 状态机
    - `plant_detector_node` 检测到植株 → `mission_control` 停车 → `vision_diagnosis` 拍照 → `fusion_node` 融合 → `advisory_node` 建议 → 记录 → 恢复巡航
-3. **消息接口重构**：废弃 `AiDiagnosis` / `FinalDiagnosis` / `SensorCombined`，统一为 8 个新消息
-4. **环境数据源扩展**：移动传感器（随车，1Hz）+ 固定环境节点（田间24h连续，5min采样）双源策略
-5. **作物支持扩展**：从单一番茄（10类）扩展为番茄/小麦/草莓三作物动态切换
-6. **Advisory技术路线**：v2.0 使用结构化YAML规则引擎，端侧大模型后置到v3.0
-7. **数据存储策略**：RDK X5 本地 ros2 bag 7天循环 + CRITICAL永久保留；InfluxDB/Grafana放办公室PC离线分析
+4. **消息接口重构**：废弃 `AiDiagnosis` / `FinalDiagnosis` / `SensorCombined`，统一为 8 个新消息
+5. **环境数据源扩展**：移动传感器（随车，1Hz）+ 固定环境节点（田间24h连续，5min采样）双源策略
+6. **作物支持扩展**：从单一番茄（10类）扩展为番茄/小麦/草莓三作物动态切换
+7. **Advisory技术路线**：v2.0 使用结构化YAML规则引擎，端侧大模型后置到v3.0
+8. **数据存储策略**：RDK X5 本地 ros2 bag 7天循环 + CRITICAL永久保留；InfluxDB/Grafana放办公室PC离线分析
 
 ### v1.0 → v2.0（2026-04-21）
 1. 架构由"全部传感器经STM32转发"改为混合架构
@@ -156,10 +168,14 @@
 │  │     sentry_lidar (STL19P + CP2102, UART 230400)             │   │
 │  │           → /scan  +  /lidar/obstacle_info                  │   │
 │  └──────────────────────────────────────────────────────────────┘   │
-│         │                  │                        │                │
-│         ▼                  ▼                        ▼                │
-│  /sentry/gps/fix    /sensor/              /sentry/camera/            │
-│                     environment_mobile    image_raw                  │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │     imu_node + imu_filter_madgwick                            │   │
+│  │           → /sensor/imu/data_raw → /sensor/imu/data          │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│         │                  │              │          │                │
+│         ▼                  ▼              ▼          ▼                │
+│  /sentry/gps/fix    /sensor/         /sentry/camera/    /sensor/    │
+│                     environment_mobile image_raw        imu/data    │
 │                     /sensor/                                         │
 │                     soil_nutrition                                   │
 │                                                                      │
@@ -168,6 +184,23 @@
 │  │         env_bridge_node → /sensor/environment_fixed        │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │     wheel_odom_node  (编码器脉冲 → dead reckoning)           │   │
+│  │           → /wheel/odom                                       │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                            │                                         │
+│                            ▼                                         │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │     ekf_filter  (robot_localization)                         │   │
+│  │     /wheel/odom + /sensor/imu/data → /odom                  │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                            │                                         │
+│                            ▼                                         │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │     Nav2 (nav2_bringup)                                       │   │
+│  │     /odom + /scan → /cmd_vel (AUTO模式)                     │   │
+│  │     NavfnPlanner + MPPIController (mapless)                 │   │
+│  └──────────────────────────────────────────────────────────────┘   │
 │         ┌──────────────────────────────────────────┐                 │
 │         │         plant_detector_node              │                 │
 │         │   (YOLO-Nano, 5fps, 检测植株bbox)        │                 │
@@ -176,12 +209,13 @@
 │                            ▼ /vision/plant_detected                  │
 │         ┌──────────────────────────────────────────┐                 │
 │         │         mission_control_node             │                 │
-│         │   (CRUISING→APPROACHING→STOPPED→       │                 │
-│         │    ANALYZING→ACTION→RESUME)            │                 │
+│         │   (PATROL→APPROACHING→STOPPED→          │                 │
+│         │    ANALYZING→ACTION→RESUME→PATROL)      │                 │
+│         │   Nav2航点巡航 + 视觉伺服 + 模式切换     │                 │
 │         └──────────┬─────────────────────┬───────┘                 │
 │                    │                     │                          │
 │                    ▼                     ▼                          │
-│              /sentry/cmd_vel      STOPPED触发拍照                   │
+│              /cmd_vel (AUTO)      STOPPED触发拍照                   │
 │                                                                      │
 │         ┌──────────────────────────────────────────┐                 │
 │         │         vision_diagnosis_node            │                 │
@@ -203,6 +237,10 @@
 │                            │                                         │
 │                            ▼ /forecast/alert                         │
 │                            ▼ /advisory/action                        │
+│         ┌──────────────────────────────────────────┐                 │
+│         │         web_remote_node                  │                 │
+│         │   (Flask HTTP, AUTO/MANUAL + 急停)      │                 │
+│         └──────────────────────────────────────────┘                 │
 │         ┌──────────────────────────────────────────┐                 │
 │         │         data_logger_node                 │                 │
 │         │   (ros2 bag, 7天循环, CRITICAL永久保留)  │                 │
@@ -229,7 +267,7 @@
 | TYPE | 方向 | 含义 | 载荷内容 |
 |------|------|------|----------|
 | `0x01` | STM32→RDK | **传感器汇总帧** | 空气温湿度CO₂ + 土壤电导率/氮磷钾/温湿度/pH |
-| `0x03` | STM32→RDK | **底盘状态帧** | 左轮速、右轮速、电池电压、报警位 |
+| `0x03` | STM32→RDK | **底盘状态帧** | 左轮速、右轮速、电池电压、报警位、编码器脉冲(L/R)、时间戳 |
 | `0x81` | RDK→STM32 | **运动控制帧** | 左轮目标速、右轮目标速（mm/s） |
 | `0x82` | RDK→STM32 | **云台控制帧** | 舵机俯仰角、偏航角（角度值） |
 | `0x83` | RDK→STM32 | **模式切换帧** | 0x00=待机, 0x01=遥控, 0x02=自动巡航 |
@@ -315,9 +353,13 @@ typedef struct {
 
 | 话题名 | 类型 | 发布者 | 订阅者 | 频率 | 说明 |
 |--------|------|--------|--------|------|------|
-| `/sentry/cmd_vel` | `geometry_msgs/Twist` | mission_control | uart_bridge_node | 10Hz | 底盘速度指令 |
+| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 / mission_control / web_remote | uart_bridge_node | 10-20Hz | 统一底盘速度指令（所有来源统一到此 topic） |
 | `/sentry/servo_cmd` | `ServoCmd` | mission_control | uart_bridge_node | 事件 | 云台角度指令 |
 | `/mission/status` | `MissionStatus` | mission_control | data_logger | 10Hz | 巡检状态机状态 |
+| `/wheel/odom` | `nav_msgs/Odometry` | wheel_odom_node | EKF, Nav2 | 20Hz | 编码器里程计（dead reckoning） |
+| `/odom` | `nav_msgs/Odometry` | ekf_filter | Nav2, TF | 30Hz | EKF 融合后的里程计 |
+| `/resume_navigation` | `std_msgs/Bool` | (外部) | mission_control | 事件 | 恢复导航指令 |
+| `/set_auto_mode` | `std_srvs/SetBool` | web_remote | mission_control | 事件 | AUTO/MANUAL 模式切换服务 |
 
 ### 5.4 fusion_node 核心逻辑
 
