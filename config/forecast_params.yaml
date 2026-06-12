@@ -1,0 +1,7 @@
+forecast_node:
+  timer_period_sec: 600
+  history_hours: 6
+  prediction_hours: 24
+  risk_threshold: 0.7
+  lwd_margin_hours: 2.0
+  humidity_trend_threshold: 0.3

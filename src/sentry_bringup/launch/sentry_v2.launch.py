@@ -153,4 +153,37 @@ def generate_launch_description():
             }],
             output='screen',
         ),
+
+        # Phase 2: forecast + advisory + data logger
+        Node(
+            package='sentry_forecast',
+            executable='forecast_node',
+            name='forecast_node',
+            parameters=[{
+                'crop_type': LaunchConfiguration('crop_type'),
+                'crop_profiles_path': crop_profiles_path,
+                'forecast_params_path': os.path.join(config_dir, 'forecast_params.yaml'),
+                'mobile_stale_sec': 2.0,
+                'fusion_stale_sec': 30.0,
+            }],
+            output='screen',
+        ),
+        Node(
+            package='sentry_advisory',
+            executable='advisory_node',
+            name='advisory_node',
+            parameters=[{
+                'crop_type': LaunchConfiguration('crop_type'),
+                'advisory_rules_path': os.path.join(config_dir, 'advisory_rules.yaml'),
+                'fusion_stale_sec': 30.0,
+            }],
+            output='screen',
+        ),
+        Node(
+            package='sentry_data_logger',
+            executable='data_logger_node',
+            name='data_logger_node',
+            parameters=[os.path.join(config_dir, 'data_logger_params.yaml')],
+            output='screen',
+        ),
     ])

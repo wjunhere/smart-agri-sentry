@@ -1,0 +1,41 @@
+rules:
+  - name: critical_late_blight
+    conditions:
+      crop_type: tomato
+      alert_level: CRITICAL
+      mode: VISION_DOMINANT
+    action:
+      action_type: SPRAY
+      priority: CRITICAL
+      description: "检测到晚疫病高风险，建议立即喷洒杀菌剂。"
+      steps:
+        - "停车并确认植株编号"
+        - "使用对应杀菌剂喷洒"
+        - "记录处理位置"
+
+  - name: latent_outbreak
+    conditions:
+      crop_type: tomato
+      alert_type: LATENT_OUTBREAK
+    action:
+      action_type: MONITOR
+      priority: HIGH
+      description: "环境条件利于病害爆发，建议增加巡检频次。"
+
+  - name: drought_stress
+    conditions:
+      humidity_max: 40
+      temperature_min: 30
+    action:
+      action_type: IRRIGATE
+      priority: MEDIUM
+      description: "干旱胁迫风险，建议适时灌溉。"
+
+  - name: rising_risk
+    conditions:
+      alert_type: RISING_RISK
+      risk_min: 0.6
+    action:
+      action_type: MONITOR
+      priority: HIGH
+      description: "风险呈上升趋势，建议密切观察。"

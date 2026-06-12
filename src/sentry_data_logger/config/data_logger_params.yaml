@@ -1,0 +1,14 @@
+data_logger_node:
+  topics:
+    - /fusion/diagnosis
+    - /mission/status
+    - /forecast/alert
+    - /advisory/action
+    - /sensor/environment_mobile
+    - /vision/diagnosis
+  bag_base_dir: bags
+  split_duration_sec: 900
+  split_max_size_mb: 1024
+  retention_days: 7
+  critical_retention_sec: 300
+  record_metadata: true
