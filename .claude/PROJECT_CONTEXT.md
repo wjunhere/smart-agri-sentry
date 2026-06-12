@@ -1,13 +1,25 @@
 # 智农哨兵 - 项目上下文（PROJECT_CONTEXT）
 
 > 文档用途：供 Claude Code / 团队成员快速理解项目约束、接口定义和技术栈
-> 更新日期：2026-06-08
+> 更新日期：2026-06-13
 > 适用场景：嵌入式比赛项目，原型样机阶段
 > **架构版本：v2.1 导航增强 + 事件驱动巡检**
 
 ---
 
 ## 版本变更记录
+
+### v2.1 → 本次更新（2026-06-13）
+1. **Phase 2 节点实现完成**：forecast / advisory / data_logger 三个 ROS2 Python 包已落地并上板验证
+   - 新增 `sentry_forecast` 包：`forecast_node` 基于线性趋势外推发布 `/forecast/alert`
+   - 新增 `sentry_advisory` 包：`advisory_node` 基于 YAML 规则引擎发布 `/advisory/action`
+   - 新增 `sentry_data_logger` 包：`data_logger_node` 使用 `rosbag2_py.SequentialWriter` 选择性录制，CRITICAL 事件触发快照永久保留
+   - 三个节点已注册到 `sentry_v2.launch.py`
+   - RDK X5 验证：`colcon build` 10 个包全部通过，`colcon test` 24 tests / 0 failures
+2. **视觉节点重构**：`vision_diagnosis_node` 抽离为 `diagnosis_utils.py`，支持 `.bin` 模型自动匹配与番茄/小麦/草莓三作物标签映射
+3. **遥控节点完善**：`web_remote_node` 增加 `/set_auto_mode` 异步服务回调结果处理
+4. **任务控制节点修正**：`mission_control_node` 在 MANUAL 模式下仍发布 `/mission/status`，同时抑制 `/cmd_vel`
+5. **bringup 清理**：移除 `ai_inference_node.py`、`uart_bridge_node.py` 及对应 entry_point；`mipi_camera_node` topic 统一为 `/sentry/camera/image_raw`
 
 ### v2.1 → 本次更新（2026-06-07）
 1. **新增完整导航栈**：集成 Nav2 + EKF + 轮式里程计 + 航点巡航
@@ -330,7 +342,7 @@ typedef struct {
 
 | 话题名 | 类型 | 发布者 | 订阅者 | 频率 | 说明 |
 |--------|------|--------|--------|------|------|
-| `/sentry/camera/image_raw` | `sensor_msgs/Image` | camera_node | plant_detector, vision_diagnosis | 2Hz | 摄像头原始图像 |
+| `/sentry/camera/image_raw` | `sensor_msgs/Image` | camera_node | plant_detector, vision_diagnosis | 2Hz | 摄像头原始图像，统一为 `/sentry/camera/image_raw` |
 | `/vision/plant_detected` | `PlantDetection` | plant_detector_node | mission_control | 5Hz | 植株检测结果（bbox + 置信度） |
 | `/vision/diagnosis` | `Diagnosis` | vision_diagnosis_node | fusion_node | 2Hz | 病害分类结果（crop_type + class_id + probabilities） |
 | `/sensor/environment_mobile` | `Environment` | uart_bridge_node | fusion_node | 1Hz | 移动传感器环境数据（data_source=MOBILE） |
@@ -452,9 +464,9 @@ smart-agri-sentry/
 │   ├── advisory_rules.yaml            # 农艺建议规则库
 │   └── mission_params.yaml            # 巡检参数（速度、阈值等）
 ├── models/
-│   ├── tomatoes_mobilenetv2_int8.tflite
-│   ├── wheat_mobilenetv2_int8.tflite      # 占位
-│   ├── strawberry_mobilenetv2_int8.tflite # 占位
+│   ├── tomatoes_mobilenetv3.bin
+│   ├── wheat_mobilenetv3.bin              # 占位
+│   ├── strawberry_mobilenetv3.bin         # 占位
 │   └── plant_detector_nano.tflite         # 植株检测
 ├── src/
 │   ├── sentry_interfaces/             # ROS2消息定义包
@@ -472,8 +484,9 @@ smart-agri-sentry/
 │   ├── sentry_fusion/                 # fusion_node + lwd_calculator
 │   ├── sentry_forecast/               # forecast_node
 │   ├── sentry_advisory/               # advisory_node + rule_engine
-│   ├── sentry_mission/                # mission_control_node
-│   ├── sentry_sensors/                # env_bridge + uart_bridge + data_logger
+│   ├── sentry_mission/                # mission_control_node + web_remote_node + wheel_odom_node
+│   ├── sentry_sensors/                # env_bridge + uart_bridge + imu
+│   ├── sentry_data_logger/            # data_logger_node（rosbag2 录制 + CRITICAL 快照）
 │   └── sentry_hardware/               # 固定节点固件
 │       └── fixed_env_node/
 │           ├── stm32l072_lora/
@@ -494,15 +507,15 @@ smart-agri-sentry/
 - **番茄**：10类（bacterial_spot, early_blight, healthy, late_blight, leaf_mold, septoria_leaf_spot, spider_mites, target_spot, tomato_mosaic_virus, tomato_yellow_leaf_curl_virus）
 - **小麦**：5类（healthy, wheat_powdery_mildew, wheat_scab, wheat_stripe_rust, wheat_yellow_dwarf）
 - **草莓**：8类（leaf_spot, powdery_mildew_leaf, gray_mold, angular_leaf_spot, blossom_blight, powdery_mildew_fruit, anthracnose_fruit_rot, healthy）
-- **模型路径**：`models/{crop}_mobilenetv2_int8.tflite`，RDK上转bin格式
+- **模型路径**：`models/{crop}_mobilenetv3.bin`（RDK X5 上从 ONNX 转换的 bin 格式）；显式传入 `.tflite` 路径会被自动重写为 `.bin`
 - **输入尺寸**：224×224
-- **植株检测**：YOLO-Nano / MobileNet-SSD，输出bbox + confidence + area_ratio
+- **植株检测**：YOLO-Nano / MobileNet-SSD，输出 bbox + confidence + area_ratio
 
 ### 摄像头（MIPI-CSI）
 
 - **型号**：IMX219，分辨率 1920×1080@30fps
 - **ROS2 节点**：`mipi_camera_node`（`sentry_bringup` 包）
-- **发布 Topic**：`/camera/image_raw`，`sensor_msgs/Image`，encoding=`bgr8`
+- **发布 Topic**：`/sentry/camera/image_raw`，`sensor_msgs/Image`，encoding=`bgr8`
 - **启动命令**：`ros2 run sentry_bringup mipi_camera_node`
 
 #### 关键技术约束
@@ -619,7 +632,7 @@ smart-agri-sentry/
 | 阶段 | 目标 | 产出 |
 |------|------|------|
 | **Phase 1** | 消息接口 + plant_detector + vision_diagnosis + fusion + mission_control | **最小可用产品**：小车能停-拍-判-走，Fusion能出风险 |
-| **Phase 2** | forecast + advisory + data_logger | 完整决策闭环：预测+建议+记录 |
+| **Phase 2** | forecast + advisory + data_logger | **已完成**：三个节点已落地，`sentry_v2.launch.py` 已注册，RDK X5 通过 24 tests |
 | **Phase 3** | 固定环境节点硬件固件 + env_bridge | 24h LWD真正跑起来（硬件来不及可先用模拟数据跑通逻辑） |
 | **Phase 4** | 外部天气 + Web前端 + InfluxDB离线分析 | 后续完善 |
 
