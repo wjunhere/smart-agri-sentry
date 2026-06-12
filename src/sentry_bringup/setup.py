@@ -30,11 +30,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'uart_bridge_node = sentry_bringup.uart_bridge_node:main',
             'gps_node = sentry_bringup.gps_node:main',
             'camera_node = sentry_bringup.camera_node:main',
             'mipi_camera_node = sentry_bringup.mipi_camera_node:main',
-            'ai_inference_node = sentry_bringup.ai_inference_node:main',
         ],
     },
 )

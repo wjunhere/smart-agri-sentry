@@ -56,7 +56,9 @@ class WebRemoteNode(Node):
             return False
         req = SetBool.Request()
         req.data = auto
-        self.mode_srv.call_async(req)
+        future = self.mode_srv.call_async(req)
+        future.add_done_callback(
+            lambda f: self._on_mode_response(f, auto))
         with self.lock:
             self.mode = 'AUTO' if auto else 'MANUAL'
             if not auto:
@@ -65,6 +67,20 @@ class WebRemoteNode(Node):
                 self.last_cmd_time = time.time()
         self.get_logger().info(f"Switched to {self.mode}")
         return True
+
+    def _on_mode_response(self, future, auto: bool):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info(
+                    f"/set_auto_mode {'AUTO' if auto else 'MANUAL'} accepted: "
+                    f"{response.message}")
+            else:
+                self.get_logger().warn(
+                    f"/set_auto_mode {'AUTO' if auto else 'MANUAL'} rejected: "
+                    f"{response.message}")
+        except Exception as e:
+            self.get_logger().error(f"/set_auto_mode call failed: {e}")
 
     def set_velocity(self, linear: float, angular: float):
         linear = max(-self.max_linear, min(self.max_linear, linear))
@@ -78,13 +94,26 @@ class WebRemoteNode(Node):
         if self.mode_srv.service_is_ready():
             req = SetBool.Request()
             req.data = False
-            self.mode_srv.call_async(req)
+            future = self.mode_srv.call_async(req)
+            future.add_done_callback(self._on_stop_response)
         with self.lock:
             self.mode = 'MANUAL'
             self.linear = 0.0
             self.angular = 0.0
             self.last_cmd_time = time.time()
         self.get_logger().warn('EMERGENCY STOP triggered')
+
+    def _on_stop_response(self, future):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info(
+                    f"/set_auto_mode stop accepted: {response.message}")
+            else:
+                self.get_logger().warn(
+                    f"/set_auto_mode stop rejected: {response.message}")
+        except Exception as e:
+            self.get_logger().error(f"/set_auto_mode stop call failed: {e}")
 
     def get_status(self):
         with self.lock:

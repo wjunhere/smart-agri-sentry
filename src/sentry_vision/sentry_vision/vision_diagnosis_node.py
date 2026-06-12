@@ -5,27 +5,9 @@ from sentry_interfaces.msg import Diagnosis
 from cv_bridge import CvBridge
 import numpy as np
 import tflite_runtime.interpreter as tflite
-import os
 import cv2
 
-
-# 10-class tomato disease labels
-TOMATO_LABELS = [
-    'bacterial_spot',
-    'early_blight',
-    'healthy',
-    'late_blight',
-    'leaf_mold',
-    'septoria_leaf_spot',
-    'spider_mites_two-spotted_spider_mite',
-    'target_spot',
-    'tomato_mosaic_virus',
-    'tomato_yellow_leaf_curl_virus',
-]
-
-LABEL_MAP = {
-    'tomato': TOMATO_LABELS,
-}
+from .diagnosis_utils import get_labels, resolve_model_path
 
 
 class VisionDiagnosisNode(Node):
@@ -39,22 +21,8 @@ class VisionDiagnosisNode(Node):
         self.input_size = self.get_parameter('input_size').value
         model_path = self.get_parameter('model_path').value
 
-        # Resolve model path: explicit > auto-pattern > fallback
-        if not model_path:
-            model_path = f'models/{self.crop_type}_mobilenetv2_int8.tflite'
-        if not os.path.isabs(model_path):
-            ws = os.environ.get('COLCON_PREFIX_PATH', os.getcwd())
-            candidates = [
-                os.path.join(ws, '..', '..', model_path),
-                os.path.join(ws, model_path),
-                model_path,
-            ]
-            for c in candidates:
-                if os.path.exists(c):
-                    model_path = c
-                    break
-
-        self.labels = LABEL_MAP.get(self.crop_type, TOMATO_LABELS)
+        model_path = resolve_model_path(self.crop_type, model_path, self.input_size)
+        self.labels = get_labels(self.crop_type)
 
         self.get_logger().info(f'Loading model: {model_path}')
         self.interpreter = tflite.Interpreter(model_path=model_path)

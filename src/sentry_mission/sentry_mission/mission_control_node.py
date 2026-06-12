@@ -304,13 +304,14 @@ class MissionControlNode(Node):
         elif self.state == STATE_MANUAL:
             status.state = STATE_MANUAL
             status.current_action = 'manual control'
-            # Do not publish cmd_vel in MANUAL mode
-            # Web remote handles /cmd_vel directly
-            return
+            # Do not publish cmd_vel in MANUAL mode;
+            # web remote handles /cmd_vel directly.
 
         status.progress = self._compute_progress()
-        self.pub_cmd.publish(cmd)
         self.pub_status.publish(status)
+        # Only publish cmd_vel when not in MANUAL mode
+        if self.state != STATE_MANUAL:
+            self.pub_cmd.publish(cmd)
 
     def _transition(self, new_state: str, now: float = None):
         if now is None:

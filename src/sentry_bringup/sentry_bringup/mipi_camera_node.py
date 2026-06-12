@@ -16,6 +16,9 @@ import numpy as np
 import sys
 
 
+DEFAULT_IMAGE_TOPIC = '/sentry/camera/image_raw'
+
+
 class MipiCameraNode(Node):
     def __init__(self):
         super().__init__('mipi_camera_node')
@@ -91,7 +94,7 @@ class MipiCameraNode(Node):
         self.get_logger().info('MIPI camera opened successfully')
 
         self.bridge = CvBridge()
-        self.pub = self.create_publisher(Image, '/camera/image_raw', 10)
+        self.pub = self.create_publisher(Image, DEFAULT_IMAGE_TOPIC, 10)
 
         # Timer drives capture loop at target fps
         timer_period = 1.0 / self.fps
