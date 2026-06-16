@@ -75,27 +75,37 @@ def _make_servo(cfg, name):
     )
 
 
-def _getch(timeout=0.05):
-    fd = sys.stdin.fileno()
+def _set_raw_mode(fd):
+    """Switch stdin to cbreak mode once for the whole session."""
     old = termios.tcgetattr(fd)
-    # Allow more time for the rest of an escape sequence to arrive.
+    tty.setcbreak(fd)
+    return old
+
+
+def _restore_mode(fd, old):
+    """Restore original terminal settings."""
+    termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _getch(fd, timeout=None):
+    """Read one key or a full arrow-key escape sequence from stdin.
+
+    Blocks until input arrives when timeout is None, which avoids the
+    polling delay that makes held-down keys feel stuttering.
+    """
     esc_timeout = 0.5
-    try:
-        tty.setcbreak(fd)
-        if not select.select([sys.stdin], [], [], timeout)[0]:
-            return None
-        ch = sys.stdin.read(1)
-        if ch != '\x1b':
-            return ch
-        # ESC pressed; try to read the rest of an escape sequence atomically.
-        if select.select([sys.stdin], [], [], esc_timeout)[0]:
-            ch += sys.stdin.read(1)
-        if len(ch) == 2 and ch[1] == '[':
-            if select.select([sys.stdin], [], [], esc_timeout)[0]:
-                ch += sys.stdin.read(1)
+    if not select.select([sys.stdin], [], [], timeout)[0]:
+        return None
+    ch = os.read(fd, 1).decode('utf-8', errors='replace')
+    if ch != '\x1b':
         return ch
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    # ESC pressed; try to read the rest of an escape sequence atomically.
+    if select.select([sys.stdin], [], [], esc_timeout)[0]:
+        ch += os.read(fd, 1).decode('utf-8', errors='replace')
+    if len(ch) == 2 and ch[1] == '[':
+        if select.select([sys.stdin], [], [], esc_timeout)[0]:
+            ch += os.read(fd, 1).decode('utf-8', errors='replace')
+    return ch
 
 
 def main():
@@ -131,9 +141,12 @@ def main():
             duty = servo.angle_to_duty_ns(servo.last_angle)
             print(f'{name}: angle={servo.last_angle}, duty_ns={duty}')
 
+    fd = sys.stdin.fileno()
+    old_term = _set_raw_mode(fd)
+
     try:
         while True:
-            ch = _getch()
+            ch = _getch(fd)
             if ch is None:
                 continue
             if args.verbose:
@@ -165,6 +178,7 @@ def main():
             elif ch.lower() == 'q' or ch == '\x03':
                 break
     finally:
+        _restore_mode(fd, old_term)
         yaw.disable()
         pitch.disable()
         print('Servos disabled.')
