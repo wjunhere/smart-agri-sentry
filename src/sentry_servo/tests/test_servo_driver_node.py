@@ -16,7 +16,9 @@ def ros_context():
 @pytest.fixture
 def node(ros_context):
     with patch('sentry_servo.servo_driver_node.Servo') as MockServo:
-        MockServo.return_value = MagicMock()
+        yaw_mock = MagicMock()
+        pitch_mock = MagicMock()
+        MockServo.side_effect = [yaw_mock, pitch_mock]
         n = ServoDriverNode()
         yield n
         n.destroy_node()
@@ -35,8 +37,10 @@ def test_servo_cmd_sets_pitch_and_yaw(node):
 
 def test_initial_angles_applied():
     with patch('sentry_servo.servo_driver_node.Servo') as MockServo:
-        mock = MagicMock()
-        MockServo.return_value = mock
+        yaw_mock = MagicMock()
+        pitch_mock = MagicMock()
+        MockServo.side_effect = [yaw_mock, pitch_mock]
         node = ServoDriverNode()
-        assert mock.set_angle.call_count == 2
+        yaw_mock.set_angle.assert_called_once()
+        pitch_mock.set_angle.assert_called_once()
         node.destroy_node()
