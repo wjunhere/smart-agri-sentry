@@ -93,6 +93,9 @@ def main():
     parser.add_argument(
         '--config', default='config/servo_config.yaml',
         help='Path to servo_config.yaml')
+    parser.add_argument(
+        '--verbose', '-v', action='store_true',
+        help='Print key codes and servo angles for debugging')
     args = parser.parse_args()
 
     cfg = _merge_config(_load_config(args.config))
@@ -106,28 +109,47 @@ def main():
     yaw.set_angle(yaw_cfg['initial_angle'])
     pitch.set_angle(pitch_cfg['initial_angle'])
 
+    if args.verbose:
+        print(f'Initial: yaw={yaw.last_angle}, pitch={pitch.last_angle}')
+        print(f'PWM paths: {yaw._path}, {pitch._path}')
+
     print('Controls: ←/→ yaw  ↑/↓ pitch  r=reset  q/ESC=quit')
+
+    def _log_servo(name, servo):
+        if args.verbose:
+            duty = servo.angle_to_duty_ns(servo.last_angle)
+            print(f'{name}: angle={servo.last_angle}, duty_ns={duty}')
 
     try:
         while True:
             ch = _getch()
             if ch is None:
                 continue
+            if args.verbose:
+                print(f'key: {ch!r} (ord={ord(ch)})')
             if ch == '\x1b':
                 bracket = _getch(0.05)
                 if bracket == '[':
                     key = _getch(0.05)
+                    if args.verbose:
+                        print(f'arrow key: {key!r}')
                     if key == 'C':
                         yaw.set_angle(yaw.last_angle + yaw_cfg['step_deg'])
+                        _log_servo('yaw', yaw)
                     elif key == 'D':
                         yaw.set_angle(yaw.last_angle - yaw_cfg['step_deg'])
+                        _log_servo('yaw', yaw)
                     elif key == 'A':
                         pitch.set_angle(pitch.last_angle + pitch_cfg['step_deg'])
+                        _log_servo('pitch', pitch)
                     elif key == 'B':
                         pitch.set_angle(pitch.last_angle - pitch_cfg['step_deg'])
+                        _log_servo('pitch', pitch)
             elif ch.lower() == 'r':
                 yaw.set_angle(yaw_cfg['initial_angle'])
                 pitch.set_angle(pitch_cfg['initial_angle'])
+                _log_servo('yaw', yaw)
+                _log_servo('pitch', pitch)
             elif ch.lower() == 'q' or ch == '\x03':
                 break
     finally:
