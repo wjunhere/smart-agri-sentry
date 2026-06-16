@@ -1,6 +1,4 @@
-import pytest
-
-from sentry_servo.servo_driver import Servo, ServoError
+from sentry_servo.servo_driver import Servo
 
 
 def test_angle_to_duty_ns_at_limits():
