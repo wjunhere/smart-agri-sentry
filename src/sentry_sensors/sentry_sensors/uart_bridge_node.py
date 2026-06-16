@@ -118,12 +118,14 @@ def decode_chassis_frame(frame: bytes):
 
 
 class UartBridgeNode(Node):
-    def __init__(self):
-        super().__init__('uart_bridge_node')
+    def __init__(self, **kwargs):
+        super().__init__('uart_bridge_node', **kwargs)
         self.declare_parameter('uart_port', '/dev/ttyS2')
         self.declare_parameter('baudrate', 115200)
+        self.declare_parameter('forward_servo_cmd', False)
         port = self.get_parameter('uart_port').value
         baud = self.get_parameter('baudrate').value
+        forward_servo = self.get_parameter('forward_servo_cmd').value
 
         try:
             self.ser = serial.Serial(port, baud, timeout=0.01)
@@ -142,8 +144,13 @@ class UartBridgeNode(Node):
 
         self.sub_cmd_vel = self.create_subscription(
             Twist, '/cmd_vel', self.on_cmd_vel, 10)
-        self.sub_servo = self.create_subscription(
-            ServoCmd, '/sentry/servo_cmd', self.on_servo, 10)
+        if forward_servo:
+            self.sub_servo = self.create_subscription(
+                ServoCmd, '/sentry/servo_cmd', self.on_servo, 10)
+            self.get_logger().info('ServoCmd forwarding to STM32 enabled')
+        else:
+            self.get_logger().info(
+                'ServoCmd forwarding disabled; assuming direct RDK X5 PWM')
 
         self.timer_rx = self.create_timer(0.01, self.rx_tick)
         self.rx_buf = bytearray()

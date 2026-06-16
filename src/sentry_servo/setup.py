@@ -22,6 +22,7 @@ setup(
     entry_points={
         'console_scripts': [
             'servo_keyboard = sentry_servo.servo_keyboard:main',
+            'servo_keyboard_node = sentry_servo.servo_keyboard_node:main',
             'servo_driver_node = sentry_servo.servo_driver_node:main',
         ],
     },

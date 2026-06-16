@@ -27,6 +27,9 @@ def generate_launch_description():
     nav2_config = os.path.join(mission_pkg, 'config', 'nav2_no_map.yaml')
     waypoints_config = os.path.join(mission_pkg, 'config', 'waypoints.yaml')
 
+    servo_config = os.path.join(
+        get_package_share_directory('sentry_servo'), 'config', 'servo_config.yaml')
+
     return LaunchDescription([
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
@@ -67,7 +70,20 @@ def generate_launch_description():
             package='sentry_sensors',
             executable='uart_bridge_node',
             name='uart_bridge_node',
-            parameters=[{'uart_port': '/dev/ttyS2', 'baudrate': 115200}],
+            parameters=[{
+                'uart_port': '/dev/ttyS2',
+                'baudrate': 115200,
+                'forward_servo_cmd': False,
+            }],
+            output='screen',
+        ),
+
+        # Direct RDK X5 PWM servo driver
+        Node(
+            package='sentry_servo',
+            executable='servo_driver_node',
+            name='servo_driver_node',
+            parameters=[{'config_path': servo_config}],
             output='screen',
         ),
 
