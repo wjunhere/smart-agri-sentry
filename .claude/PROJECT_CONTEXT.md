@@ -1,13 +1,25 @@
 # 智农哨兵 - 项目上下文（PROJECT_CONTEXT）
 
 > 文档用途：供 Claude Code / 团队成员快速理解项目约束、接口定义和技术栈
-> 更新日期：2026-06-13
+> 更新日期：2026-06-16
 > 适用场景：嵌入式比赛项目，原型样机阶段
 > **架构版本：v2.1 导航增强 + 事件驱动巡检**
 
 ---
 
 ## 版本变更记录
+
+### v2.1 → 本次更新（2026-06-16）
+1. **RDK X5 直接 PWM 舵机驱动**：新增 `sentry_servo` 包
+   - `servo_driver.py`：Linux sysfs PWM 驱动，支持 0–180°、500–2500 µs、50 Hz
+   - `servo_driver_node`：订阅 `/sentry/servo_cmd`，直接驱动 RDK X5 pwmchip0/pwm0（yaw）和 pwm1（pitch）
+   - `servo_keyboard`：独立键盘脚本，无需 ROS2 依赖，用于快速调试
+   - `servo_keyboard_node`：ROS2 节点版键盘控制，发布 `/sentry/servo_cmd`，可融入任务流程
+   - 配置文件 `config/servo_config.yaml`：yaw 0–180°、pitch 30–150°、初始 90°/90°、步进 5°
+2. **舵机控制接入任务流程**：
+   - `sentry_v2.launch.py` 自动启动 `servo_driver_node`
+   - `uart_bridge_node` 新增 `forward_servo_cmd` 参数（默认 `False`），避免 STM32 与 RDK X5 同时驱动舵机冲突
+3. **键盘控制验证完成**：板端验证方向键可连续匀速控制云台，无卡顿
 
 ### v2.1 → 本次更新（2026-06-13）
 1. **Phase 2 节点实现完成**：forecast / advisory / data_logger 三个 ROS2 Python 包已落地并上板验证
@@ -77,7 +89,7 @@
 | **电机驱动** | TB6612FNG（待验证） | 持续电流1.2A；若电机电流过大，更换为BTN7971B |
 | **编码器** | 1000线光电编码器 ×2 | 接STM32定时器正交编码器输入 |
 | **底盘** | 履带式（采购成品） | 无机械加工条件 |
-| **云台** | 2-DOF舵机云台（采购成品） | 控制摄像头俯仰/偏航 |
+| **云台** | 2-DOF舵机云台（采购成品） | 控制摄像头俯仰/偏航；yaw→Pin32(pwm0), pitch→Pin33(pwm1) |
 | **运行速度** | **0.5 m/s（典型工况）** | 巡航速度 |
 
 ### 2.2 传感器与连接方式
@@ -134,6 +146,8 @@
 | `mission_control_node` | RDK X5 | 100 ms | 10 Hz | 状态机驱动，发布cmd_vel |
 | `data_logger_node` | RDK X5 | 事件 | - | 选择性bag录制 |
 | `sentry_lidar` | RDK X5 | 10 Hz | - | STL19P 激光雷达驱动，发布 LaserScan + ObstacleInfo |
+| `servo_driver_node` | RDK X5 | 事件 | - | 订阅 `/sentry/servo_cmd`，直接输出 PWM 驱动云台 |
+| `servo_keyboard_node` | RDK X5 | 事件 | - | 键盘输入发布 `/sentry/servo_cmd`，用于手动调试 |
 
 ### 3.2 时空误差分析（基于 0.5 m/s）
 
@@ -254,6 +268,11 @@
 │         │   (Flask HTTP, AUTO/MANUAL + 急停)      │                 │
 │         └──────────────────────────────────────────┘                 │
 │         ┌──────────────────────────────────────────┐                 │
+│         │         servo_driver_node                │                 │
+│         │   (RDK X5 PWM → yaw/pitch)              │                 │
+│         │   ← /sentry/servo_cmd                   │                 │
+│         └──────────────────────────────────────────┘                 │
+│         ┌──────────────────────────────────────────┐                 │
 │         │         data_logger_node                 │                 │
 │         │   (ros2 bag, 7天循环, CRITICAL永久保留)  │                 │
 │         └──────────────────────────────────────────┘                 │
@@ -281,7 +300,7 @@
 | `0x01` | STM32→RDK | **传感器汇总帧** | 空气温湿度CO₂ + 土壤电导率/氮磷钾/温湿度/pH |
 | `0x03` | STM32→RDK | **底盘状态帧** | 左轮速、右轮速、电池电压、报警位、编码器脉冲(L/R)、时间戳 |
 | `0x81` | RDK→STM32 | **运动控制帧** | 左轮目标速、右轮目标速（mm/s） |
-| `0x82` | RDK→STM32 | **云台控制帧** | 舵机俯仰角、偏航角（角度值） |
+| `0x82` | RDK→STM32 | **云台控制帧**（可选） | 舵机俯仰角、偏航角（角度值）；仅当 `uart_bridge_node.forward_servo_cmd=True` 时转发 |
 | `0x83` | RDK→STM32 | **模式切换帧** | 0x00=待机, 0x01=遥控, 0x02=自动巡航 |
 
 #### 传感器汇总帧（TYPE=0x01）载荷定义（v2.0 不变）
@@ -366,7 +385,7 @@ typedef struct {
 | 话题名 | 类型 | 发布者 | 订阅者 | 频率 | 说明 |
 |--------|------|--------|--------|------|------|
 | `/cmd_vel` | `geometry_msgs/Twist` | Nav2 / mission_control / web_remote | uart_bridge_node | 10-20Hz | 统一底盘速度指令（所有来源统一到此 topic） |
-| `/sentry/servo_cmd` | `ServoCmd` | mission_control | uart_bridge_node | 事件 | 云台角度指令 |
+| `/sentry/servo_cmd` | `ServoCmd` | servo_keyboard_node / (未来 mission_control) | servo_driver_node / uart_bridge_node（可选） | 事件 | 云台角度指令；RDK X5 直接 PWM 驱动时 `uart_bridge_node.forward_servo_cmd=False` |
 | `/mission/status` | `MissionStatus` | mission_control | data_logger | 10Hz | 巡检状态机状态 |
 | `/wheel/odom` | `nav_msgs/Odometry` | wheel_odom_node | EKF, Nav2 | 20Hz | 编码器里程计（dead reckoning） |
 | `/odom` | `nav_msgs/Odometry` | ekf_filter | Nav2, TF | 30Hz | EKF 融合后的里程计 |
@@ -486,6 +505,7 @@ smart-agri-sentry/
 │   ├── sentry_advisory/               # advisory_node + rule_engine
 │   ├── sentry_mission/                # mission_control_node + web_remote_node + wheel_odom_node
 │   ├── sentry_sensors/                # env_bridge + uart_bridge + imu
+│   ├── sentry_servo/                  # servo_driver_node + servo_keyboard(_node)，RDK X5 直接 PWM 云台驱动
 │   ├── sentry_data_logger/            # data_logger_node（rosbag2 录制 + CRITICAL 快照）
 │   └── sentry_hardware/               # 固定节点固件
 │       └── fixed_env_node/
@@ -572,6 +592,22 @@ smart-agri-sentry/
 - **前方扇区预处理**：提取 `[360°-half, 360°] ∪ [0, half]` 范围内的点，计算 `front_min_distance`、`front_avg_distance`、`obstacle_detected`
 - **驱动协议**：LDLiDAR 私有协议，定长数据包（header `0x54`，ver_len `0x2C`，每包12点），CRC8 校验
 - **支持模式**：串口模式（默认）+ 网络模式（UDP/TCP，预留）
+
+### 云台舵机（2-DOF，RDK X5 直接 PWM）
+- **硬件**：HiWonder LFD-01M 或同类 180° 舵机 ×2
+- **接线**：
+  - yaw（水平）→ RDK X5 40pin **Pin 32** → `/sys/class/pwm/pwmchip0/pwm0`
+  - pitch（俯仰）→ RDK X5 40pin **Pin 33** → `/sys/class/pwm/pwmchip0/pwm1`
+- **PWM 参数**：50 Hz，500–2500 µs 脉宽，对应 0–180°
+- **ROS2 包**：`sentry_servo`
+  - `servo_driver_node`：订阅 `/sentry/servo_cmd`，写 sysfs PWM
+  - `servo_keyboard_node`：键盘 → `/sentry/servo_cmd`
+  - `servo_keyboard`：独立脚本，不依赖 ROS2
+- **配置**：`src/sentry_servo/config/servo_config.yaml`
+  - yaw：channel 0，0–180°，初始 90°，步进 5°
+  - pitch：channel 1，30–150°，初始 90°，步进 5°
+- **权限**：用户需属于 `gpio` 组；导出后的 sysfs 文件为 `root:gpio rw-rw-r--`
+- **避免冲突**：`uart_bridge_node` 默认 `forward_servo_cmd=False`，不再把 `/sentry/servo_cmd` 转发给 STM32
 
 ### GPS
 - 输出频率：1 Hz（GGA + RMC）
