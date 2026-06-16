@@ -78,6 +78,8 @@ def _make_servo(cfg, name):
 def _getch(timeout=0.05):
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
+    # Allow more time for the rest of an escape sequence to arrive.
+    esc_timeout = 0.5
     try:
         tty.setcbreak(fd)
         if not select.select([sys.stdin], [], [], timeout)[0]:
@@ -86,10 +88,10 @@ def _getch(timeout=0.05):
         if ch != '\x1b':
             return ch
         # ESC pressed; try to read the rest of an escape sequence atomically.
-        if select.select([sys.stdin], [], [], timeout)[0]:
+        if select.select([sys.stdin], [], [], esc_timeout)[0]:
             ch += sys.stdin.read(1)
         if len(ch) == 2 and ch[1] == '[':
-            if select.select([sys.stdin], [], [], timeout)[0]:
+            if select.select([sys.stdin], [], [], esc_timeout)[0]:
                 ch += sys.stdin.read(1)
         return ch
     finally:
