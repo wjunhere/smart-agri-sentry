@@ -80,9 +80,18 @@ def _getch(timeout=0.05):
     old = termios.tcgetattr(fd)
     try:
         tty.setcbreak(fd)
+        if not select.select([sys.stdin], [], [], timeout)[0]:
+            return None
+        ch = sys.stdin.read(1)
+        if ch != '\x1b':
+            return ch
+        # ESC pressed; try to read the rest of an escape sequence atomically.
         if select.select([sys.stdin], [], [], timeout)[0]:
-            return sys.stdin.read(1)
-        return None
+            ch += sys.stdin.read(1)
+        if len(ch) == 2 and ch[1] == '[':
+            if select.select([sys.stdin], [], [], timeout)[0]:
+                ch += sys.stdin.read(1)
+        return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -126,25 +135,26 @@ def main():
             if ch is None:
                 continue
             if args.verbose:
-                print(f'key: {ch!r} (ord={ord(ch)})')
-            if ch == '\x1b':
-                bracket = _getch(0.05)
-                if bracket == '[':
-                    key = _getch(0.05)
-                    if args.verbose:
-                        print(f'arrow key: {key!r}')
-                    if key == 'C':
-                        yaw.set_angle(yaw.last_angle + yaw_cfg['step_deg'])
-                        _log_servo('yaw', yaw)
-                    elif key == 'D':
-                        yaw.set_angle(yaw.last_angle - yaw_cfg['step_deg'])
-                        _log_servo('yaw', yaw)
-                    elif key == 'A':
-                        pitch.set_angle(pitch.last_angle + pitch_cfg['step_deg'])
-                        _log_servo('pitch', pitch)
-                    elif key == 'B':
-                        pitch.set_angle(pitch.last_angle - pitch_cfg['step_deg'])
-                        _log_servo('pitch', pitch)
+                if len(ch) == 1:
+                    print(f'key: {ch!r} (ord={ord(ch)})')
+                else:
+                    print(f'key: {ch!r} (ords={list(map(ord, ch))})')
+            if ch.startswith('\x1b[') and len(ch) == 3:
+                key = ch[2]
+                if args.verbose:
+                    print(f'arrow key: {key!r}')
+                if key == 'C':
+                    yaw.set_angle(yaw.last_angle + yaw_cfg['step_deg'])
+                    _log_servo('yaw', yaw)
+                elif key == 'D':
+                    yaw.set_angle(yaw.last_angle - yaw_cfg['step_deg'])
+                    _log_servo('yaw', yaw)
+                elif key == 'A':
+                    pitch.set_angle(pitch.last_angle + pitch_cfg['step_deg'])
+                    _log_servo('pitch', pitch)
+                elif key == 'B':
+                    pitch.set_angle(pitch.last_angle - pitch_cfg['step_deg'])
+                    _log_servo('pitch', pitch)
             elif ch.lower() == 'r':
                 yaw.set_angle(yaw_cfg['initial_angle'])
                 pitch.set_angle(pitch_cfg['initial_angle'])
