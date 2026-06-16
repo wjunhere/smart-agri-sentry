@@ -1,5 +1,6 @@
 import errno
 import os
+import time
 
 
 class ServoError(Exception):
@@ -34,6 +35,11 @@ class Servo:
         try:
             with open(path, 'w') as f:
                 f.write(str(value))
+        except PermissionError as exc:
+            raise ServoError(
+                f'Permission denied writing {value} to {path}. '
+                f'Ensure user is in the "gpio" group '
+                f'(run "newgrp gpio" or log out/in). Original error: {exc}') from exc
         except OSError as exc:
             raise ServoError(
                 f'Failed to write {value} to {path}: {exc}') from exc
@@ -49,10 +55,15 @@ class Servo:
             if exc.errno != errno.EBUSY:
                 raise ServoError(
                     f'Failed to export PWM {self.chip}/{self.channel}: {exc}') from exc
+        time.sleep(0.1)
 
     def enable(self) -> None:
         """Export, set period and enable the PWM channel."""
         self._export()
+        try:
+            self._write('enable', 0)
+        except ServoError:
+            pass
         self._write('period', self.period_ns)
         self._write('duty_cycle', 0)
         self._write('enable', 1)
