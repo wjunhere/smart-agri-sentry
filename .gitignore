@@ -19,6 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.*/
 
 # ROS2
 install/
@@ -40,14 +41,29 @@ Thumbs.db
 .claude/*
 !.claude/PROJECT_CONTEXT.md
 CLAUDE.md
+.agents/*
+AGENTS.md
 
 # Project docs & examples
-docs/
+docs/*
+!docs/ARCHITECTURE.md
+!docs/HARDWARE.md
+!docs/ROS2.md
+!docs/DECISIONS.md
+!docs/TODO.md
+!docs/ISSUES.md
+!docs/SETUP.md
+!docs/superpowers/
+!docs/superpowers/**/
+!docs/requirements/
+!docs/requirements/**/
 example/
 PLAN.md
-!docs/superpowers/
 # openspec
 openspec/
 
 # fix plan
 fix/
+
+#mcp
+.serial_mcp
