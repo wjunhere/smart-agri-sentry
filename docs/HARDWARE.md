@@ -40,7 +40,9 @@
 | **土壤参数** | RS485 三合一 | UART→RS485 | 温度、湿度、EC | 5 min | 根区 10–15 cm |
 | **叶面湿度** | LWS10 | ADC 模拟 | 叶面湿度 | 5 min | 代表性叶片背面 |
 
-**固定节点通信链**：STM32L072 + SX1262 (LoRa) → LoRa 网关 (ESP32-S3 + SX1262) → USB 转串口 → RDK X5 → `env_bridge_node` → `/sensor/environment_fixed`
+**固定节点通信链**：
+- 节点端：STM32F103RCT6 采集传感器 → UART → E22-400TBH-SC 内置 STM32F103CBT6 → SX1262 LoRa 发送
+- 网关端：E22-400TBH-SC（内置 STM32F103CBT6）接收 → UART → RDK X5（USB 转串口）→ `env_bridge_node` → `/sensor/environment_fixed`
 
 ---
 
@@ -133,12 +135,13 @@ typedef struct {
 
 ### 5.2 固定环境节点 ↔ LoRa 网关（LoRa，433 MHz/470 MHz）
 
-**节点端（STM32L072）**：
+**节点端（STM32F103RCT6）**：
+
 - 深度睡眠，每 5 分钟唤醒采集一次
 - 每小时批量发送 12 条记录，或异常时立即上报
 - 数据包格式（JSON 简化）：`{"node_id":"01","t":23.5,"h":78.0,"co2":450,"st":22.1,"sh":65.0,"ec":1.2,"lw":0,"seq":123}`
 
-**网关端（ESP32-S3）**：
+**网关端（STM32F103CBT6）**：
 - 接收 LoRa 数据包，通过 USB 转串口转发给 RDK X5
 - 转发格式：JSON + `\n` 换行分隔
 
@@ -233,11 +236,16 @@ typedef struct {
 
 ## 10. 固定环境节点
 
-- **硬件**：STM32L072 + SX1262 LoRa，低功耗野外版
+- **主控**：STM32F103RCT6（采集传感器、运行低功耗逻辑）
+- **LoRa 模块**：E22-400TBH-SC（内置 STM32F103CBT6，负责 LoRa 收发）
+- **主控 ↔ LoRa 模块**：UART（RCT6 发送数据给模块内置 CBT6，CBT6 通过 SX1262 发出）
 - **传感器**：SHT30（空气温湿）+ SCD40（CO₂）+ RS485 土壤（温湿+EC）+ LWS10（叶面湿度）
 - **采样**：5 分钟周期，深度睡眠
-- **通信**：LoRa → 网关（ESP32-S3）→ USB 串口 → RDK X5
 - **供电**：10 W 太阳能 + 18650×2
+
+**RDK 侧接收链**：
+- 网关端 E22-400TBH-SC（内置 CBT6）接收到 LoRa 数据后，通过 UART 经 USB 转串口发送给 RDK X5
+- RDK X5 上 `env_bridge_node` 解析后发布 `/sensor/environment_fixed`
 
 ---
 
