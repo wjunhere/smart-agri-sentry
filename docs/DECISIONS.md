@@ -1,6 +1,6 @@
 # 技术决策记录
 
-> 更新日期：2026-06-25
+> 更新日期：2026-06-28
 
 ---
 
@@ -17,7 +17,7 @@ v1.0 架构中所有传感器数据经 STM32 转发，存在移动传感器间�
 
 引入三层解耦架构（感知 / 决策 / 控制）和事件驱动巡检：
 
-- 固定环境节点（STM32F103RCT6 + E22-400TBH-SC LoRa）提供 24h 连续环境数据
+- 固定环境节点（STM32F103RCT6 + CJ702 传感器 → E22-400T30S LoRa 发送；E22-400TBH-SC 接收 → USB CDC → RDK X5）提供 24h 连续环境数据
 - 植株检测节点触发停车事件
 - 融合节点由"AI 触发"改为"停车事件触发"，内部持续维护 LWD 窗口
 
@@ -228,23 +228,29 @@ Madgwick 滤波器和 `robot_localization` EKF 都可能发布 `odom → base_li
 
 ---
 
-## ADR-010：数据记录本地优先
+## ADR-011：LoRa 固定环境节点数据聚合与双模帧支持
 
 **状态**：已实施  
-**日期**：2026-06-13
+**日期**：2026-06-28
 
 ### 背景
 
-比赛场地通常无网络，需要本地可靠记录核心数据。
+固定环境节点通过 LoRa 将传感器数据传到 RDK X5。发送端 MCU（STM32F103RCT6）连接 CJ-702 空气传感器（当前）、土壤传感器和叶面温湿度传感器（未来）。需要决定数据聚合位置和帧格式。
 
 ### 决策
 
-- RDK X5 SD 卡本地 `ros2 bag` 选择性录制
-- 7 天循环覆盖
-- CRITICAL 事件前后 5 分钟永久保留到 `records/critical/`
-- InfluxDB + Grafana 仅用于回办公室后离线分析
+1. **MCU 端聚合**：发送端 MCU 在本地把所有传感器数据聚合成一帧后 LoRa 发出，RDK 侧只需解析一帧即可获得完整环境数据。
+2. **统一帧格式**：`AA 55 | device_id | msg_type | payload_len | payload | CRC-8/MAXIM`
+   - `msg_type 0x01` = 聚合环境数据（14 字节 CJ702 仅空气，或 24 字节全传感器）
+   - `msg_type 0xFF` = 错误帧
+3. **独立 lora_bridge_node**：不复用 `uart_bridge_node`，职责分离，LoRa 固定节点与移动底盘 UART 节点解耦。
+4. **扩展 Environment.msg**：新增 `hcho`/`tvoc`/`pm25`/`pm10`/`leaf_temp`/`ec` 字段，把所有关键环境量集中在一条消息里。
+5. **双模兼容**：RDK 侧同时支持 14 字节（当前 CJ702）和 24 字节（未来全传感器）payload，自动适配。
 
 ### 后果
 
-- 离线运行不依赖网络
-- SD 卡容量和写入寿命需关注
+- 代码实现见 `src/sentry_sensors/sentry_sensors/lora_bridge_node.py`
+- 固定节点固件当前仅发送 14 字节空气帧，后续接入土壤/叶面传感器需升级到 24 字节
+- CRC-8/MAXIM 无输入输出反射，与 MCU 端 `lora_frame.c` 保持一致
+- E22 模块必须处于透传模式（Mode 0），接收端固件已修复默认 work_mode 从 2→0
+- 集成测试记录见 `test/stm32_cj702_lora_hal/TESTS.md`

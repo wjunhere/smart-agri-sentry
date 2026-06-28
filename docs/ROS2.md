@@ -1,6 +1,6 @@
 # ROS2 节点与接口
 
-> 更新日期：2026-06-25
+> 更新日期：2026-06-28
 
 ---
 
@@ -50,7 +50,7 @@
   └─────────────┘    └─────────────┘    └─────────────────────────┘
 
   ┌─────────────┐    ┌─────────────────────────┐
-  │ env_bridge_ │    │      imu_node           │
+  │ lora_bridge_ │    │      imu_node           │
   │    node     │    │  → /sensor/imu/data_raw │
   │ → /sensor/  │    │  → /sensor/imu/data     │
   │ environment_│    │      (Madgwick)         │
@@ -76,7 +76,7 @@
 | `/vision/diagnosis` | `Diagnosis` | `vision_diagnosis_node` | `fusion_node` | 2 Hz | 病害分类结果 |
 | `/sensor/environment_mobile` | `Environment` | `uart_bridge_node` | `fusion_node` | 1 Hz | 移动传感器环境数据 |
 | `/sensor/soil_nutrition` | `SoilNutrition` | `uart_bridge_node` | `data_logger` | 1 Hz | 土壤营养分离（N/P/K/pH/EC） |
-| `/sensor/environment_fixed` | `Environment` | `env_bridge_node` | `fusion_node` | 事件 | 固定环境节点数据 |
+| `/sensor/environment_fixed` | `Environment` | `lora_bridge_node` | `fusion_node` | 1/60 Hz | 固定 LoRa 环境节点数据（每 60 秒一帧） |
 | `/scan` | `sensor_msgs/LaserScan` | `sentry_lidar` | Nav2/避障 | 10 Hz | 激光雷达点云 |
 | `/lidar/obstacle_info` | `ObstacleInfo` | `sentry_lidar` | `fusion_node` | 10 Hz | 前方扇区障碍物简化信息 |
 | `/sensor/imu/data_raw` | `sensor_msgs/Imu` | `imu_node` | Madgwick | 100 Hz | IMU 原始数据 |
@@ -153,14 +153,19 @@ float32 area_ratio            # 叶片占画面比例
 
 ```yaml
 std_msgs/Header header
-float32 temperature           # 空气温度 °C
-float32 humidity              # 空气湿度 %RH
-float32 soil_temperature      # 土壤温度 °C
-float32 soil_humidity         # 土壤湿度 %
-float32 soil_ec               # 土壤电导率 dS/m
-float32 leaf_wetness          # 叶面湿度 %
-float32 co2                   # CO₂ ppm
-string data_source            # MOBILE / FIXED_NODE_01 / FIXED_NODE_02 / ...
+float32 air_temp               # 空气温度 °C
+float32 air_humidity           # 空气湿度 %RH
+float32 air_co2                # CO₂ ppm
+float32 soil_temp              # 土壤温度 °C
+float32 soil_humidity          # 土壤湿度 %RH
+float32 leaf_wetness           # 叶面湿度 %RH
+float32 hcho                   # 甲醛 raw（CJ-702）
+float32 tvoc                   # TVOC ppb（CJ-702）
+float32 pm25                   # PM2.5 μg/m³（CJ-702）
+float32 pm10                   # PM10 μg/m³（CJ-702）
+float32 leaf_temp              # 叶面温度 °C
+float32 ec                     # 土壤电导率
+string data_source             # MOBILE / FIXED_LORA / FIXED_NODE_01 / ...
 ```
 
 ### 4.4 SoilNutrition（土壤营养）

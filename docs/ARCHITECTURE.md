@@ -1,7 +1,7 @@
 # 系统架构
 
 > 架构版本：v2.1 导航增强 + 事件驱动巡检  
-> 更新日期：2026-06-25
+> 更新日期：2026-06-28
 
 ---
 
@@ -24,7 +24,7 @@
 
 | 层级 | 职责 | 关键节点/组件 |
 |---|---|---|
-| **感知层** | 视觉推理、移动/固定环境传感、底盘状态、LiDAR/IMU | `camera_node`, `plant_detector_node`, `vision_diagnosis_node`, `uart_bridge_node`, `env_bridge_node`, `sentry_lidar`, `imu_node` |
+| **感知层** | 视觉推理、移动/固定环境传感、底盘状态、LiDAR/IMU | `camera_node`, `plant_detector_node`, `vision_diagnosis_node`, `uart_bridge_node`, `lora_bridge_node`, `sentry_lidar`, `imu_node` |
 | **决策层** | 实时融合、趋势预测、农艺建议 | `fusion_node`, `forecast_node`, `advisory_node` |
 | **控制层** | 巡检状态机、底盘/云台控制、数据记录 | `mission_control_node`, `wheel_odom_node`, `web_remote_node`, `servo_driver_node`, `data_logger_node`, Nav2 |
 
@@ -37,7 +37,7 @@
 │  ├─ uart_bridge_node     → /sensor/environment_mobile      │
 │  │                       → /sensor/soil_nutrition          │
 │  │                       → /sentry/chassis/status          │
-│  ├─ env_bridge_node      → /sensor/environment_fixed       │
+│  ├─ lora_bridge_node     → /sensor/environment_fixed       │
 │  ├─ sentry_lidar         → /scan + /lidar/obstacle_info    │
 │  └─ imu_node             → /sensor/imu/data_raw/data       │
 └──────────────────────────┬──────────────────────────────────┘
@@ -78,7 +78,7 @@ smart-agri-sentry/
 │   ├── sentry_forecast/       # forecast_node
 │   ├── sentry_advisory/       # advisory_node + rule_engine
 │   ├── sentry_mission/        # mission_control + web_remote + wheel_odom
-│   ├── sentry_sensors/        # env_bridge + uart_bridge + imu
+│   ├── sentry_sensors/        # lora_bridge + uart_bridge + imu
 │   ├── sentry_servo/          # RDK X5 直接 PWM 云台驱动
 │   └── sentry_data_logger/    # rosbag2 录制 + CRITICAL 快照
 ├── firmware/                  # STM32F407 底盘固件
@@ -138,8 +138,8 @@ smart-agri-sentry/
 │  /sensor/soil_nutrition                                              │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  USB转串口 ← LoRa网关 ← [固定环境节点: STM32F103RCT6+E22-400TBH-SC] │   │
-│  │         env_bridge_node → /sensor/environment_fixed        │   │
+│  │  USB转串口 ← LoRa网关 ← [固定环境节点: STM32F103RCT6+CJ702+E22-400T30S] │
+│  │         lora_bridge_node → /sensor/environment_fixed        │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐   │
@@ -325,7 +325,7 @@ else:             confidence = base_confidence
 |---|---|---|
 | Phase 1 | 消息接口 + plant_detector + vision_diagnosis + fusion + mission_control | 已完成 |
 | Phase 2 | forecast + advisory + data_logger | 已完成 |
-| Phase 3 | 固定环境节点硬件固件 + env_bridge | 待实现（硬件可先用模拟数据跑通逻辑） |
+| Phase 3 | 固定环境节点 LoRa 通信 + lora_bridge_node | 已完成（2026-06-28，CJ702 空气传感器端到端验证通过，土壤/叶面待接入） |
 | Phase 4 | 外部天气 + Web 前端 + InfluxDB 离线分析 | 后续完善 |
 | **新增目标** | LiDAR SLAM/mapping 替代 mapless Nav2 | 已决策，待实现 |
 
