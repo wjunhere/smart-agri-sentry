@@ -109,9 +109,14 @@ class LoraBridgeNode(Node):
         try:
             if self.ser.in_waiting:
                 self.rx_buf.extend(self.ser.read(self.ser.in_waiting))
-        except serial.SerialException as e:
+        except (serial.SerialException, OSError) as e:
             self.get_logger().error(f'LoRa UART read error: {e}')
             self.rx_buf.clear()
+            try:
+                self.ser.close()
+            except Exception:
+                pass
+            self.ser = None
             return
 
         while True:
