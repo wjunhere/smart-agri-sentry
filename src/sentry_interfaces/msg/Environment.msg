@@ -5,4 +5,10 @@ float32 air_co2
 float32 soil_temp
 float32 soil_humidity
 float32 leaf_wetness
+float32 hcho
+float32 tvoc
+float32 pm25
+float32 pm10
+float32 leaf_temp
+float32 ec
 string data_source
