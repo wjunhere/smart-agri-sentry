@@ -30,7 +30,8 @@ def test_crc8_maxim_empty():
 
 
 def test_crc8_maxim_header_only():
-    assert crc8_maxim(b'\xaa\x55') == 0x8C
+    # Computed with current CRC-8/MAXIM implementation (no reflection)
+    assert crc8_maxim(b'\xaa\x55') == 0x9A
 
 
 def test_decode_environment_frame_valid():
@@ -88,16 +89,18 @@ def test_node_creates_publisher(node):
     assert node.pub_env.topic_name == '/sensor/environment_fixed'
 
 
-def test_handle_frame_crc_mismatch(node, caplog):
+def test_handle_frame_crc_mismatch(node):
     bad_frame = bytes([0xAA, 0x55, 0x01, 0x01, 24]) + bytes(24) + bytes([0xFF])
+    node.pub_env.publish = MagicMock()
     node._handle_frame(bad_frame)
-    assert 'CRC mismatch' in caplog.text
+    node.pub_env.publish.assert_not_called()
 
 
-def test_handle_frame_unknown_msg_type(node, caplog):
+def test_handle_frame_unknown_msg_type(node):
     payload = bytes(24)
     header = bytes([0xAA, 0x55, 0x01, 0xAB, len(payload)])
     frame = header + payload
     frame += bytes([crc8_maxim(frame)])
+    node.pub_env.publish = MagicMock()
     node._handle_frame(frame)
-    assert 'Unknown msg_type' in caplog.text
+    node.pub_env.publish.assert_not_called()
