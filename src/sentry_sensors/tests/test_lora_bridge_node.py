@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 from sentry_sensors.lora_bridge_node import (
     crc8_maxim,
     decode_environment_frame,
+    decode_cj702_frame,
     LoraBridgeNode,
 )
 
@@ -75,6 +76,65 @@ def test_decode_environment_frame_negative_temperatures():
 
 def test_decode_environment_frame_wrong_length():
     assert decode_environment_frame(b'\xaa\x55\x01\x01\x00\x00') is None
+
+
+def _build_cj702_frame(values):
+    """Build a 14-byte CJ702 frame with header, payload, CRC."""
+    payload = struct.pack('>HHHHHHH', *values)
+    header = bytes([0xAA, 0x55, 0x01, 0x01, len(payload)])
+    frame = header + payload
+    return frame + bytes([crc8_maxim(frame)])
+
+
+def test_decode_cj702_frame_valid():
+    frame = _build_cj702_frame([
+        450,   # co2 ppm
+        15,    # hcho raw
+        80,    # tvoc ppb
+        25,    # pm25 ug/m3
+        40,    # pm10 ug/m3
+        2650,  # air_temp 26.5 C
+        5500,  # air_humidity 55.0% RH
+    ])
+    data = decode_cj702_frame(frame)
+    assert data['air_co2'] == 450.0
+    assert data['hcho'] == 15.0
+    assert data['tvoc'] == 80.0
+    assert data['pm25'] == 25.0
+    assert data['pm10'] == 40.0
+    assert data['air_temp'] == 26.5
+    assert data['air_humidity'] == 55.0
+    assert data['soil_temp'] == 0.0
+    assert data['soil_humidity'] == 0.0
+    assert data['ec'] == 0.0
+    assert data['leaf_wetness'] == 0.0
+    assert data['leaf_temp'] == 0.0
+
+
+def test_decode_cj702_frame_negative_temp():
+    frame = _build_cj702_frame([
+        0, 0, 0, 0, 0,
+        0xF63C,  # -25.0 C
+        0,       # humidity
+    ])
+    data = decode_cj702_frame(frame)
+    assert data['air_temp'] == -25.0
+
+
+def test_decode_cj702_frame_wrong_length():
+    assert decode_cj702_frame(b'\xaa\x55\x01\x01\x00\x00') is None
+
+
+def test_handle_frame_cj702(node):
+    """14-byte CJ702 frame should be parsed and published."""
+    frame = _build_cj702_frame([450, 15, 80, 25, 40, 2650, 5500])
+    node.pub_env.publish = MagicMock()
+    node._handle_frame(frame)
+    node.pub_env.publish.assert_called_once()
+    msg = node.pub_env.publish.call_args[0][0]
+    assert msg.air_co2 == 450.0
+    assert msg.soil_temp == 0.0
+    assert msg.data_source == 'FIXED_LORA'
 
 
 @pytest.fixture

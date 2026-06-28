@@ -14,6 +14,7 @@ CRC8_INIT = 0x00
 MSG_TYPE_ENV = 0x01
 MSG_TYPE_ERROR = 0xFF
 PAYLOAD_LEN_ENV = 24
+PAYLOAD_LEN_CJ702 = 14
 
 
 def crc8_maxim(data: bytes) -> int:
@@ -54,6 +55,29 @@ def decode_environment_frame(frame: bytes):
         'ec': float(ec_raw),
         'leaf_wetness': leaf_wetness_raw / 100.0,
         'leaf_temp': _to_int16(leaf_temp_raw) / 100.0,
+    }
+
+
+def decode_cj702_frame(frame: bytes):
+    """Decode a validated CJ702 air-sensor frame (14-byte payload) into a dict."""
+    if len(frame) != 5 + PAYLOAD_LEN_CJ702 + 1:
+        return None
+    payload = frame[5:5 + PAYLOAD_LEN_CJ702]
+    values = struct.unpack('>HHHHHHH', payload)
+    (co2, hcho, tvoc, pm25, pm10, air_temp_raw, air_humidity_raw) = values
+    return {
+        'air_co2': float(co2),
+        'hcho': float(hcho),
+        'tvoc': float(tvoc),
+        'pm25': float(pm25),
+        'pm10': float(pm10),
+        'air_temp': _to_int16(air_temp_raw) / 100.0,
+        'air_humidity': air_humidity_raw / 100.0,
+        'soil_temp': 0.0,
+        'soil_humidity': 0.0,
+        'ec': 0.0,
+        'leaf_wetness': 0.0,
+        'leaf_temp': 0.0,
     }
 
 
@@ -109,11 +133,18 @@ class LoraBridgeNode(Node):
     def _handle_frame(self, frame: bytes):
         msg_type = frame[3]
         payload_len = frame[4]
-        if msg_type == MSG_TYPE_ENV and payload_len == PAYLOAD_LEN_ENV:
+        if msg_type == MSG_TYPE_ENV:
             if crc8_maxim(frame[:-1]) != frame[-1]:
                 self.get_logger().warn('CRC mismatch on environment frame')
                 return
-            data = decode_environment_frame(frame)
+            if payload_len == PAYLOAD_LEN_ENV:
+                data = decode_environment_frame(frame)
+            elif payload_len == PAYLOAD_LEN_CJ702:
+                data = decode_cj702_frame(frame)
+            else:
+                self.get_logger().warn(
+                    f'Unexpected payload length: {payload_len}')
+                return
             if data is None:
                 return
             self._publish_environment(data)
