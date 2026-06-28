@@ -55,3 +55,110 @@ def decode_environment_frame(frame: bytes):
         'leaf_wetness': leaf_wetness_raw / 100.0,
         'leaf_temp': _to_int16(leaf_temp_raw) / 100.0,
     }
+
+
+class LoraBridgeNode(Node):
+    def __init__(self, **kwargs):
+        super().__init__('lora_bridge_node', **kwargs)
+        self.declare_parameter('uart_port', '/dev/ttyACM0')
+        self.declare_parameter('baudrate', 9600)
+        port = self.get_parameter('uart_port').value
+        baud = self.get_parameter('baudrate').value
+
+        try:
+            self.ser = serial.Serial(port, baud, timeout=0.01)
+            self.get_logger().info(f'LoRa UART open: {port} @ {baud}')
+        except serial.SerialException as e:
+            self.get_logger().error(f'Failed to open LoRa UART: {e}')
+            self.ser = None
+
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.pub_env = self.create_publisher(
+            Environment, '/sensor/environment_fixed', qos)
+
+        self.timer_rx = self.create_timer(0.01, self.rx_tick)
+        self.rx_buf = bytearray()
+
+    def rx_tick(self):
+        if self.ser is None or not self.ser.is_open:
+            return
+        try:
+            if self.ser.in_waiting:
+                self.rx_buf.extend(self.ser.read(self.ser.in_waiting))
+        except serial.SerialException as e:
+            self.get_logger().error(f'LoRa UART read error: {e}')
+            self.rx_buf.clear()
+            return
+
+        while True:
+            idx = self.rx_buf.find(FRAME_HEADER)
+            if idx < 0:
+                if len(self.rx_buf) > 512:
+                    self.rx_buf.clear()
+                break
+            if len(self.rx_buf) < idx + 5:
+                break
+            payload_len = self.rx_buf[idx + 4]
+            total = 5 + payload_len + 1
+            if len(self.rx_buf) < idx + total:
+                break
+            frame = bytes(self.rx_buf[idx:idx + total])
+            self.rx_buf = self.rx_buf[idx + total:]
+            self._handle_frame(frame)
+
+    def _handle_frame(self, frame: bytes):
+        msg_type = frame[3]
+        payload_len = frame[4]
+        if msg_type == MSG_TYPE_ENV and payload_len == PAYLOAD_LEN_ENV:
+            if crc8_maxim(frame[:-1]) != frame[-1]:
+                self.get_logger().warn('CRC mismatch on environment frame')
+                return
+            data = decode_environment_frame(frame)
+            if data is None:
+                return
+            self._publish_environment(data)
+        elif msg_type == MSG_TYPE_ERROR:
+            error_code = frame[5] if payload_len >= 1 else None
+            self.get_logger().warn(f'LoRa error frame: code={error_code}')
+        else:
+            self.get_logger().warn(f'Unknown msg_type: {msg_type}')
+
+    def _publish_environment(self, data: dict):
+        msg = Environment()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'fixed_env'
+        msg.air_temp = data['air_temp']
+        msg.air_humidity = data['air_humidity']
+        msg.air_co2 = data['air_co2']
+        msg.soil_temp = data['soil_temp']
+        msg.soil_humidity = data['soil_humidity']
+        msg.leaf_wetness = data['leaf_wetness']
+        msg.hcho = data['hcho']
+        msg.tvoc = data['tvoc']
+        msg.pm25 = data['pm25']
+        msg.pm10 = data['pm10']
+        msg.leaf_temp = data['leaf_temp']
+        msg.ec = data['ec']
+        msg.data_source = 'FIXED_LORA'
+        self.pub_env.publish(msg)
+
+    def destroy_node(self):
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+        super().destroy_node()
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = LoraBridgeNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
