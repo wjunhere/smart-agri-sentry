@@ -11,7 +11,7 @@ extern aggregator_t g_aggregator;
 extern volatile uint8_t g_new_sample_ready;
 extern cj702_data_t g_last_sample;
 
-static uint8_t g_tx_buf[32];
+static uint8_t g_tx_buf[48];
 
 void app_fsm_init(app_fsm_t *fsm)
 {

@@ -14,7 +14,7 @@ static void test_average(void)
 {
     aggregator_t agg;
     aggregator_init(&agg);
-    cj702_data_t s = {100, 10, 50, 20, 30, 2500, 5000};
+    cj702_data_t s = {100, 10, 50, 20, 30, 2500, 5000, -500, 4000, 150, 7000, -300};
     for (int i = 0; i < 30; i++) {
         aggregator_add(&agg, &s);
     }
@@ -23,13 +23,18 @@ static void test_average(void)
     ASSERT_EQ(out.co2, 100);
     ASSERT_EQ(out.temp, 2500);
     ASSERT_EQ(out.humidity, 5000);
+    ASSERT_EQ(out.soil_temp, -500);
+    ASSERT_EQ(out.soil_humidity, 4000);
+    ASSERT_EQ(out.ec, 150);
+    ASSERT_EQ(out.leaf_wetness, 7000);
+    ASSERT_EQ(out.leaf_temp, -300);
 }
 
 static void test_too_few_samples(void)
 {
     aggregator_t agg;
     aggregator_init(&agg);
-    cj702_data_t s = {1, 2, 3, 4, 5, 6, 7};
+    cj702_data_t s = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     for (int i = 0; i < 5; i++) {
         aggregator_add(&agg, &s);
     }

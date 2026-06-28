@@ -16,6 +16,11 @@ typedef struct {
     uint32_t pm10_sum;
     int32_t  temp_sum;
     uint32_t humidity_sum;
+    int32_t  soil_temp_sum;
+    uint32_t soil_humidity_sum;
+    uint32_t ec_sum;
+    uint32_t leaf_wetness_sum;
+    int32_t  leaf_temp_sum;
     uint16_t count;
 } aggregator_t;
 

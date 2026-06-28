@@ -13,15 +13,15 @@ static int tests_passed = 0;
 
 static void test_pack_data(void)
 {
-    cj702_data_t avg = {303, 20, 120, 35, 50, 2500, 6000};
-    uint8_t buf[32];
+    cj702_data_t avg = {303, 20, 120, 35, 50, 2500, 6000, -500, 4000, 150, 7000, -300};
+    uint8_t buf[48];
     int len = lora_frame_pack_data(0x01, &avg, buf, sizeof(buf));
-    ASSERT_EQ(len, 20);
+    ASSERT_EQ(len, 30);
     ASSERT_EQ(buf[0], 0xAA);
     ASSERT_EQ(buf[1], 0x55);
     ASSERT_EQ(buf[2], 0x01);
     ASSERT_EQ(buf[3], LORA_MSG_DATA);
-    ASSERT_EQ(buf[4], 14);
+    ASSERT_EQ(buf[4], 24);
 }
 
 static void test_pack_error(void)

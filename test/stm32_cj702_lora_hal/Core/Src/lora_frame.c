@@ -1,7 +1,7 @@
 #include "lora_frame.h"
 #include <string.h>
 
-#define SENSOR_PAYLOAD_LEN 14
+#define SENSOR_PAYLOAD_LEN 24
 #define ERROR_PAYLOAD_LEN  1
 #define FRAME_OVERHEAD     5  // header(2) + device_id(1) + msg_type(1) + len(1)
 
@@ -61,6 +61,16 @@ int lora_frame_pack_data(uint8_t device_id, const cj702_data_t *avg, uint8_t *bu
     payload[11] = (uint8_t)(avg->temp);
     payload[12] = (uint8_t)(avg->humidity >> 8);
     payload[13] = (uint8_t)(avg->humidity);
+    payload[14] = (uint8_t)(avg->soil_temp >> 8);
+    payload[15] = (uint8_t)(avg->soil_temp);
+    payload[16] = (uint8_t)(avg->soil_humidity >> 8);
+    payload[17] = (uint8_t)(avg->soil_humidity);
+    payload[18] = (uint8_t)(avg->ec >> 8);
+    payload[19] = (uint8_t)(avg->ec);
+    payload[20] = (uint8_t)(avg->leaf_wetness >> 8);
+    payload[21] = (uint8_t)(avg->leaf_wetness);
+    payload[22] = (uint8_t)(avg->leaf_temp >> 8);
+    payload[23] = (uint8_t)(avg->leaf_temp);
     return pack_frame(device_id, LORA_MSG_DATA, payload, SENSOR_PAYLOAD_LEN, buf, buf_size);
 }
 

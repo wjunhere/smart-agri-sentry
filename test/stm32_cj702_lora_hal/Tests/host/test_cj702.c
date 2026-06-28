@@ -39,6 +39,11 @@ static void test_parse_valid_positive_temp(void)
     ASSERT_EQ(d.pm10, 50);
     ASSERT_EQ(d.temp, 2700);
     ASSERT_EQ(d.humidity, 6000);
+    ASSERT_EQ(d.soil_temp, 0);
+    ASSERT_EQ(d.soil_humidity, 0);
+    ASSERT_EQ(d.ec, 0);
+    ASSERT_EQ(d.leaf_wetness, 0);
+    ASSERT_EQ(d.leaf_temp, 0);
 }
 
 static void test_parse_valid_negative_temp(void)

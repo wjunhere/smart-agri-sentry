@@ -1,4 +1,5 @@
 #include "cj702.h"
+#include <string.h>
 
 uint8_t cj702_checksum(const uint8_t *frame)
 {
@@ -14,6 +15,8 @@ bool cj702_parse(const uint8_t *frame, cj702_data_t *out)
     if (frame == NULL || out == NULL) {
         return false;
     }
+    memset(out, 0, sizeof(*out));
+
     if (frame[0] != CJ702_HEADER_0 || frame[1] != CJ702_HEADER_1) {
         return false;
     }
