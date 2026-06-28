@@ -102,9 +102,24 @@ class LoraBridgeNode(Node):
 
         self.timer_rx = self.create_timer(0.01, self.rx_tick)
         self.rx_buf = bytearray()
+        self._reconnect_tick = 0
+
+    def _try_reconnect(self):
+        port = self.get_parameter('uart_port').value
+        baud = self.get_parameter('baudrate').value
+        try:
+            self.ser = serial.Serial(port, baud, timeout=0.01)
+            self.get_logger().info(f'LoRa UART reopened: {port} @ {baud}')
+            return True
+        except (serial.SerialException, OSError) as e:
+            return False
 
     def rx_tick(self):
-        if self.ser is None or not self.ser.is_open:
+        if self.ser is None:
+            self._reconnect_tick += 1
+            if self._reconnect_tick >= 300:
+                self._reconnect_tick = 0
+                self._try_reconnect()
             return
         try:
             if self.ser.in_waiting:
@@ -117,6 +132,7 @@ class LoraBridgeNode(Node):
             except Exception:
                 pass
             self.ser = None
+            self._reconnect_tick = 0
             return
 
         while True:
