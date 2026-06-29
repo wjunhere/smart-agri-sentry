@@ -40,6 +40,8 @@ uint32_t last_print_tick     = 0;
 uint32_t last_heartbeat_tick = 0;
 uint32_t last_iwdg_tick      = 0;
 uint32_t last_telem_tick     = 0;
+
+#define CHASSIS_ALARM_COMM_ERROR 0x04
 /* USER CODE END PV */
 
 void SystemClock_Config(void);
@@ -241,7 +243,7 @@ int main(void)
      *   1. Protocol_Process  — USART2 RDK X5 RX frames
      *   2. Debug_Process     — USART1 command parser
      *   3. PID @ 100 Hz      — encoder → PID → PWM
-     *   4. Telemetry @ 10 Hz — USART2 TX encoder data to RDK X5
+     *   4. Chassis status @ 10 Hz — USART2 TX project-standard frame to RDK X5
      *   5. Heartbeat @ 2 Hz  — PA8 LED
      *   6. Status @ 0.2 Hz   — printf summary (every 5 sec)
      *   7. IWDG @ 10 Hz      — watchdog refresh
@@ -268,11 +270,25 @@ int main(void)
             battery_voltage = BSP_Get_Battery_Voltage();
         }
 
-        /* Telemetry to RDK X5 @ 10 Hz — send accumulated pulse counts */
+        /* Chassis status to RDK X5 @ 10 Hz — project-standard frame */
         if ((int32_t)(now - last_telem_tick) >= 100) {
             last_telem_tick += 100;
-            Protocol_Send_Telemetry(Encoder_Get_Left_Accum(),
-                                    Encoder_Get_Right_Accum());
+            int16_t left_speed_mm_s = (int16_t)(speed_left * 0.14137167f / 1560.0f * 100.0f * 1000.0f);
+            int16_t right_speed_mm_s = (int16_t)(speed_right * 0.14137167f / 1560.0f * 100.0f * 1000.0f);
+            int16_t battery_x100 = (int16_t)(battery_voltage * 100.0f);
+
+            uint8_t alarm_bits = 0;
+            if (Protocol_Get_CommErrorCount() > 5) {
+                alarm_bits |= CHASSIS_ALARM_COMM_ERROR;
+            }
+
+            Protocol_Send_Chassis_Status(left_speed_mm_s,
+                                         right_speed_mm_s,
+                                         battery_x100,
+                                         alarm_bits,
+                                         Encoder_Get_Left_Accum(),
+                                         Encoder_Get_Right_Accum(),
+                                         HAL_GetTick());
         }
 
         /* Heartbeat LED @ 2 Hz */
