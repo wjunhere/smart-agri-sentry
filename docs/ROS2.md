@@ -81,7 +81,7 @@
 | `/lidar/obstacle_info` | `ObstacleInfo` | `sentry_lidar` | `fusion_node` | 10 Hz | 前方扇区障碍物简化信息 |
 | `/sensor/imu/data_raw` | `sensor_msgs/Imu` | `imu_node` | Madgwick | 100 Hz | IMU 原始数据 |
 | `/sensor/imu/data` | `sensor_msgs/Imu` | `imu_filter_madgwick` | EKF | 100 Hz | IMU 滤波后数据 |
-| `/sentry/chassis/status` | `ChassisStatus` | `uart_bridge_node` | `mission_control`, `wheel_odom` | 10 Hz | 底盘状态 |
+| `/sentry/chassis/status` | `ChassisStatus` | `uart_bridge_node` | `mission_control`, `wheel_odom` | 10 Hz | 底盘状态：左右轮速(m/s)、电池电压(V)、报警位、累计脉冲(int32，可正可负)、编码器时间戳 |
 
 ### 2.2 决策层
 
@@ -95,7 +95,7 @@
 
 | 话题名 | 类型 | 发布者 | 订阅者 | 频率 | 说明 |
 |---|---|---|---|---|---|
-| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 / `mission_control` / `web_remote` | `uart_bridge_node` | 10–20 Hz | 统一底盘速度指令 |
+| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 / `mission_control` / `web_remote` | `uart_bridge_node` | 10–20 Hz | 统一底盘速度指令；uart_bridge_node 按轮距 0.23 m 转为左右轮 mm/s 下发 |
 | `/sentry/servo_cmd` | `ServoCmd` | `servo_keyboard_node` / `mission_control`(未来) | `servo_driver_node` / `uart_bridge_node`（可选） | 事件 | 云台角度指令 |
 | `/mission/status` | `MissionStatus` | `mission_control` | `data_logger` | 10 Hz | 巡检状态机状态 |
 | `/wheel/odom` | `nav_msgs/Odometry` | `wheel_odom_node` | EKF, Nav2 | 20 Hz | 编码器里程计 |
@@ -244,8 +244,8 @@ float32 left_speed            # m/s
 float32 right_speed           # m/s
 float32 battery_voltage       # V
 uint8 alarm_bits
-uint32 left_pulse             # 左轮编码器累计脉冲
-uint32 right_pulse            # 右轮编码器累计脉冲
+int32 left_pulse              # 左轮编码器累计脉冲，可正可负
+int32 right_pulse             # 右轮编码器累计脉冲，可正可负
 uint32 encoder_timestamp      # STM32 时间戳 ms
 ```
 

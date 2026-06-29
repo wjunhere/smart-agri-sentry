@@ -9,11 +9,11 @@
 | 模块 | 型号/规格 | 备注 |
 |---|---|---|
 | **AI 主控** | RDK X5 | 8 核 A55, 8 GB LPDDR4, 旭日 R5 NPU (10 TOPS), 功耗约 3 W |
-| **运动控制** | STM32F407ZGT6 | 最小系统板, 168 MHz, FreeRTOS |
-| **电机** | 24 V 直流减速电机 ×2 | 需确认空载/堵转电流 |
-| **电机驱动** | TB6612FNG（待验证） | 持续电流 1.2 A；若电机电流过大，更换为 BTN7971B |
-| **编码器** | 1000 线光电编码器 ×2 | 接 STM32 定时器正交编码器输入 |
-| **底盘** | 履带式（采购成品） | 无机械加工条件 |
+| **运动控制** | STM32F407ZGT6 | 最小系统板, 168 MHz, 裸机主循环 |
+| **电机** | MG540 直流减速电机 ×2 | 13 PPR 霍尔编码器 |
+| **电机驱动** | 当前测试驱动板 | 与 STM32 直连 |
+| **编码器** | 13 PPR，减速比 1:30，四倍频 | 每米 11035 脉冲 |
+| **底盘** | 履带式 | 轮距 0.23 m |
 | **云台** | 2-DOF 舵机云台（采购成品） | 控制摄像头俯仰/偏航；RDK X5 直接 PWM 驱动 |
 | **运行速度** | **0.5 m/s（典型工况）** | 巡航速度 |
 
@@ -58,13 +58,16 @@
 
 ---
 
-## 4. FreeRTOS 任务周期
+## 4. 裸机主循环周期
 
 | 任务 | 周期 | 频率 | 说明 |
 |---|---|---|---|
-| `TaskSensor` | 100 ms | 10 Hz | 读取空气+土壤传感器 |
-| `TaskControl` | 20 ms | 50 Hz | 电机 PID 闭环、编码器反馈、舵机控制 |
-| `TaskComm` | 100 ms | 10 Hz | 打包上传传感器+底盘状态，接收 RDK 控制指令 |
+| Protocol_Process | 主循环 | ~1000 Hz | 处理 USART2 RDK X5 RX 帧 |
+| PID 闭环 | 10 ms | 100 Hz | 编码器反馈 → PID → 电机 PWM |
+| 底盘状态上报 | 100 ms | 10 Hz | 发送 project-standard 底盘状态帧 |
+| 心跳 LED | 500 ms | 2 Hz | PA8 心跳指示灯 |
+| 状态打印 | 5000 ms | 0.2 Hz | USART1 调试控制台摘要 |
+| 看门狗刷新 | 100 ms | 10 Hz | IWDG 喂狗 |
 
 ---
 
@@ -116,16 +119,18 @@ typedef struct {
 
 ```c
 typedef struct {
-    float   left_speed;         // m/s
-    float   right_speed;        // m/s
-    float   battery_voltage;    // V
-    uint8_t alarm_bits;         // 报警位
-    uint32_t left_pulse;        // 左轮编码器累计脉冲
-    uint32_t right_pulse;       // 右轮编码器累计脉冲
-    uint32_t encoder_timestamp; // STM32 时间戳 ms
+    int16_t  left_speed_x1000;   // mm/s
+    int16_t  right_speed_x1000;  // mm/s
+    int16_t  battery_voltage_x100; // 0.01 V
+    uint8_t  alarm_bits;          // 报警位
+    int32_t  left_pulse;          // 左轮编码器累计脉冲（有符号）
+    int32_t  right_pulse;         // 右轮编码器累计脉冲（有符号）
+    uint32_t encoder_timestamp;   // STM32 时间戳 ms
 } __attribute__((packed)) ChassisStatusFrame_t;
 // 总长度：2+1+1+19+2 = 25 字节
 ```
+
+> 注意：`left_pulse` / `right_pulse` 为有符号 int32，倒车时数值为负。
 
 #### CRC 校验
 
