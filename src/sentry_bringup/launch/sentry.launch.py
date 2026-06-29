@@ -8,7 +8,7 @@ def generate_launch_description():
             package='sentry_bringup',
             executable='uart_bridge_node',
             name='uart_bridge_node',
-            parameters=[{'uart_port': '/dev/ttyS2', 'baudrate': 115200}],
+            parameters=[{'uart_port': '/dev/ttyS5', 'baudrate': 115200}],
             output='screen',
         ),
         Node(

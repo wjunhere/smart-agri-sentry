@@ -849,7 +849,7 @@ source install/setup.bash
 - [ ] **Step 2: 启动 uart_bridge_node**
 
 ```bash
-ros2 run sentry_sensors uart_bridge_node --ros-args -p uart_port:=/dev/ttyS2 -p wheel_base:=0.23
+ros2 run sentry_sensors uart_bridge_node --ros-args -p uart_port:=/dev/ttyS5 -p wheel_base:=0.23
 ```
 
 - [ ] **Step 3: 检查底盘状态**

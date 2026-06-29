@@ -120,7 +120,7 @@ def decode_chassis_frame(frame: bytes):
 class UartBridgeNode(Node):
     def __init__(self, **kwargs):
         super().__init__('uart_bridge_node', **kwargs)
-        self.declare_parameter('uart_port', '/dev/ttyS2')
+        self.declare_parameter('uart_port', '/dev/ttyS5')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('forward_servo_cmd', False)
         self.declare_parameter('wheel_base', 0.23)

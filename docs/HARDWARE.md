@@ -80,7 +80,7 @@
 - STM32 PA3 (USART2_RX) → RDK 40Pin **15** (UART2_TXD)
 - GND 共地
 
-RDK 设备节点：`/dev/ttyS2`。
+RDK 设备节点：`/dev/ttyS5`（UART2 对应 `341a0000.serial`，物理 40Pin Pin15 TX / Pin22 RX）。
 
 采用**自定义二进制帧**：
 
