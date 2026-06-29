@@ -2,11 +2,8 @@
  * bsp_protocol.c
  * RDK X5 <-> STM32 communication protocol via USART2 DMA + IDLE line detection.
  *
- * Frame format: 0xAA + CMD(1B) + LEN(1B) + DATA(N bytes) + Checksum(1B)
- * Checksum = 8-bit sum of all preceding bytes (mod 256).
- *
- * Frame example (CMD=0x01 speed control, len=4):
- *   AA 01 04 <left_speed_L> <left_speed_H> <right_speed_L> <right_speed_H> <crc>
+ * Frame format: 0xAA 0x55 + TYPE(1B) + LEN(1B) + DATA(N bytes) + CRC16(2B)
+ * CRC16 = CRC16-CCITT over all preceding bytes (polynomial 0x1021, init 0xFFFF).
  */
 #include "bsp_protocol.h"
 #include <string.h>
@@ -22,6 +19,23 @@ volatile uint16_t rx_len  = 0;
 volatile float target_speed_left  = 0.0f;
 volatile float target_speed_right = 0.0f;
 
+/* CRC16-CCITT (polynomial 0x1021, initial value 0xFFFF) */
+uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
+{
+    uint16_t crc = 0xFFFF;
+    for (uint16_t i = 0; i < len; i++) {
+        crc ^= (uint16_t)data[i] << 8;
+        for (uint8_t j = 0; j < 8; j++) {
+            if (crc & 0x8000) {
+                crc = (crc << 1) ^ 0x1021;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc;
+}
+
 void Protocol_Init(void) {
     /*
      * CubeMX configures USART2 RX DMA in CIRCULAR mode, but IDLE-line
@@ -34,15 +48,6 @@ void Protocol_Init(void) {
     /* Start DMA reception with IDLE-line interrupt */
     HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_buff, RX_BUFF_SIZE);
     __HAL_UART_ENABLE_IT(&huart2, UART_IT_IDLE);
-}
-
-/* 8-bit additive checksum (NOT standard CRC8 — verify RDK X5 side matches!) */
-static uint8_t Checksum8(const uint8_t* data, uint16_t len) {
-    uint8_t sum = 0;
-    for (uint16_t i = 0; i < len; i++) {
-        sum += data[i];
-    }
-    return sum;
 }
 
 /* Search for next 0xAA sync byte starting from 'start' */
@@ -67,45 +72,51 @@ void Protocol_Process(void) {
 
     /*
      * Loop to handle multiple frames in one DMA buffer.
-     * Minimum frame: header(1) + cmd(1) + len(1) + crc(1) + min 1 data byte = 5.
+     * Minimum frame: header(2) + type(1) + len(1) + crc(2) + min 1 data byte = 7.
      */
-    while (offset + 5 <= rx_len) {
-        /* Sync to 0xAA frame header */
-        if (rx_buff[offset] != 0xAA) {
+    while (offset + 7 <= rx_len) {
+        /* Sync to 0xAA 0x55 frame header */
+        if (rx_buff[offset] != 0xAA || rx_buff[offset + 1] != 0x55) {
             int16_t next = Find_Sync(rx_buff, offset + 1, rx_len);
             if (next < 0) break;            /* No more sync bytes in buffer */
             offset = (uint16_t)next;
+            if (offset + 1 >= rx_len) break;
+            if (rx_buff[offset + 1] != 0x55) {
+                offset++;
+                continue;
+            }
         }
 
-        /* Need at least 5 bytes from sync position */
-        if (offset + 5 > rx_len) break;
+        /* Need at least 7 bytes from sync position */
+        if (offset + 7 > rx_len) break;
 
-        uint8_t  cmd       = rx_buff[offset + 1];
-        uint8_t  dlen      = rx_buff[offset + 2];     /* payload data length */
-        uint16_t total_len = (uint16_t)dlen + 4;       /* header + cmd + len + data + crc */
+        uint8_t  type      = rx_buff[offset + 2];
+        uint8_t  dlen      = rx_buff[offset + 3];     /* payload data length */
+        uint16_t total_len = (uint16_t)dlen + 6;       /* header(2) + type(1) + len(1) + data + crc(2) */
 
         /* Incomplete frame — wait for more data */
         if (offset + total_len > rx_len) break;
 
-        /* Verify checksum */
-        uint8_t expected = Checksum8(&rx_buff[offset], total_len - 1);
-        uint8_t received = rx_buff[offset + total_len - 1];
+        /* Verify CRC16-CCITT over header + type + len + data */
+        uint16_t expected = crc16_ccitt(&rx_buff[offset], total_len - 2);
+        uint16_t received = (uint16_t)(rx_buff[offset + total_len - 2] << 8)
+                          | rx_buff[offset + total_len - 1];
 
         if (expected != received) {
 #if PROTOCOL_DEBUG
-            printf("[PROTO] Checksum fail: calc=%02X recv=%02X\r\n", expected, received);
+            printf("[PROTO] CRC fail: calc=%04X recv=%04X\r\n", expected, received);
 #endif
             offset++;   /* Step forward 1 byte to search for next 0xAA */
             continue;
         }
 
-        /* ---- Dispatch by command ---- */
-        if (cmd == 0x01 && dlen >= 4) {
-            /* CMD 0x01: Set wheel speeds (little-endian int16 pairs)
+        /* ---- Dispatch by type ---- */
+        if (type == TYPE_MOTION_CMD && dlen >= 4) {
+            /* TYPE 0x81: Set wheel speeds (little-endian int16 pairs)
              * NOTE: Left/Right swapped because motor driver channels are
              * physically crossed on this hardware revision. */
-            int16_t l_spd = (int16_t)(rx_buff[offset + 4] << 8 | rx_buff[offset + 3]);
-            int16_t r_spd = (int16_t)(rx_buff[offset + 6] << 8 | rx_buff[offset + 5]);
+            int16_t l_spd = (int16_t)(rx_buff[offset + 5] << 8 | rx_buff[offset + 4]);
+            int16_t r_spd = (int16_t)(rx_buff[offset + 7] << 8 | rx_buff[offset + 6]);
             target_speed_left  = (float)r_spd;   /* swapped */
             target_speed_right = (float)l_spd;   /* swapped */
 #if PROTOCOL_DEBUG
@@ -114,7 +125,7 @@ void Protocol_Process(void) {
         }
 #if PROTOCOL_DEBUG
         else {
-            printf("[PROTO] Unknown CMD=0x%02X len=%d\r\n", cmd, dlen);
+            printf("[PROTO] Unknown TYPE=0x%02X len=%d\r\n", type, dlen);
         }
 #endif
 
@@ -140,14 +151,14 @@ void Protocol_Process(void) {
 
 /**
  * @brief  Send accumulated encoder pulse counts to RDK X5 via USART2 (blocking).
- *         Frame: AA 02 08 <encL[4]> <encR[4]> <CRC>  (12 bytes)
+ *         Frame: AA 55 03 08 <encL[4]> <encR[4]> <CRC16>  (14 bytes)
  *         Each encoder value is int32_t little-endian (4 bytes).
  *         Called from main loop at ~10 Hz.
- * @note   12 bytes @115200 ≈ 1.0 ms, negligible overhead at 10 Hz.
+ * @note   14 bytes @115200 ≈ 1.2 ms, negligible overhead at 10 Hz.
  */
 void Protocol_Send_Telemetry(int32_t enc_left, int32_t enc_right)
 {
-    uint8_t frame[12];
+    uint8_t frame[14];
 
     /*
      * NOTE: Left/Right swapped in telemetry because motor channels are
@@ -155,18 +166,22 @@ void Protocol_Send_Telemetry(int32_t enc_left, int32_t enc_right)
      * drives the right motor), enc_right is from the "right" PID (left motor).
      * Swapping here gives correct L/R assignment to the RDK X5.
      */
-    frame[0] = 0xAA;                             /* Header */
-    frame[1] = 0x02;                             /* CMD: encoder telemetry */
-    frame[2] = 0x08;                             /* LEN: 8 bytes payload (2× int32) */
-    frame[3] = (uint8_t)(enc_right & 0xFF);      /* Right accum → Left slot [3:0] */
-    frame[4] = (uint8_t)((enc_right >> 8) & 0xFF);
-    frame[5] = (uint8_t)((enc_right >> 16) & 0xFF);
-    frame[6] = (uint8_t)((enc_right >> 24) & 0xFF);
-    frame[7] = (uint8_t)(enc_left  & 0xFF);      /* Left accum  → Right slot [7:0] */
-    frame[8] = (uint8_t)((enc_left >> 8) & 0xFF);
-    frame[9] = (uint8_t)((enc_left >> 16) & 0xFF);
-    frame[10]= (uint8_t)((enc_left >> 24) & 0xFF);
-    frame[11]= Checksum8(frame, 12);             /* CRC over bytes 0-11 */
+    frame[0] = FRAME_HEADER_0;                   /* Header */
+    frame[1] = FRAME_HEADER_1;
+    frame[2] = TYPE_CHASSIS;                     /* TYPE: chassis telemetry */
+    frame[3] = 0x08;                             /* LEN: 8 bytes payload (2× int32) */
+    frame[4] = (uint8_t)(enc_right & 0xFF);       /* Right accum → Left slot [4:0] */
+    frame[5] = (uint8_t)((enc_right >> 8) & 0xFF);
+    frame[6] = (uint8_t)((enc_right >> 16) & 0xFF);
+    frame[7] = (uint8_t)((enc_right >> 24) & 0xFF);
+    frame[8] = (uint8_t)(enc_left  & 0xFF);      /* Left accum  → Right slot [8:0] */
+    frame[9] = (uint8_t)((enc_left >> 8) & 0xFF);
+    frame[10] = (uint8_t)((enc_left >> 16) & 0xFF);
+    frame[11] = (uint8_t)((enc_left >> 24) & 0xFF);
 
-    HAL_UART_Transmit(&huart2, frame, 12, 10);   /* 10 ms timeout */
+    uint16_t crc = crc16_ccitt(frame, 12);
+    frame[12] = (uint8_t)(crc >> 8);             /* CRC high byte */
+    frame[13] = (uint8_t)(crc & 0xFF);           /* CRC low byte */
+
+    HAL_UART_Transmit(&huart2, frame, 14, 10);  /* 10 ms timeout */
 }

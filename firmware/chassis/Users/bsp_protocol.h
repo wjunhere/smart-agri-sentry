@@ -6,17 +6,23 @@
 extern UART_HandleTypeDef huart2;
 extern DMA_HandleTypeDef hdma_usart2_rx;
 
+#define FRAME_HEADER_0 0xAA
+#define FRAME_HEADER_1 0x55
+#define TYPE_CHASSIS    0x03
+#define TYPE_MOTION_CMD 0x81
+
 #define RX_BUFF_SIZE 64
 extern uint8_t rx_buff[RX_BUFF_SIZE];
 extern volatile uint8_t rx_flag;
 extern volatile uint16_t rx_len;
 
-// �ⲿ���Ʊ���
+// 外部控制变量
 extern volatile float target_speed_left;
 extern volatile float target_speed_right;
 
 void Protocol_Init(void);
 void Protocol_Process(void);
 void Protocol_Send_Telemetry(int32_t enc_left, int32_t enc_right);
-#endif
 
+uint16_t crc16_ccitt(const uint8_t *data, uint16_t len);
+#endif
