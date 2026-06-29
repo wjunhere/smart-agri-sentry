@@ -487,7 +487,7 @@ git commit -m "feat(protocol): implement motion command frame RX with CRC16"
 **Files:**
 - Modify: `firmware/chassis/Core/Src/main.c`
 
-- [ ] **Step 1: 替换旧协议调用**
+- [x] **Step 1: 替换旧协议调用**
 
 找到 `main.c` 中的遥测发送代码（原 `Protocol_Send_Telemetry(...)`），替换为：
 ```c
@@ -509,7 +509,7 @@ if ((int32_t)(now - last_telem_tick) >= 100) {
 }
 ```
 
-- [ ] **Step 2: 在 main.c 中引入报警位**
+- [x] **Step 2: 在 main.c 中引入报警位**
 
 在文件顶部或合适位置定义：
 ```c
@@ -526,11 +526,11 @@ if (Protocol_Get_CommErrorCount() > 5) {
 
 并把 `alarm_bits` 传给 `Protocol_Send_Chassis_Status`。
 
-- [ ] **Step 3: 删除旧协议声明**
+- [x] **Step 3: 删除旧协议声明**
 
 确保 `main.c` 不再引用旧的 `Protocol_Send_Telemetry`；`#include "bsp_protocol.h"` 保留。
 
-- [ ] **Step 4: 提交 main.c 更新**
+- [x] **Step 4: 提交 main.c 更新**
 
 ```bash
 git add firmware/chassis/Core/Src/main.c
