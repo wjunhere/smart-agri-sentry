@@ -89,7 +89,7 @@ target_speed_left  = left_speed_mm_s  * 11035.0f / 100000.0f;
 target_speed_right = right_speed_mm_s * 11035.0f / 100000.0f;
 ```
 
-> 当前硬件左右电机通道存在物理交叉，转换后由 `Motor_Set_PWM()` 内部处理方向与通道映射。
+> 当前硬件左右电机通道存在物理交叉（电机驱动线与编码器线在 PCB 上左右对调）。协议层保持“上位机视角：左=左、右=右”，在 `bsp_protocol.c` 收到 0x81 帧时做左右交换赋值给 PID；在发送 0x03 帧时再做一次交换，使上位机收到正确的左右分配。
 
 ### 4.3 STM32 → RDK：底盘状态帧（TYPE = 0x03）
 
@@ -99,13 +99,13 @@ typedef struct __attribute__((packed)) {
     float    right_speed;       // 右轮速度，m/s
     float    battery_voltage;   // 电池电压，V
     uint8_t  alarm_bits;        // 报警位
-    uint32_t left_pulse;        // 左轮编码器累计脉冲
-    uint32_t right_pulse;       // 右轮编码器累计脉冲
+    int32_t  left_pulse;        // 左轮编码器累计脉冲（有符号，可正可负）
+    int32_t  right_pulse;       // 右轮编码器累计脉冲（有符号，可正可负）
     uint32_t timestamp_ms;      // STM32 开机毫秒
 } ChassisStatusFrame_t;  // LEN = 19，整帧 25 字节
 ```
 
-速度换算（`speed_left` 为 10ms 内滤波后脉冲数）：
+> `sentry_interfaces/msg/ChassisStatus.msg` 当前 `left_pulse/right_pulse` 为 `uint32`，需同步改为 `int32` 以支持倒车累计脉冲为负。
 
 ```c
 left_speed_m_s  = speed_left  * 0.14137167f / 1560.0f * 100.0f;
@@ -155,7 +155,9 @@ right_mm_s = int(right_speed_m_s * 1000)
 
 - **下发**：打包 TYPE=0x81 帧，通过 UART2 发送给 STM32
 - **解析**：接收 TYPE=0x03 帧，发布 `/sentry/chassis/status`
-- **错误处理**：连续 CRC 错误标记 `alarm_bits |= COMM_ERROR`；超过 1 秒未收到帧标记超时位
+- **错误处理**：
+  - STM32 端：连续 CRC 错误时设置 `alarm_bits |= CHASSIS_ALARM_COMM_ERROR`
+  - RDK 端：超过 1 秒未收到帧时，在发布的 `ChassisStatus` 中置自定义超时标志（或日志告警），不覆盖 STM32 传来的 `alarm_bits`
 
 ### 6.2 `wheel_odom_node`
 
