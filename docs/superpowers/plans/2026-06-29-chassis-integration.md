@@ -717,7 +717,7 @@ git commit -m "fix(uart_bridge): parse signed int32 encoder pulses in chassis st
 **Files:**
 - Modify: `src/sentry_mission/sentry_mission/wheel_odom_node.py`
 
-- [ ] **Step 1: 修改默认值**
+- [x] **Step 1: 修改默认值**
 
 ```python
 self.declare_parameter('wheel_base', 0.23)
@@ -725,7 +725,7 @@ self.declare_parameter('pulses_per_meter', 11035)
 self.declare_parameter('max_pulse_delta', 1000)
 ```
 
-- [ ] **Step 2: 提交**
+- [x] **Step 2: 提交**
 
 ```bash
 git add src/sentry_mission/sentry_mission/wheel_odom_node.py
