@@ -103,7 +103,7 @@ def decode_chassis_frame(frame: bytes):
             'encoder_timestamp': 0,
         }
     elif length == 19:
-        (ls, rs, bv, alarm, lp, rp, ts) = struct.unpack('<hhHBIII', payload)
+        (ls, rs, bv, alarm, lp, rp, ts) = struct.unpack('<hhHBiiI', payload)
         return {
             'left_speed': ls / 1000.0,
             'right_speed': rs / 1000.0,
