@@ -93,11 +93,13 @@ target_speed_right = right_speed_mm_s * 11035.0f / 100000.0f;
 
 ### 4.3 STM32 → RDK：底盘状态帧（TYPE = 0x03）
 
+为节省带宽，线协议采用定比缩放整数，RDK 端再转回浮点：
+
 ```c
 typedef struct __attribute__((packed)) {
-    float    left_speed;        // 左轮速度，m/s
-    float    right_speed;       // 右轮速度，m/s
-    float    battery_voltage;   // 电池电压，V
+    int16_t  left_speed_mm_s;   // 左轮速度，mm/s（有符号）
+    int16_t  right_speed_mm_s;  // 右轮速度，mm/s（有符号）
+    int16_t  battery_voltage_x100; // 电池电压 ×100，单位 0.01 V
     uint8_t  alarm_bits;        // 报警位
     int32_t  left_pulse;        // 左轮编码器累计脉冲（有符号，可正可负）
     int32_t  right_pulse;       // 右轮编码器累计脉冲（有符号，可正可负）
@@ -107,9 +109,12 @@ typedef struct __attribute__((packed)) {
 
 > `sentry_interfaces/msg/ChassisStatus.msg` 当前 `left_pulse/right_pulse` 为 `uint32`，需同步改为 `int32` 以支持倒车累计脉冲为负。
 
+STM32 端换算：
+
 ```c
-left_speed_m_s  = speed_left  * 0.14137167f / 1560.0f * 100.0f;
-right_speed_m_s = speed_right * 0.14137167f / 1560.0f * 100.0f;
+left_speed_mm_s  = (int16_t)(speed_left  * 0.14137167f / 1560.0f * 100.0f * 1000.0f);
+right_speed_mm_s = (int16_t)(speed_right * 0.14137167f / 1560.0f * 100.0f * 1000.0f);
+battery_voltage_x100 = (int16_t)(battery_voltage * 100.0f);
 ```
 
 ### 4.4 报警位定义
