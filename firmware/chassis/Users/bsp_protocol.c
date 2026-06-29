@@ -9,9 +9,6 @@
 #include <string.h>
 #include <stdio.h>
 
-/* Set to 0 to disable per-packet debug printf (reduces USART1 traffic) */
-#define PROTOCOL_DEBUG  0
-
 uint8_t rx_buff[RX_BUFF_SIZE];
 volatile uint8_t  rx_flag = 0;
 volatile uint16_t rx_len  = 0;
@@ -61,7 +58,13 @@ static void handle_motion_cmd(const uint8_t *payload) {
     int16_t left_mm_s  = (int16_t)(payload[0] | (payload[1] << 8));
     int16_t right_mm_s = (int16_t)(payload[2] | (payload[3] << 8));
 
-    // Hardware channels are crossed: host left maps to STM32 right and vice versa
+    /* Motor driver channels are physically crossed on this board:
+     * host-left connects to the right motor driver input and vice versa. */
+
+    /* Convert mm/s to pulses per 10 ms.
+     * Encoder: MG540 13 PPR × 30:1 gear × 4 (quadrature) / (π × 0.045 m wheel diameter)
+     * ≈ 11035 pulses/meter = 11.035 pulses/mm.
+     * pulses/10ms = mm/s × 11.035 × 0.01 = mm/s × 11035 / 100000. */
     target_speed_left  = (float)right_mm_s * 11035.0f / 100000.0f;
     target_speed_right = (float)left_mm_s  * 11035.0f / 100000.0f;
 }
@@ -85,8 +88,8 @@ void Protocol_Process(void) {
         if (offset + total > rx_len) break;
 
         uint16_t calc_crc = crc16_ccitt(&rx_buff[offset + 2], 2 + dlen);
-        uint16_t rx_crc = (uint16_t)(rx_buff[offset + total - 2] |
-                                     (rx_buff[offset + total - 1] << 8));
+        uint16_t rx_crc = (uint16_t)((rx_buff[offset + total - 2] << 8) |
+                                      rx_buff[offset + total - 1]);
 
         if (calc_crc != rx_crc) {
             comm_error_count++;
@@ -101,11 +104,15 @@ void Protocol_Process(void) {
         offset += total;
     }
 
+    memset(rx_buff, 0, RX_BUFF_SIZE);
+
     __HAL_UART_CLEAR_OREFLAG(&huart2);
     __HAL_UART_CLEAR_NEFLAG(&huart2);
     __HAL_UART_CLEAR_FEFLAG(&huart2);
     __HAL_UART_CLEAR_PEFLAG(&huart2);
 
+    /* Workaround: HAL_UARTEx_ReceiveToIdle_DMA occasionally leaves RxState
+     * busy after IDLE fires; force READY before restarting reception. */
     if (huart2.RxState != HAL_UART_STATE_READY) {
         huart2.RxState = HAL_UART_STATE_READY;
     }

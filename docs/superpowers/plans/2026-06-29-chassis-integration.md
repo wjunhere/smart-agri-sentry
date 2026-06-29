@@ -199,7 +199,7 @@ git commit -m "feat(protocol): add CRC16-CCITT and host test"
 **Files:**
 - Modify: `firmware/chassis/Users/bsp_protocol.c`
 
-- [ ] **Step 1: 添加 DMA 发送缓冲与状态标志**
+- [x] **Step 1: 添加 DMA 发送缓冲与状态标志**
 
 在 `bsp_protocol.c` 顶部追加：
 ```c
@@ -209,7 +209,7 @@ static volatile uint8_t tx_busy = 0;
 #define CHASSIS_ALARM_COMM_ERROR 0x04
 ```
 
-- [ ] **Step 2: 实现 DMA 发送函数**
+- [x] **Step 2: 实现 DMA 发送函数**
 
 在 `bsp_protocol.c` 中追加：
 ```c
@@ -262,7 +262,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 }
 ```
 
-- [ ] **Step 3: 扩展主机测试验证发送帧**
+- [x] **Step 3: 扩展主机测试验证发送帧**
 
 在 `test_protocol.py` 追加：
 ```python
@@ -309,7 +309,7 @@ Expected:
 All protocol tests OK
 ```
 
-- [ ] **Step 4: 提交 DMA 发送实现**
+- [x] **Step 4: 提交 DMA 发送实现**
 
 ```bash
 git add firmware/chassis/Users/bsp_protocol.c

@@ -101,9 +101,47 @@ def test_pack_motion_cmd():
     assert crc16_ccitt(body) == rx_crc
 
 
+def test_corrupted_crc_rejected():
+    """Corrupting the CRC byte must make crc16_ccitt(body) != rx_crc."""
+    frame = pack_motion_cmd(200, -100)
+    # Flip one bit in the CRC high byte
+    corrupted = bytearray(frame)
+    corrupted[-2] ^= 0x01
+    body = corrupted[2:-2]
+    rx_crc = struct.unpack('>H', corrupted[-2:])[0]
+    assert crc16_ccitt(body) != rx_crc, "Corrupted CRC should not match"
+
+
+def test_sync_recovery_with_garbage():
+    """Garbage bytes before a valid frame should not prevent parsing."""
+    garbage = b'\xDE\xAD\xBE\xEF'
+    valid_frame = pack_motion_cmd(300, -150)
+    combined = garbage + valid_frame
+    # Simulate STM32 RX buffer: find sync, parse frame
+    offset = 0
+    found = False
+    while offset + 6 <= len(combined):
+        if combined[offset] == 0xAA and combined[offset + 1] == 0x55:
+            cmd = combined[offset + 2]
+            dlen = combined[offset + 3]
+            total = 4 + dlen + 2
+            if offset + total > len(combined):
+                break
+            body = combined[offset + 2:offset + total - 2]
+            rx_crc = struct.unpack('>H', combined[offset + total - 2:offset + total])[0]
+            assert crc16_ccitt(body) == rx_crc, "Valid frame CRC mismatch"
+            assert cmd == 0x81 and dlen == 4
+            found = True
+            break
+        offset += 1
+    assert found, "Valid frame should be found after garbage"
+
+
 if __name__ == "__main__":
     test_crc16_ccitt_known()
     test_crc_matches_stm32_logic()
     test_pack_chassis_status()
     test_pack_motion_cmd()
+    test_corrupted_crc_rejected()
+    test_sync_recovery_with_garbage()
     print("All protocol tests OK")
