@@ -579,7 +579,7 @@ git commit -m "fix(interfaces): ChassisStatus pulses are signed int32"
 **Files:**
 - Modify: `src/sentry_sensors/sentry_sensors/uart_bridge_node.py`
 
-- [ ] **Step 1: 添加 wheel_base 参数**
+- [x] **Step 1: 添加 wheel_base 参数**
 
 在 `__init__` 中追加参数声明：
 ```python
@@ -587,7 +587,7 @@ self.declare_parameter('wheel_base', 0.23)
 self.wheel_base = self.get_parameter('wheel_base').value
 ```
 
-- [ ] **Step 2: 重写 on_cmd_vel**
+- [x] **Step 2: 重写 on_cmd_vel**
 
 替换原函数为：
 ```python
@@ -611,7 +611,7 @@ def on_cmd_vel(self, msg: Twist):
         self.get_logger().error(f'UART write error: {e}')
 ```
 
-- [ ] **Step 3: 写测试**
+- [x] **Step 3: 写测试**
 
 在 `src/sentry_sensors/tests/test_uart_bridge_node.py` 追加：
 ```python
@@ -643,7 +643,7 @@ pytest tests/test_uart_bridge_node.py -v
 ```
 Expected: all tests pass.
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add src/sentry_sensors/sentry_sensors/uart_bridge_node.py
