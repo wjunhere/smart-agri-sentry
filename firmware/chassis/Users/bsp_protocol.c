@@ -36,6 +36,9 @@ uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
     return crc;
 }
 
+static uint8_t tx_buf[32];
+static volatile uint8_t tx_busy = 0;
+
 void Protocol_Init(void) {
     /*
      * CubeMX configures USART2 RX DMA in CIRCULAR mode, but IDLE-line
@@ -150,38 +153,66 @@ void Protocol_Process(void) {
 }
 
 /**
- * @brief  Send accumulated encoder pulse counts to RDK X5 via USART2 (blocking).
- *         Frame: AA 55 03 08 <encL[4]> <encR[4]> <CRC16>  (14 bytes)
- *         Each encoder value is int32_t little-endian (4 bytes).
+ * @brief  Send full chassis status frame to RDK X5 via USART2 DMA.
+ *         Frame: AA 55 03 13 <left_speed[2]> <right_speed[2]> <battery[2]> <alarm[1]> <left_pulse[4]> <right_pulse[4]> <timestamp[4]> <CRC16>  (25 bytes)
+ *         All multi-byte fields are little-endian.
  *         Called from main loop at ~10 Hz.
- * @note   14 bytes @115200 ≈ 1.2 ms, negligible overhead at 10 Hz.
+ * @return 0 if DMA started, 1 if previous TX still in progress.
  */
-void Protocol_Send_Telemetry(int32_t enc_left, int32_t enc_right)
+void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_mm_s,
+                                    int16_t battery_x100, uint8_t alarm_bits,
+                                    int32_t left_pulse, int32_t right_pulse,
+                                    uint32_t timestamp_ms)
 {
-    uint8_t frame[14];
+    if (tx_busy) return;
 
-    /*
-     * NOTE: Left/Right swapped in telemetry because motor channels are
-     * physically crossed. enc_left is from the "left" PID (which actually
-     * drives the right motor), enc_right is from the "right" PID (left motor).
-     * Swapping here gives correct L/R assignment to the RDK X5.
-     */
-    frame[0] = FRAME_HEADER_0;                   /* Header */
-    frame[1] = FRAME_HEADER_1;
-    frame[2] = TYPE_CHASSIS;                     /* TYPE: chassis telemetry */
-    frame[3] = 0x08;                             /* LEN: 8 bytes payload (2× int32) */
-    frame[4] = (uint8_t)(enc_right & 0xFF);       /* Right accum → Left slot [4:0] */
-    frame[5] = (uint8_t)((enc_right >> 8) & 0xFF);
-    frame[6] = (uint8_t)((enc_right >> 16) & 0xFF);
-    frame[7] = (uint8_t)((enc_right >> 24) & 0xFF);
-    frame[8] = (uint8_t)(enc_left  & 0xFF);      /* Left accum  → Right slot [8:0] */
-    frame[9] = (uint8_t)((enc_left >> 8) & 0xFF);
-    frame[10] = (uint8_t)((enc_left >> 16) & 0xFF);
-    frame[11] = (uint8_t)((enc_left >> 24) & 0xFF);
+    tx_buf[0] = FRAME_HEADER_0;                     /* Header */
+    tx_buf[1] = FRAME_HEADER_1;
+    tx_buf[2] = TYPE_CHASSIS;                       /* TYPE: chassis status */
+    tx_buf[3] = 0x13;                               /* LEN: 19 bytes payload */
 
-    uint16_t crc = crc16_ccitt(frame, 12);
-    frame[12] = (uint8_t)(crc >> 8);             /* CRC high byte */
-    frame[13] = (uint8_t)(crc & 0xFF);           /* CRC low byte */
+    /* left_speed_mm_s  int16  little-endian */
+    tx_buf[4] = (uint8_t)(left_speed_mm_s & 0xFF);
+    tx_buf[5] = (uint8_t)((left_speed_mm_s >> 8) & 0xFF);
+    /* right_speed_mm_s int16  little-endian */
+    tx_buf[6] = (uint8_t)(right_speed_mm_s & 0xFF);
+    tx_buf[7] = (uint8_t)((right_speed_mm_s >> 8) & 0xFF);
+    /* battery_x100     int16  little-endian */
+    tx_buf[8] = (uint8_t)(battery_x100 & 0xFF);
+    tx_buf[9] = (uint8_t)((battery_x100 >> 8) & 0xFF);
+    /* alarm_bits       uint8 */
+    tx_buf[10] = alarm_bits;
+    /* left_pulse       int32  little-endian */
+    tx_buf[11] = (uint8_t)(left_pulse & 0xFF);
+    tx_buf[12] = (uint8_t)((left_pulse >> 8) & 0xFF);
+    tx_buf[13] = (uint8_t)((left_pulse >> 16) & 0xFF);
+    tx_buf[14] = (uint8_t)((left_pulse >> 24) & 0xFF);
+    /* right_pulse      int32  little-endian */
+    tx_buf[15] = (uint8_t)(right_pulse & 0xFF);
+    tx_buf[16] = (uint8_t)((right_pulse >> 8) & 0xFF);
+    tx_buf[17] = (uint8_t)((right_pulse >> 16) & 0xFF);
+    tx_buf[18] = (uint8_t)((right_pulse >> 24) & 0xFF);
+    /* timestamp_ms     uint32 little-endian */
+    tx_buf[19] = (uint8_t)(timestamp_ms & 0xFF);
+    tx_buf[20] = (uint8_t)((timestamp_ms >> 8) & 0xFF);
+    tx_buf[21] = (uint8_t)((timestamp_ms >> 16) & 0xFF);
+    tx_buf[22] = (uint8_t)((timestamp_ms >> 24) & 0xFF);
 
-    HAL_UART_Transmit(&huart2, frame, 14, 10);  /* 10 ms timeout */
+    /* CRC16-CCITT over TYPE + LEN + DATA (bytes 2..23, length 21) */
+    uint16_t crc = crc16_ccitt(&tx_buf[2], 21);
+    tx_buf[23] = (uint8_t)(crc >> 8);               /* CRC high byte */
+    tx_buf[24] = (uint8_t)(crc & 0xFF);             /* CRC low byte */
+
+    tx_busy = 1;
+    HAL_UART_Transmit_DMA(&huart2, tx_buf, 25);
+}
+
+/**
+ * @brief  HAL UART TX complete callback. Clears tx_busy when USART2 TX finishes.
+ */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == &huart2) {
+        tx_busy = 0;
+    }
 }

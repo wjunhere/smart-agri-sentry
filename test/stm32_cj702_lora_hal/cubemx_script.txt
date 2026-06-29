@@ -1,0 +1,3 @@
+config load "E:\smart_agri_sentry\test\stm32_cj702_lora_hal\stm32_cj702_lora_hal.ioc"
+project generate
+exit
