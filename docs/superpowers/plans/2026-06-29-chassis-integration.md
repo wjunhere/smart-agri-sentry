@@ -659,7 +659,7 @@ git commit -m "fix(uart_bridge): convert /cmd_vel Twist to differential wheel sp
 - Modify: `src/sentry_sensors/sentry_sensors/uart_bridge_node.py`
 - Modify: `src/sentry_sensors/tests/test_uart_bridge_node.py`
 
-- [ ] **Step 1: 更新 decode_chassis_frame 中的脉冲类型**
+- [x] **Step 1: 更新 decode_chassis_frame 中的脉冲类型**
 
 当前代码：
 ```python
@@ -673,7 +673,7 @@ git commit -m "fix(uart_bridge): convert /cmd_vel Twist to differential wheel sp
 
 这样 `lp` 和 `rp` 按有符号 int32 解析。
 
-- [ ] **Step 2: 添加状态帧解析测试**
+- [x] **Step 2: 添加状态帧解析测试**
 
 在 `test_uart_bridge_node.py` 追加：
 ```python
@@ -702,7 +702,7 @@ pytest tests/test_uart_bridge_node.py -v
 ```
 Expected: all tests pass.
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add src/sentry_sensors/sentry_sensors/uart_bridge_node.py
