@@ -56,21 +56,33 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 
 /*
- * printf retargeting for both MicroLIB and ARM full C library.
+ * printf retargeting for Keil MicroLIB.  MicroLIB's printf/puts call fputc.
+ * Mark it used so the linker keeps our definition instead of the semihosting
+ * stub.
  */
-#ifdef __GNUC__
-  #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
-#else
-  #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
-#endif
-PUTCHAR_PROTOTYPE
+#include <stdio.h>
+__attribute__((used)) int fputc(int ch, FILE *f)
 {
+    (void)f;
     HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
     return ch;
 }
 
 /* Full C library retarget (when MicroLIB is disabled) */
 #if !defined(__MICROLIB)
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6000000)
+/* ARM Compiler 6 (ARMCLANG) */
+__asm(".global __use_no_semihosting");
+int _write(int fd, char *ptr, int len)
+{
+    if (fd == 1) {
+        HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, HAL_MAX_DELAY);
+        return len;
+    }
+    return -1;
+}
+#else
+/* ARM Compiler 5 (ARMCC) */
 #include <rt_misc.h>
 #pragma import(__use_no_semihosting)
 struct __FILE { int handle; };
@@ -84,6 +96,7 @@ int _write(int fd, const unsigned char *buf, unsigned int len)
     }
     return -1;
 }
+#endif
 #endif
 
 /* Boot marker via bare-metal USART1 */
@@ -170,6 +183,7 @@ int main(void)
     huart1.gState            = HAL_UART_STATE_READY;
     huart1.RxState           = HAL_UART_STATE_READY;
     huart1.ErrorCode         = HAL_UART_ERROR_NONE;
+    huart1.Lock              = HAL_UNLOCKED;
     HAL_UART_MspInit(&huart1);
     /* Manual BRR+CR1 to guarantee 8N1 */
     USART1->CR1 = 0;

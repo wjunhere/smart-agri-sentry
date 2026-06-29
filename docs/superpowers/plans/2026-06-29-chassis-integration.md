@@ -741,7 +741,7 @@ git commit -m "fix(wheel_odom): defaults for MG540 tracked chassis"
 - Modify: `docs/ROS2.md`
 - Create: `firmware/chassis/README.md`
 
-- [ ] **Step 1: 更新 HARDWARE.md**
+- [x] **Step 1: 更新 HARDWARE.md**
 
 把硬件参数章节改为：
 ```markdown
@@ -757,7 +757,7 @@ git commit -m "fix(wheel_odom): defaults for MG540 tracked chassis"
 
 删除或标注 FreeRTOS 任务表，改为裸机时间片表（参见设计文档 5 节）。
 
-- [ ] **Step 2: 更新 ROS2.md**
+- [x] **Step 2: 更新 ROS2.md**
 
 在 `/sentry/chassis/status` 段落注明：
 ```markdown
@@ -765,7 +765,7 @@ git commit -m "fix(wheel_odom): defaults for MG540 tracked chassis"
 - 输入：`/cmd_vel` 由 `uart_bridge_node` 转为左右轮 mm/s 下发
 ```
 
-- [ ] **Step 3: 创建 firmware/chassis/README.md**
+- [x] **Step 3: 创建 firmware/chassis/README.md**
 
 内容至少包含：
 ```markdown
@@ -791,12 +791,14 @@ STM32F407ZGT6 履带式底盘控制器。
 - STM32 → RDK: `AA 55 03 13 <payload 19B> CRC16`
 ```
 
-- [ ] **Step 4: 提交文档更新**
+- [x] **Step 4: 提交文档更新**
 
 ```bash
 git add docs/HARDWARE.md docs/ROS2.md firmware/chassis/README.md
 git commit -m "docs: update hardware and protocol docs for integrated chassis"
 ```
+
+Commit: `c4d93f9`
 
 ---
 
