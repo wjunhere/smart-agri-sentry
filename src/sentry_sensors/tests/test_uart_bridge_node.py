@@ -130,7 +130,12 @@ def test_servo_subscription_enabled_when_configured(ros_context):
         n.destroy_node()
 
 
-def test_decode_chassis_status_with_negative_pulse():
+def test_decode_chassis_status_signed_pulses():
+    """Verify 19-byte chassis status parses left/right pulses as signed int32.
+
+    Using a negative right_pulse ensures the decoder uses 'i' (signed) rather
+    than 'I' (unsigned); with 'I' the value would be misread as ~4.29e9.
+    """
     from sentry_sensors.uart_bridge_node import encode_frame, decode_chassis_frame
     import struct
 
@@ -147,3 +152,18 @@ def test_decode_chassis_status_with_negative_pulse():
     assert data['left_pulse'] == 100000
     assert data['right_pulse'] == -100000
     assert data['encoder_timestamp'] == 0x12345678
+
+
+def test_decode_chassis_status_negative_one_pulse():
+    """Verify -1 pulse decodes correctly (boundary for signed vs unsigned)."""
+    from sentry_sensors.uart_bridge_node import encode_frame, decode_chassis_frame
+    import struct
+
+    payload = struct.pack('<hhHBiiI',
+                          0, 0, 0, 0,
+                          -1, -1, 0)
+    frame = encode_frame(0x03, payload)
+    data = decode_chassis_frame(frame)
+    assert data is not None
+    assert data['left_pulse'] == -1
+    assert data['right_pulse'] == -1
