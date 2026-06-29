@@ -544,7 +544,7 @@ git commit -m "feat(chassis): send project-standard chassis status frame from ma
 **Files:**
 - Modify: `src/sentry_interfaces/msg/ChassisStatus.msg`
 
-- [ ] **Step 1: 修改脉冲字段类型**
+- [x] **Step 1: 修改脉冲字段类型**
 
 ```text
 float32 left_speed
@@ -556,7 +556,7 @@ int32 right_pulse
 uint32 encoder_timestamp
 ```
 
-- [ ] **Step 2: 编译验证消息接口**
+- [x] **Step 2: 编译验证消息接口**
 
 Run:
 ```bash
@@ -565,7 +565,7 @@ colcon build --packages-select sentry_interfaces
 ```
 Expected: 0 errors, 0 warnings.
 
-- [ ] **Step 3: 提交消息定义更新**
+- [x] **Step 3: 提交消息定义更新**
 
 ```bash
 git add src/sentry_interfaces/msg/ChassisStatus.msg
