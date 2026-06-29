@@ -326,7 +326,7 @@ git commit -m "feat(protocol): implement chassis status frame DMA TX"
 - Modify: `firmware/chassis/Users/bsp_protocol.c`
 - Modify: `firmware/chassis/Users/bsp_protocol.h`
 
-- [ ] **Step 1: 保留 IDLE+DMA 接收缓冲与变量**
+- [x] **Step 1: 保留 IDLE+DMA 接收缓冲与变量**
 
 在 `bsp_protocol.c` 顶部已有 `rx_buff`、`rx_flag`、`rx_len` 和 `target_speed_left/right` 变量，保留它们：
 ```c
@@ -340,7 +340,7 @@ volatile float target_speed_right = 0.0f;
 static uint8_t comm_error_count = 0;
 ```
 
-- [ ] **Step 2: 实现 Protocol_Init 和帧解析**
+- [x] **Step 2: 实现 Protocol_Init 和帧解析**
 
 追加：
 ```c
@@ -425,7 +425,7 @@ void Protocol_Clear_CommErrorCount(void) {
 }
 ```
 
-- [ ] **Step 3: 在头文件补充 API**
+- [x] **Step 3: 在头文件补充 API**
 
 `bsp_protocol.h` 追加：
 ```c
@@ -433,7 +433,7 @@ uint8_t Protocol_Get_CommErrorCount(void);
 void Protocol_Clear_CommErrorCount(void);
 ```
 
-- [ ] **Step 4: 扩展主机测试验证运动控制帧解析逻辑**
+- [x] **Step 4: 扩展主机测试验证运动控制帧解析逻辑**
 
 在 `test_protocol.py` 追加：
 ```python
@@ -471,7 +471,7 @@ Expected:
 All protocol tests OK
 ```
 
-- [ ] **Step 5: 提交接收逻辑**
+- [x] **Step 5: 提交接收逻辑**
 
 ```bash
 git add firmware/chassis/Users/bsp_protocol.c
