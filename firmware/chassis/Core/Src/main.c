@@ -42,6 +42,12 @@ uint32_t last_iwdg_tick      = 0;
 uint32_t last_telem_tick     = 0;
 
 #define CHASSIS_ALARM_COMM_ERROR 0x04
+
+/* Convert encoder pulses per 10 ms PID period to mm/s.
+ * ENCODER_PULSES_PER_METER = 11035 (MG540: 13 PPR × 30:1 × 4 quadrature / π×0.045m).
+ * mm/s = (pulses / 10ms) × (1000 mm/m) × (100 × 10ms/s) / pulses_per_meter
+ *      = pulses × 100000.0f / ENCODER_PULSES_PER_METER */
+#define MM_S_PER_PULSE_10MS  (100000.0f / ENCODER_PULSES_PER_METER)
 /* USER CODE END PV */
 
 void SystemClock_Config(void);
@@ -273,14 +279,17 @@ int main(void)
         /* Chassis status to RDK X5 @ 10 Hz — project-standard frame */
         if ((int32_t)(now - last_telem_tick) >= 100) {
             last_telem_tick += 100;
-            int16_t left_speed_mm_s = (int16_t)(speed_left * 0.14137167f / 1560.0f * 100.0f * 1000.0f);
-            int16_t right_speed_mm_s = (int16_t)(speed_right * 0.14137167f / 1560.0f * 100.0f * 1000.0f);
-            int16_t battery_x100 = (int16_t)(battery_voltage * 100.0f);
+            float left_mm_s_f  = (float)speed_left  * MM_S_PER_PULSE_10MS;
+            float right_mm_s_f = (float)speed_right * MM_S_PER_PULSE_10MS;
+            int16_t left_speed_mm_s  = (int16_t)(left_mm_s_f  > 32767.0f ? 32767.0f : (left_mm_s_f  < -32767.0f ? -32767.0f : left_mm_s_f));
+            int16_t right_speed_mm_s = (int16_t)(right_mm_s_f > 32767.0f ? 32767.0f : (right_mm_s_f < -32767.0f ? -32767.0f : right_mm_s_f));
+            int16_t battery_x100 = (int16_t)(battery_voltage * 100.0f > 0.0f ? battery_voltage * 100.0f : 0.0f);
 
             uint8_t alarm_bits = 0;
             if (Protocol_Get_CommErrorCount() > 5) {
                 alarm_bits |= CHASSIS_ALARM_COMM_ERROR;
             }
+            Protocol_Clear_CommErrorCount();
 
             Protocol_Send_Chassis_Status(left_speed_mm_s,
                                          right_speed_mm_s,
