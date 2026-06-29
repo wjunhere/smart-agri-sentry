@@ -16,8 +16,8 @@ import math
 class WheelOdomNode(Node):
     def __init__(self):
         super().__init__('wheel_odom_node')
-        self.declare_parameter('wheel_base', 0.4)
-        self.declare_parameter('pulses_per_meter', 1000)
+        self.declare_parameter('wheel_base', 0.23)
+        self.declare_parameter('pulses_per_meter', 11035)
         self.declare_parameter('max_pulse_delta', 1000)
 
         self.wheel_base = self.get_parameter('wheel_base').value
