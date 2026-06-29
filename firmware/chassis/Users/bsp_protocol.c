@@ -19,6 +19,8 @@ volatile uint16_t rx_len  = 0;
 volatile float target_speed_left  = 0.0f;
 volatile float target_speed_right = 0.0f;
 
+static uint8_t comm_error_count = 0;
+
 /* CRC16-CCITT (polynomial 0x1021, initial value 0xFFFF) */
 uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
 {
@@ -40,116 +42,83 @@ static uint8_t tx_buf[32];
 static volatile uint8_t tx_busy = 0;
 
 void Protocol_Init(void) {
-    /*
-     * CubeMX configures USART2 RX DMA in CIRCULAR mode, but IDLE-line
-     * detection needs NORMAL mode so we can restart after each frame.
-     * Override the CubeMX setting here.
-     */
     hdma_usart2_rx.Init.Mode = DMA_NORMAL;
     HAL_DMA_Init(&hdma_usart2_rx);
-
-    /* Start DMA reception with IDLE-line interrupt */
     HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_buff, RX_BUFF_SIZE);
     __HAL_UART_ENABLE_IT(&huart2, UART_IT_IDLE);
 }
 
-/* Search for next 0xAA sync byte starting from 'start' */
-static int16_t Find_Sync(const uint8_t* buf, uint16_t start, uint16_t len) {
-    for (uint16_t i = start; i < len; i++) {
-        if (buf[i] == 0xAA) return (int16_t)i;
+static int16_t find_sync(const uint8_t *buf, uint16_t start, uint16_t len) {
+    for (uint16_t i = start; i + 1 < len; i++) {
+        if (buf[i] == FRAME_HEADER_0 && buf[i + 1] == FRAME_HEADER_1) {
+            return (int16_t)i;
+        }
     }
     return -1;
+}
+
+static void handle_motion_cmd(const uint8_t *payload) {
+    int16_t left_mm_s  = (int16_t)(payload[0] | (payload[1] << 8));
+    int16_t right_mm_s = (int16_t)(payload[2] | (payload[3] << 8));
+
+    // Hardware channels are crossed: host left maps to STM32 right and vice versa
+    target_speed_left  = (float)right_mm_s * 11035.0f / 100000.0f;
+    target_speed_right = (float)left_mm_s  * 11035.0f / 100000.0f;
 }
 
 void Protocol_Process(void) {
     if (!rx_flag) return;
     rx_flag = 0;
 
-#if PROTOCOL_DEBUG
-    printf("[PROTO] rx_len=%d raw:", rx_len);
-    for (int i = 0; i < rx_len && i < 32; i++) printf(" %02X", rx_buff[i]);
-    printf("\r\n");
-#endif
-
     uint16_t offset = 0;
-
-    /*
-     * Loop to handle multiple frames in one DMA buffer.
-     * Minimum frame: header(2) + type(1) + len(1) + crc(2) + min 1 data byte = 7.
-     */
-    while (offset + 7 <= rx_len) {
-        /* Sync to 0xAA 0x55 frame header */
-        if (rx_buff[offset] != 0xAA || rx_buff[offset + 1] != 0x55) {
-            int16_t next = Find_Sync(rx_buff, offset + 1, rx_len);
-            if (next < 0) break;            /* No more sync bytes in buffer */
+    while (offset + 6 <= rx_len) {
+        if (rx_buff[offset] != FRAME_HEADER_0 || rx_buff[offset + 1] != FRAME_HEADER_1) {
+            int16_t next = find_sync(rx_buff, offset + 1, rx_len);
+            if (next < 0) break;
             offset = (uint16_t)next;
-            if (offset + 1 >= rx_len) break;
-            if (rx_buff[offset + 1] != 0x55) {
-                offset++;
-                continue;
-            }
         }
 
-        /* Need at least 7 bytes from sync position */
-        if (offset + 7 > rx_len) break;
+        if (offset + 6 > rx_len) break;
+        uint8_t cmd = rx_buff[offset + 2];
+        uint8_t dlen = rx_buff[offset + 3];
+        uint16_t total = 4 + dlen + 2;
+        if (offset + total > rx_len) break;
 
-        uint8_t  type      = rx_buff[offset + 2];
-        uint8_t  dlen      = rx_buff[offset + 3];     /* payload data length */
-        uint16_t total_len = (uint16_t)dlen + 6;       /* header(2) + type(1) + len(1) + data + crc(2) */
+        uint16_t calc_crc = crc16_ccitt(&rx_buff[offset + 2], 2 + dlen);
+        uint16_t rx_crc = (uint16_t)(rx_buff[offset + total - 2] |
+                                     (rx_buff[offset + total - 1] << 8));
 
-        /* Incomplete frame — wait for more data */
-        if (offset + total_len > rx_len) break;
-
-        /* Verify CRC16-CCITT over header + type + len + data */
-        uint16_t expected = crc16_ccitt(&rx_buff[offset], total_len - 2);
-        uint16_t received = (uint16_t)(rx_buff[offset + total_len - 2] << 8)
-                          | rx_buff[offset + total_len - 1];
-
-        if (expected != received) {
-#if PROTOCOL_DEBUG
-            printf("[PROTO] CRC fail: calc=%04X recv=%04X\r\n", expected, received);
-#endif
-            offset++;   /* Step forward 1 byte to search for next 0xAA */
+        if (calc_crc != rx_crc) {
+            comm_error_count++;
+            offset++;
             continue;
         }
 
-        /* ---- Dispatch by type ---- */
-        if (type == TYPE_MOTION_CMD && dlen >= 4) {
-            /* TYPE 0x81: Set wheel speeds (little-endian int16 pairs)
-             * NOTE: Left/Right swapped because motor driver channels are
-             * physically crossed on this hardware revision. */
-            int16_t l_spd = (int16_t)(rx_buff[offset + 5] << 8 | rx_buff[offset + 4]);
-            int16_t r_spd = (int16_t)(rx_buff[offset + 7] << 8 | rx_buff[offset + 6]);
-            target_speed_left  = (float)r_spd;   /* swapped */
-            target_speed_right = (float)l_spd;   /* swapped */
-#if PROTOCOL_DEBUG
-            printf("[PROTO] CMD_SPEED L=%d R=%d\r\n", l_spd, r_spd);
-#endif
+        if (cmd == TYPE_MOTION_CMD && dlen == 4) {
+            handle_motion_cmd(&rx_buff[offset + 4]);
         }
-#if PROTOCOL_DEBUG
-        else {
-            printf("[PROTO] Unknown TYPE=0x%02X len=%d\r\n", type, dlen);
-        }
-#endif
 
-        offset += total_len;  /* Advance past this frame */
+        offset += total;
     }
 
-    /* Clear UART error flags that may have accumulated */
     __HAL_UART_CLEAR_OREFLAG(&huart2);
     __HAL_UART_CLEAR_NEFLAG(&huart2);
     __HAL_UART_CLEAR_FEFLAG(&huart2);
     __HAL_UART_CLEAR_PEFLAG(&huart2);
 
-    /* Ensure UART state is READY before restarting DMA (ISR already set it,
-       but be defensive in case of error-recovery paths) */
     if (huart2.RxState != HAL_UART_STATE_READY) {
         huart2.RxState = HAL_UART_STATE_READY;
     }
-
-    /* Restart DMA + IDLE reception for the next frame */
     HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_buff, RX_BUFF_SIZE);
     __HAL_UART_ENABLE_IT(&huart2, UART_IT_IDLE);
+}
+
+uint8_t Protocol_Get_CommErrorCount(void) {
+    return comm_error_count;
+}
+
+void Protocol_Clear_CommErrorCount(void) {
+    comm_error_count = 0;
 }
 
 /**

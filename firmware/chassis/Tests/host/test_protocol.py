@@ -84,8 +84,26 @@ def test_pack_chassis_status():
     assert struct.unpack_from('<I', frame, 19)[0] == 0xDEADBEEF, "timestamp mismatch"
 
 
+def pack_motion_cmd(left_mm_s, right_mm_s):
+    payload = struct.pack('<hh', left_mm_s, right_mm_s)
+    body = bytes([0x81, len(payload)]) + payload
+    crc = crc16_ccitt(body)
+    return bytes([0xAA, 0x55]) + body + struct.pack('>H', crc)
+
+
+def test_pack_motion_cmd():
+    frame = pack_motion_cmd(200, -100)
+    assert frame[0:2] == b'\xaa\x55'
+    assert frame[2] == 0x81
+    assert frame[3] == 4
+    body = frame[2:-2]
+    rx_crc = struct.unpack('>H', frame[-2:])[0]
+    assert crc16_ccitt(body) == rx_crc
+
+
 if __name__ == "__main__":
     test_crc16_ccitt_known()
     test_crc_matches_stm32_logic()
     test_pack_chassis_status()
+    test_pack_motion_cmd()
     print("All protocol tests OK")

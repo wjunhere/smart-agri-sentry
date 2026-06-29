@@ -24,5 +24,8 @@ void Protocol_Init(void);
 void Protocol_Process(void);
 void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_mm_s, int16_t battery_x100, uint8_t alarm_bits, int32_t left_pulse, int32_t right_pulse, uint32_t timestamp_ms);
 
+uint8_t Protocol_Get_CommErrorCount(void);
+void Protocol_Clear_CommErrorCount(void);
+
 uint16_t crc16_ccitt(const uint8_t *data, uint16_t len);
 #endif
