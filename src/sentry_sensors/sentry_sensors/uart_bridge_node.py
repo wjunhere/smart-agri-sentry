@@ -230,8 +230,8 @@ class UartBridgeNode(Node):
         left_m_s = v - w * self.wheel_base / 2.0
         right_m_s = v + w * self.wheel_base / 2.0
 
-        left_mm_s = int(left_m_s * 1000)
-        right_mm_s = int(right_m_s * 1000)
+        left_mm_s = max(-32768, min(32767, int(left_m_s * 1000)))
+        right_mm_s = max(-32768, min(32767, int(right_m_s * 1000)))
 
         payload = struct.pack('<hh', left_mm_s, right_mm_s)
         frame = encode_frame(TYPE_MOTION_CMD, payload)
