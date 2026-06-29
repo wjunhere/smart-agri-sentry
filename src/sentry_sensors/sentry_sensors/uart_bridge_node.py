@@ -123,9 +123,11 @@ class UartBridgeNode(Node):
         self.declare_parameter('uart_port', '/dev/ttyS2')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('forward_servo_cmd', False)
+        self.declare_parameter('wheel_base', 0.23)
         port = self.get_parameter('uart_port').value
         baud = self.get_parameter('baudrate').value
         forward_servo = self.get_parameter('forward_servo_cmd').value
+        self.wheel_base = self.get_parameter('wheel_base').value
 
         try:
             self.ser = serial.Serial(port, baud, timeout=0.01)
@@ -222,9 +224,16 @@ class UartBridgeNode(Node):
     def on_cmd_vel(self, msg: Twist):
         if self.ser is None or not self.ser.is_open:
             return
-        left = int(msg.linear.x * 1000)
-        right = int(msg.angular.z * 1000)
-        payload = struct.pack('<hh', left, right)
+
+        v = msg.linear.x
+        w = msg.angular.z
+        left_m_s = v - w * self.wheel_base / 2.0
+        right_m_s = v + w * self.wheel_base / 2.0
+
+        left_mm_s = int(left_m_s * 1000)
+        right_mm_s = int(right_m_s * 1000)
+
+        payload = struct.pack('<hh', left_mm_s, right_mm_s)
         frame = encode_frame(TYPE_MOTION_CMD, payload)
         try:
             self.ser.write(frame)
