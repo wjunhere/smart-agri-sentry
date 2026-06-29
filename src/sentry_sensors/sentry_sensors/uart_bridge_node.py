@@ -130,7 +130,7 @@ class UartBridgeNode(Node):
         self.wheel_base = self.get_parameter('wheel_base').value
 
         try:
-            self.ser = serial.Serial(port, baud, timeout=0.01)
+            self.ser = serial.Serial(port, baud, timeout=0)
             self.get_logger().info(f'UART open: {port} @ {baud}')
         except serial.SerialException as e:
             self.get_logger().error(f'Failed to open UART: {e}')
@@ -161,8 +161,20 @@ class UartBridgeNode(Node):
         if self.ser is None or not self.ser.is_open:
             return
         try:
-            if self.ser.in_waiting:
-                self.rx_buf.extend(self.ser.read(self.ser.in_waiting))
+            try:
+                waiting = self.ser.in_waiting
+            except OSError:
+                # Some UART drivers (e.g. RDK X5 dw-apb-uart) do not
+                # support the TIOCINQ ioctl used by in_waiting.
+                waiting = None
+            if waiting is None:
+                chunk = self.ser.read(256)
+            elif waiting:
+                chunk = self.ser.read(waiting)
+            else:
+                chunk = b''
+            if chunk:
+                self.rx_buf.extend(chunk)
         except serial.SerialException as e:
             self.get_logger().error(f'UART read error: {e}')
             return
