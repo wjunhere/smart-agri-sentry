@@ -103,8 +103,8 @@ def generate_launch_description():
             executable='wheel_odom_node',
             name='wheel_odom_node',
             parameters=[{
-                'wheel_base': 0.4,
-                'pulses_per_meter': 1000,
+                'wheel_base': 0.23,
+                'pulses_per_meter': 11035,
             }],
             output='screen',
         ),
@@ -152,8 +152,8 @@ def generate_launch_description():
             name='mission_control_node',
             parameters=[mission_params_path, {
                 'waypoints_file': waypoints_config,
-                'wheel_base': 0.4,
-                'pulses_per_meter': 1000,
+                'wheel_base': 0.23,
+                'pulses_per_meter': 11035,
             }],
             output='screen',
         ),

@@ -47,8 +47,8 @@ class MissionControlNode(Node):
         self.declare_parameter('resume_delay_sec', 2.0)
         self.declare_parameter('bbox_center_tolerance', 0.15)
         self.declare_parameter('waypoints_file', '')
-        self.declare_parameter('wheel_base', 0.4)
-        self.declare_parameter('pulses_per_meter', 1000)
+        self.declare_parameter('wheel_base', 0.23)
+        self.declare_parameter('pulses_per_meter', 11035)
 
         self.cruise_speed = self.get_parameter('cruise_speed').value
         self.approach_speed = self.get_parameter('approach_speed').value

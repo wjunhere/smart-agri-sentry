@@ -7,5 +7,5 @@ stop_distance_tolerance: 0.05
 analyze_timeout_sec: 5.0
 resume_delay_sec: 2.0
 bbox_center_tolerance: 0.15
-wheel_base: 0.4
-pulses_per_meter: 1000
+wheel_base: 0.23
+pulses_per_meter: 11035
