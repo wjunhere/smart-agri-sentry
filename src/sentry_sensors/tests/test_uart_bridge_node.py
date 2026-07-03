@@ -186,3 +186,58 @@ def test_decode_chassis_status_negative_one_pulse():
     assert data is not None
     assert data['left_pulse'] == -1
     assert data['right_pulse'] == -1
+
+
+def test_chassis_timeout_publishes_timeout_flag(node):
+    """Verify no frame for >1s publishes ChassisStatus with comm_timeout=True."""
+    from rclpy.duration import Duration
+    from sentry_interfaces.msg import ChassisStatus
+
+    node.last_chassis_time = node.get_clock().now() - Duration(seconds=2)
+    node.chassis_timed_out = False
+
+    with patch.object(node.pub_chassis, 'publish') as mock_pub:
+        node.check_chassis_timeout()
+        assert mock_pub.called
+        published = mock_pub.call_args[0][0]
+        assert isinstance(published, ChassisStatus)
+        assert published.comm_timeout is True
+        assert published.left_pulse == 0
+        assert published.right_pulse == 0
+
+
+def test_valid_chassis_frame_resets_timeout(node):
+    """Verify a valid chassis frame clears timed-out state and comm_timeout=False."""
+    from sentry_sensors.uart_bridge_node import encode_frame
+    from sentry_interfaces.msg import ChassisStatus
+    import struct
+
+    payload = struct.pack('<hhHBiiI',
+                          500, -300, 1234, 0x04,
+                          100000, -100000, 0x12345678)
+    frame = encode_frame(0x03, payload)
+    node.chassis_timed_out = True
+
+    with patch.object(node.pub_chassis, 'publish') as mock_pub:
+        node.handle_frame(frame)
+        assert node.chassis_timed_out is False
+        published = mock_pub.call_args[0][0]
+        assert isinstance(published, ChassisStatus)
+        assert published.comm_timeout is False
+
+
+def test_invalid_chassis_frame_is_discarded(node):
+    """Verify a corrupted chassis frame is not published."""
+    from sentry_sensors.uart_bridge_node import encode_frame
+    import struct
+
+    payload = struct.pack('<hhHBiiI',
+                          500, -300, 1234, 0x04,
+                          100000, -100000, 0x12345678)
+    frame = bytearray(encode_frame(0x03, payload))
+    # Corrupt the payload so CRC fails
+    frame[-3] ^= 0xFF
+
+    with patch.object(node.pub_chassis, 'publish') as mock_pub:
+        node.handle_frame(bytes(frame))
+        assert not mock_pub.called

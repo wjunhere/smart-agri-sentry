@@ -126,10 +126,13 @@ class UartBridgeNode(Node):
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('forward_servo_cmd', False)
         self.declare_parameter('wheel_base', 0.23)
+        self.declare_parameter('chassis_timeout_sec', 1.0)
         port = self.get_parameter('uart_port').value
         baud = self.get_parameter('baudrate').value
         forward_servo = self.get_parameter('forward_servo_cmd').value
         self.wheel_base = self.get_parameter('wheel_base').value
+        self.chassis_timeout_sec = self.get_parameter(
+            'chassis_timeout_sec').value
 
         try:
             self.ser = serial.Serial(port, baud, timeout=0)
@@ -158,6 +161,11 @@ class UartBridgeNode(Node):
 
         self.timer_rx = self.create_timer(0.01, self.rx_tick)
         self.rx_buf = bytearray()
+
+        self.last_chassis_time = self.get_clock().now()
+        self.chassis_timed_out = False
+        self.timer_chassis_timeout = self.create_timer(
+            1.0, self.check_chassis_timeout)
 
     def rx_tick(self):
         if self.ser is None or not self.ser.is_open:
@@ -222,6 +230,9 @@ class UartBridgeNode(Node):
                 soil.ph = data['soil_ph']
                 soil.ec = float(data['soil_ec'])
                 self.pub_soil.publish(soil)
+            else:
+                self.get_logger().debug(
+                    f'Invalid sensor frame discarded: {frame.hex()}')
         elif frame_type == TYPE_CHASSIS:
             data = decode_chassis_frame(frame)
             if data:
@@ -233,7 +244,34 @@ class UartBridgeNode(Node):
                 msg.left_pulse = data['left_pulse']
                 msg.right_pulse = data['right_pulse']
                 msg.encoder_timestamp = data['encoder_timestamp']
+                msg.comm_timeout = False
                 self.pub_chassis.publish(msg)
+                self.last_chassis_time = self.get_clock().now()
+                if self.chassis_timed_out:
+                    self.get_logger().info('Chassis status frame recovered')
+                    self.chassis_timed_out = False
+            else:
+                self.get_logger().debug(
+                    f'Invalid chassis frame discarded: {frame.hex()}')
+
+    def check_chassis_timeout(self):
+        elapsed = (
+            self.get_clock().now() - self.last_chassis_time).nanoseconds / 1e9
+        if elapsed > self.chassis_timeout_sec:
+            if not self.chassis_timed_out:
+                self.get_logger().warning(
+                    f'No chassis status frame for {elapsed:.1f}s')
+                self.chassis_timed_out = True
+            msg = ChassisStatus()
+            msg.left_speed = float('nan')
+            msg.right_speed = float('nan')
+            msg.battery_voltage = float('nan')
+            msg.alarm_bits = 0
+            msg.left_pulse = 0
+            msg.right_pulse = 0
+            msg.encoder_timestamp = 0
+            msg.comm_timeout = True
+            self.pub_chassis.publish(msg)
 
     def on_cmd_vel(self, msg: Twist):
         if self.ser is None or not self.ser.is_open:

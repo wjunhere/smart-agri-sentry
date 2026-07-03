@@ -5,3 +5,4 @@ uint8 alarm_bits
 int32 left_pulse
 int32 right_pulse
 uint32 encoder_timestamp
+bool comm_timeout
