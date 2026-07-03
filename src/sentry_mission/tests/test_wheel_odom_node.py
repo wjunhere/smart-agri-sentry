@@ -57,8 +57,8 @@ def test_valid_frame_computes_odometry(node):
             patch.object(node.pub, 'publish') as mock_pub:
         mock_clock.return_value.now.side_effect = times
 
-        node.on_chassis(_make_chassis_msg(0, 0))
         node.on_chassis(_make_chassis_msg(11035, 11035))
+        node.on_chassis(_make_chassis_msg(22070, 22070))
 
         assert mock_pub.call_count == 1
         odom = mock_pub.call_args[0][0]
