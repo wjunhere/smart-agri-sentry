@@ -32,6 +32,7 @@ class WheelOdomNode(Node):
         self.last_right = None
         self.last_time = None
         self.x = self.y = self.theta = 0.0
+        self.last_timeout_log_time = None
 
         # Pose covariance (empirical)
         self.pose_cov = [
@@ -57,6 +58,17 @@ class WheelOdomNode(Node):
             f'pulses_per_m={self.pulses_per_m}')
 
     def on_chassis(self, msg: ChassisStatus):
+        if msg.comm_timeout:
+            now = self.get_clock().now()
+            if (self.last_timeout_log_time is None or
+                    (now - self.last_timeout_log_time).nanoseconds > 5e9):
+                self.get_logger().warning(
+                    'Chassis communication timeout, skipping odometry update')
+                self.last_timeout_log_time = now
+            return
+
+        self.last_timeout_log_time = None
+
         left_pulse = msg.left_pulse
         right_pulse = msg.right_pulse
 
