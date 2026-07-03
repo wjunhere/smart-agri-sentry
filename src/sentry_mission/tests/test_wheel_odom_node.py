@@ -2,7 +2,7 @@
 
 import pytest
 import rclpy
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from sentry_mission.wheel_odom_node import WheelOdomNode
 from sentry_interfaces.msg import ChassisStatus
@@ -17,11 +17,9 @@ def ros_context():
 
 @pytest.fixture
 def node(ros_context):
-    with patch('sentry_mission.wheel_odom_node.Odometry'), \
-            patch('sentry_mission.wheel_odom_node.Quaternion'):
-        n = WheelOdomNode()
-        yield n
-        n.destroy_node()
+    n = WheelOdomNode()
+    yield n
+    n.destroy_node()
 
 
 def _make_chassis_msg(left_pulse, right_pulse, comm_timeout=False):
@@ -50,8 +48,6 @@ def test_valid_frame_after_timeout_resets(node):
 
 def test_valid_frame_computes_odometry(node):
     """Verify two valid frames produce expected odometry."""
-    import math
-
     times = [
         rclpy.time.Time(seconds=1.0),
         rclpy.time.Time(seconds=1.05),
