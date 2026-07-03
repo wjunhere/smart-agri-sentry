@@ -1,3 +1,5 @@
+import math
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
@@ -239,6 +241,11 @@ class UartBridgeNode(Node):
 
         v = msg.linear.x
         w = msg.angular.z
+        if not (math.isfinite(v) and math.isfinite(w)):
+            self.get_logger().warning(
+                f'Ignoring non-finite Twist: linear.x={v}, angular.z={w}')
+            return
+
         left_m_s = v - w * self.wheel_base / 2.0
         right_m_s = v + w * self.wheel_base / 2.0
 

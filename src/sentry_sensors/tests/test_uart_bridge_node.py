@@ -116,6 +116,25 @@ def test_cmd_vel_no_serial(node):
     node.on_cmd_vel(msg)
 
 
+def test_cmd_vel_ignores_non_finite(node):
+    """Verify non-finite Twist values do not crash the node or write to UART."""
+    from geometry_msgs.msg import Twist
+
+    with patch.object(node.ser, 'write') as mock_write:
+        for bad_val in [float('nan'), float('inf'), float('-inf')]:
+            msg = Twist()
+            msg.linear.x = bad_val
+            msg.angular.z = 0.0
+            node.on_cmd_vel(msg)
+            assert not mock_write.called
+
+            msg = Twist()
+            msg.linear.x = 0.0
+            msg.angular.z = bad_val
+            node.on_cmd_vel(msg)
+            assert not mock_write.called
+
+
 def test_servo_subscription_disabled_by_default(node):
     assert not hasattr(node, 'sub_servo')
 
