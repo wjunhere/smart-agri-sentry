@@ -57,15 +57,17 @@ def test_valid_frame_computes_odometry(node):
             patch.object(node.pub, 'publish') as mock_pub:
         mock_clock.return_value.now.side_effect = times
 
-        node.on_chassis(_make_chassis_msg(11035, 11035))
-        node.on_chassis(_make_chassis_msg(22070, 22070))
+        node.on_chassis(_make_chassis_msg(100, 100))
+        node.on_chassis(_make_chassis_msg(200, 200))
 
         assert mock_pub.call_count == 1
         odom = mock_pub.call_args[0][0]
-        # Both wheels moved 1m forward => x=1, theta=0
-        assert abs(odom.pose.pose.position.x - 1.0) < 1e-6
+        # Both wheels moved 100 pulses forward = 100/11035 m
+        expected_dist = 100.0 / node.pulses_per_m
+        expected_linear = expected_dist / 0.05
+        assert abs(odom.pose.pose.position.x - expected_dist) < 1e-6
         assert abs(odom.pose.pose.position.y) < 1e-6
-        assert abs(odom.twist.twist.linear.x - 20.0) < 1e-6
+        assert abs(odom.twist.twist.linear.x - expected_linear) < 1e-6
         assert abs(odom.twist.twist.angular.z) < 1e-6
         assert abs(odom.pose.pose.orientation.z) < 1e-6
         assert abs(odom.pose.pose.orientation.w - 1.0) < 1e-6
