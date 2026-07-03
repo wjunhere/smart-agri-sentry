@@ -1,6 +1,6 @@
 # 硬件平台
 
-> 更新日期：2026-06-25
+> 更新日期：2026-06-30
 
 ---
 
@@ -9,7 +9,7 @@
 | 模块 | 型号/规格 | 备注 |
 |---|---|---|
 | **AI 主控** | RDK X5 | 8 核 A55, 8 GB LPDDR4, 旭日 R5 NPU (10 TOPS), 功耗约 3 W |
-| **运动控制** | STM32F407ZGT6 | 最小系统板, 168 MHz, 裸机主循环 |
+| **运动控制** | STM32F407ZGT6 | 最小系统板, 168 MHz, 裸机主循环；仅负责底盘运动控制，不转发环境传感器 |
 | **电机** | MG540 直流减速电机 ×2 | 13 PPR 霍尔编码器 |
 | **电机驱动** | 当前测试驱动板 | 与 STM32 直连 |
 | **编码器** | 13 PPR，减速比 1:30，四倍频 | 每米 11035 脉冲 |
@@ -21,17 +21,17 @@
 
 ## 2. 传感器与连接方式
 
-### 2.1 移动传感器（随车，经 STM32 转发）
+### 2.1 RDK X5 直连传感器
 
 | 传感器 | 连接方式 | 接至 | 数据项 | 周期 | ROS2 Topic |
 |---|---|---|---|---|---|
-| **七合一空气质量** | UART | STM32 | 温度、湿度、CO₂ | 1 s | `/sensor/environment_mobile` |
-| **七合一土壤** | UART | STM32 | 电导率、氮、磷、钾、温度、湿度、pH | 1 s | `/sensor/soil_nutrition` |
 | **MIPI 摄像头** | CSI | RDK X5 | 图像/视频流 | 500 ms | `/sentry/camera/image_raw` |
 | **激光雷达** | UART (CP2102) | RDK X5 | 360° 距离/强度点云 | 10 Hz | `/scan`, `/lidar/obstacle_info` |
 | **IMU** | USB (CH340) | RDK X5 | 姿态/角速度/加速度 | 100 Hz | `/sensor/imu/data_raw`, `/sensor/imu/data` |
 
 ### 2.2 固定环境节点（田间 24 h 连续，低功耗野外版）
+
+> 环境数据全部由固定节点采集并通过 LoRa 回传，底盘 STM32F407 不再转发移动传感器。
 
 | 传感器 | 型号 | 接口 | 数据项 | 采样周期 | 备注 |
 |---|---|---|---|---|---|
@@ -50,7 +50,7 @@
 
 | 项目 | 方案 |
 |---|---|
-| **RDK ↔ STM32** | UART2（Pin 15 TX / Pin 22 RX，交叉连接），波特率 115200，自定义二进制帧 |
+| **RDK ↔ STM32** | UART2（Pin 8 TX / Pin 10 RX，交叉连接），波特率 115200，自定义二进制帧；仅传输底盘运动控制与状态 |
 | **RDK ↔ LoRa 网关** | USB 转串口（TTL），波特率 115200 |
 | **固定节点供电** | 10 W 太阳能 + 18650×2（并联 4000 mAh），CN3791 MPPT |
 | **主电源** | 24 V 锂电池组 |
@@ -76,11 +76,11 @@
 ### 5.1 STM32 ↔ RDK X5（UART2，115200，3.3 V TTL）
 
 接线（交叉）：
-- STM32 PA2 (USART2_TX) → RDK 40Pin **22** (UART2_RXD)
-- STM32 PA3 (USART2_RX) → RDK 40Pin **15** (UART2_TXD)
+- STM32 PA2 (USART2_TX) → RDK 40Pin **10** (UART2_RXD)
+- STM32 PA3 (USART2_RX) → RDK 40Pin **8** (UART2_TXD)
 - GND 共地
 
-RDK 设备节点：`/dev/ttyS5`（UART2 对应 `341a0000.serial`，物理 40Pin Pin15 TX / Pin22 RX）。
+RDK 设备节点：`/dev/ttyS1`（UART2 对应 `34070000.serial`，物理 40Pin Pin8 TX / Pin10 RX）。
 
 采用**自定义二进制帧**：
 
@@ -91,36 +91,14 @@ RDK 设备节点：`/dev/ttyS5`（UART2 对应 `341a0000.serial`，物理 40Pin 
 
 #### 数据类型（TYPE）
 
+> **注意**：`TYPE=0x01` 传感器汇总帧（空气温湿度 CO₂ + 土壤电导率/氮磷钾/温湿度/pH）已随移动传感器移除而弃用，保留在旧版协议中仅作兼容性参考。
+
 | TYPE | 方向 | 含义 | 载荷内容 |
 |---|---|---|---|
-| `0x01` | STM32→RDK | **传感器汇总帧** | 空气温湿度 CO₂ + 土壤电导率/氮磷钾/温湿度/pH |
 | `0x03` | STM32→RDK | **底盘状态帧** | 左轮速、右轮速、电池电压、报警位、编码器脉冲(L/R)、时间戳 |
 | `0x81` | RDK→STM32 | **运动控制帧** | 左轮目标速、右轮目标速（mm/s） |
 | `0x82` | RDK→STM32 | **云台控制帧**（可选） | 舵机俯仰角、偏航角（角度值）；仅当 `uart_bridge_node.forward_servo_cmd=True` 时转发 |
 | `0x83` | RDK→STM32 | **模式切换帧** | 0x00=待机, 0x01=遥控, 0x02=自动巡航 |
-
-#### 传感器汇总帧（TYPE=0x01）载荷定义
-
-```c
-typedef struct {
-    uint32_t timestamp_ms;      // STM32 开机后的毫秒时间戳
-    int16_t  air_temp_x10;      // 空气温度 ×10（0.1 ℃）
-    uint16_t air_humi_x10;      // 空气湿度 ×10（0.1 %RH）
-    uint16_t air_co2;           // CO₂ 浓度（ppm）
-    int16_t  soil_temp_x10;     // 土壤温度 ×10（0.1 ℃）
-    uint16_t soil_humi_x10;     // 土壤湿度 ×10（0.1 %RH）
-    uint16_t soil_ec;           // 土壤电导率（us/cm）
-    uint16_t soil_n;            // 氮含量（mg/kg）
-    uint16_t soil_p;            // 磷含量（mg/kg）
-    uint16_t soil_k;            // 钾含量（mg/kg）
-    uint16_t soil_ph_x10;       // pH 值 ×10（0.1 pH）
-} __attribute__((packed)) SensorFrame_t;
-// 总长度：2+1+1+24+2 = 30 字节
-```
-
-`uart_bridge_node` 解析 TYPE=0x01 后，拆分为两个 ROS2 消息发布：
-- `/sensor/environment_mobile` (`Environment` 消息)：空气温湿/CO₂、土壤温湿/EC
-- `/sensor/soil_nutrition` (`SoilNutrition` 消息)：N/P/K/pH/EC
 
 #### 底盘状态帧（TYPE=0x03）载荷定义（v2.1 扩展）
 

@@ -10,11 +10,18 @@ extern DMA_HandleTypeDef hdma_usart2_rx;
 #define FRAME_HEADER_1 0x55
 #define TYPE_CHASSIS    0x03
 #define TYPE_MOTION_CMD 0x81
+#define TYPE_CONFIG_CMD 0x84
 
 #define RX_BUFF_SIZE 64
 extern uint8_t rx_buff[RX_BUFF_SIZE];
 extern volatile uint8_t rx_flag;
 extern volatile uint16_t rx_len;
+
+#define CMD_TIMEOUT_MS 500
+
+/* Runtime-tunable configuration parameters */
+extern volatile float g_right_wheel_trim;
+extern volatile float g_right_motor_pwm_scale;
 
 // 外部控制变量
 extern volatile float target_speed_left;
@@ -22,6 +29,7 @@ extern volatile float target_speed_right;
 
 void Protocol_Init(void);
 void Protocol_Process(void);
+void Protocol_Check_Command_Timeout(void);
 void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_mm_s, int16_t battery_x100, uint8_t alarm_bits, int32_t left_pulse, int32_t right_pulse, uint32_t timestamp_ms);
 
 uint8_t Protocol_Get_CommErrorCount(void);

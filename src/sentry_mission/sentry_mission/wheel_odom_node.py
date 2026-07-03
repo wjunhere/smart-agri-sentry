@@ -7,6 +7,7 @@ computes differential-drive dead reckoning, publishes /wheel/odom.
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Quaternion
 from sentry_interfaces.msg import ChassisStatus
@@ -24,8 +25,9 @@ class WheelOdomNode(Node):
         self.pulses_per_m = self.get_parameter('pulses_per_meter').value
         self.MAX_PULSE_DELTA = self.get_parameter('max_pulse_delta').value
 
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.sub = self.create_subscription(
-            ChassisStatus, '/sentry/chassis/status', self.on_chassis, 10)
+            ChassisStatus, '/sentry/chassis/status', self.on_chassis, qos)
         self.pub = self.create_publisher(Odometry, '/wheel/odom', 10)
 
         self.last_left = None

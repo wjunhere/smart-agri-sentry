@@ -6,6 +6,7 @@
  * CRC16 = CRC16-CCITT over all preceding bytes (polynomial 0x1021, init 0xFFFF).
  */
 #include "bsp_protocol.h"
+#include "pid.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -15,6 +16,11 @@ volatile uint16_t rx_len  = 0;
 
 volatile float target_speed_left  = 0.0f;
 volatile float target_speed_right = 0.0f;
+
+volatile float g_right_wheel_trim      = 0.95f;   /* <1.0 slows right wheel */
+volatile float g_right_motor_pwm_scale = 1.00f;   /* <1.0 reduces right PWM directly */
+
+extern PID_TypeDef pid_left, pid_right;
 
 static uint8_t comm_error_count = 0;
 
@@ -54,6 +60,28 @@ static int16_t find_sync(const uint8_t *buf, uint16_t start, uint16_t len) {
     return -1;
 }
 
+/* If robot veers left when driving straight, the right wheel is too fast;
+ * reduce g_right_wheel_trim (e.g. 0.95f) or g_right_motor_pwm_scale. */
+
+/* Runtime-configurable parameter IDs (must match RDK side). */
+#define PARAM_RIGHT_WHEEL_TRIM      1
+#define PARAM_RIGHT_MOTOR_PWM_SCALE 2
+#define PARAM_LEFT_KP               3
+#define PARAM_LEFT_KI               4
+#define PARAM_LEFT_KD               5
+#define PARAM_RIGHT_KP              6
+#define PARAM_RIGHT_KI              7
+#define PARAM_RIGHT_KD              8
+
+static uint32_t last_cmd_ms = 0;
+
+static float bytes_to_float(const uint8_t *b)
+{
+    float f;
+    memcpy(&f, b, sizeof(f));
+    return f;
+}
+
 static void handle_motion_cmd(const uint8_t *payload) {
     int16_t left_mm_s  = (int16_t)(payload[0] | (payload[1] << 8));
     int16_t right_mm_s = (int16_t)(payload[2] | (payload[3] << 8));
@@ -61,12 +89,53 @@ static void handle_motion_cmd(const uint8_t *payload) {
     /* Motor driver channels are physically crossed on this board:
      * host-left connects to the right motor driver input and vice versa. */
 
-    /* Convert mm/s to pulses per 10 ms.
-     * Encoder: MG540 13 PPR × 30:1 gear × 4 (quadrature) / (π × 0.045 m wheel diameter)
-     * ≈ 11035 pulses/meter = 11.035 pulses/mm.
-     * pulses/10ms = mm/s × 11.035 × 0.01 = mm/s × 11035 / 100000. */
     target_speed_left  = (float)right_mm_s * 11035.0f / 100000.0f;
-    target_speed_right = (float)left_mm_s  * 11035.0f / 100000.0f;
+    target_speed_right = (float)left_mm_s  * 11035.0f / 100000.0f * g_right_wheel_trim;
+
+    last_cmd_ms = HAL_GetTick();
+}
+
+static void handle_config_cmd(const uint8_t *payload)
+{
+    uint8_t id = payload[0];
+    float value = bytes_to_float(&payload[1]);
+
+    switch (id) {
+        case PARAM_RIGHT_WHEEL_TRIM:
+            g_right_wheel_trim = value;
+            break;
+        case PARAM_RIGHT_MOTOR_PWM_SCALE:
+            if (value >= 0.0f && value <= 1.5f) {
+                g_right_motor_pwm_scale = value;
+            }
+            break;
+        case PARAM_LEFT_KP:
+            pid_left.Kp = value;
+            break;
+        case PARAM_LEFT_KI:
+            pid_left.Ki = value;
+            break;
+        case PARAM_LEFT_KD:
+            pid_left.Kd = value;
+            break;
+        case PARAM_RIGHT_KP:
+            pid_right.Kp = value;
+            break;
+        case PARAM_RIGHT_KI:
+            pid_right.Ki = value;
+            break;
+        case PARAM_RIGHT_KD:
+            pid_right.Kd = value;
+            break;
+        default:
+            return;
+    }
+
+    /* Reset PID integrals/derivatives to avoid jumps when gains change. */
+    PID_Reset(&pid_left);
+    PID_Reset(&pid_right);
+
+    printf("[CONFIG] id=%u value=%.4f\r\n", (unsigned)id, (double)value);
 }
 
 void Protocol_Process(void) {
@@ -100,6 +169,9 @@ void Protocol_Process(void) {
         if (cmd == TYPE_MOTION_CMD && dlen == 4) {
             handle_motion_cmd(&rx_buff[offset + 4]);
         }
+        else if (cmd == TYPE_CONFIG_CMD && dlen == 5) {
+            handle_config_cmd(&rx_buff[offset + 4]);
+        }
 
         offset += total;
     }
@@ -128,6 +200,13 @@ void Protocol_Clear_CommErrorCount(void) {
     comm_error_count = 0;
 }
 
+void Protocol_Check_Command_Timeout(void) {
+    if (HAL_GetTick() - last_cmd_ms > CMD_TIMEOUT_MS) {
+        target_speed_left  = 0.0f;
+        target_speed_right = 0.0f;
+    }
+}
+
 /**
  * @brief  Send full chassis status frame to RDK X5 via USART2 DMA.
  *         Frame: AA 55 03 13 <left_speed[2]> <right_speed[2]> <battery[2]> <alarm[1]> <left_pulse[4]> <right_pulse[4]> <timestamp[4]> <CRC16>  (25 bytes)
@@ -140,7 +219,26 @@ void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_m
                                     int32_t left_pulse, int32_t right_pulse,
                                     uint32_t timestamp_ms)
 {
-    if (tx_busy) return;
+    static uint8_t first_call = 1;
+    static uint16_t call_cnt = 0;
+    call_cnt++;
+
+    if (first_call) {
+        first_call = 0;
+        printf("[PROTO] first call #%u tx_busy=%u gState=%u RxState=%u\r\n",
+               call_cnt, tx_busy, huart2.gState, huart2.RxState);
+        printf("[PROTO] USART2 CR1=0x%08lX CR3=0x%08lX SR=0x%08lX BRR=%lu\r\n",
+               (unsigned long)huart2.Instance->CR1,
+               (unsigned long)huart2.Instance->CR3,
+               (unsigned long)huart2.Instance->SR,
+               (unsigned long)huart2.Instance->BRR);
+    }
+
+    if (tx_busy) {
+        if (call_cnt % 50 == 0)
+            printf("[PROTO] call #%u: tx_busy still set, skipping\r\n", call_cnt);
+        return;
+    }
 
     tx_buf[0] = FRAME_HEADER_0;                     /* Header */
     tx_buf[1] = FRAME_HEADER_1;
@@ -180,7 +278,15 @@ void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_m
     tx_buf[24] = (uint8_t)(crc & 0xFF);             /* CRC low byte */
 
     tx_busy = 1;
-    HAL_UART_Transmit_DMA(&huart2, tx_buf, 25);
+    HAL_StatusTypeDef rc = HAL_UART_Transmit_DMA(&huart2, tx_buf, 25);
+    if (rc != HAL_OK) {
+        tx_busy = 0;
+        printf("[PROTO] TX_DMA error call #%u rc=%d gState=%u SR=0x%08lX\r\n",
+               call_cnt, (int)rc, huart2.gState, (unsigned long)huart2.Instance->SR);
+    } else if (call_cnt <= 3 || call_cnt % 50 == 0) {
+        printf("[PROTO] TX_DMA call #%u rc=%d gState=%u SR=0x%08lX\r\n",
+               call_cnt, (int)rc, huart2.gState, (unsigned long)huart2.Instance->SR);
+    }
 }
 
 /**
@@ -188,7 +294,12 @@ void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_m
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
+    static uint16_t txcnt = 0;
     if (huart == &huart2) {
         tx_busy = 0;
+        txcnt++;
+        if (txcnt <= 3)
+            printf("[PROTO] TX DMA complete #%u SR=0x%08lX\r\n",
+                   txcnt, (unsigned long)huart2.Instance->SR);
     }
 }

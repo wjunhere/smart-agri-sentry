@@ -8,7 +8,7 @@ import struct
 
 from geometry_msgs.msg import Twist
 from sentry_interfaces.msg import (
-    Environment, SoilNutrition, ChassisStatus, ServoCmd)
+    Environment, SoilNutrition, ChassisStatus, ServoCmd, ChassisConfig)
 
 
 # ---- Protocol Constants ----
@@ -18,6 +18,7 @@ TYPE_CHASSIS = 0x03
 TYPE_MOTION_CMD = 0x81
 TYPE_SERVO_CMD = 0x82
 TYPE_MODE_CMD = 0x83
+TYPE_CONFIG_CMD = 0x84
 
 
 # ---- CRC16-CCITT (0x1021, init 0xFFFF) ----
@@ -122,7 +123,7 @@ def decode_chassis_frame(frame: bytes):
 class UartBridgeNode(Node):
     def __init__(self, **kwargs):
         super().__init__('uart_bridge_node', **kwargs)
-        self.declare_parameter('uart_port', '/dev/ttyS5')
+        self.declare_parameter('uart_port', '/dev/ttyS1')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('forward_servo_cmd', False)
         self.declare_parameter('wheel_base', 0.23)
@@ -151,6 +152,8 @@ class UartBridgeNode(Node):
 
         self.sub_cmd_vel = self.create_subscription(
             Twist, '/cmd_vel', self.on_cmd_vel, 10)
+        self.sub_config = self.create_subscription(
+            ChassisConfig, '/sentry/chassis/config', self.on_chassis_config, 10)
         if forward_servo:
             self.sub_servo = self.create_subscription(
                 ServoCmd, '/sentry/servo_cmd', self.on_servo, 10)
@@ -294,6 +297,22 @@ class UartBridgeNode(Node):
         frame = encode_frame(TYPE_MOTION_CMD, payload)
         try:
             self.ser.write(frame)
+        except serial.SerialException as e:
+            self.get_logger().error(f'UART write error: {e}')
+
+    def on_chassis_config(self, msg: ChassisConfig):
+        if self.ser is None or not self.ser.is_open:
+            return
+        if not math.isfinite(msg.value):
+            self.get_logger().warning(
+                f'Ignoring non-finite config value for param_id={msg.param_id}')
+            return
+        payload = bytes([msg.param_id]) + struct.pack('<f', msg.value)
+        frame = encode_frame(TYPE_CONFIG_CMD, payload)
+        try:
+            self.ser.write(frame)
+            self.get_logger().debug(
+                f'Sent config param_id={msg.param_id} value={msg.value}')
         except serial.SerialException as e:
             self.get_logger().error(f'UART write error: {e}')
 

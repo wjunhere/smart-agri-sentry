@@ -22,6 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MissionStatus.msg"
   "msg/ChassisStatus.msg"
   "msg/ServoCmd.msg"
+  "msg/ChassisConfig.msg"
   "msg/ObstacleInfo.msg"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )

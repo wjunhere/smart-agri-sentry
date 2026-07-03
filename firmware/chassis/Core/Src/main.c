@@ -273,6 +273,7 @@ int main(void)
         uint32_t now = HAL_GetTick();
 
         Protocol_Process();
+        Protocol_Check_Command_Timeout();
         Debug_Process();
 
         /* PID loop @ 100 Hz */
