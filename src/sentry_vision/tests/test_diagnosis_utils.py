@@ -50,9 +50,10 @@ class TestResolveModelPath:
 class TestGetLabels:
     def test_tomato_labels(self):
         labels = get_labels('tomato')
-        assert len(labels) == 10
-        assert labels[2] == 'healthy'
+        assert len(labels) == 7
+        assert 'healthy' in labels
         assert 'late_blight' in labels
+        assert labels[0] == 'late_blight'
 
     def test_wheat_labels(self):
         labels = get_labels('wheat')
@@ -68,8 +69,8 @@ class TestGetLabels:
 
     def test_unknown_crop_returns_tomato_labels(self):
         labels = get_labels('unknown')
-        assert len(labels) == 10
-        assert labels[0] == 'bacterial_spot'
+        assert len(labels) == 7
+        assert labels[0] == 'late_blight'
 
 
 class TestGetInputFormat:

@@ -103,10 +103,9 @@ class FusionNode(Node):
                 'drought_threshold': 30.0,
                 'weights': {'vision': 0.5, 'env': 0.3, 'interaction': 0.2},
                 'disease_risk_classes': [
-                    'bacterial_spot', 'early_blight', 'healthy', 'late_blight',
-                    'leaf_mold', 'septoria_leaf_spot',
-                    'spider_mites_two-spotted_spider_mite', 'target_spot',
-                    'tomato_mosaic_virus', 'tomato_yellow_leaf_curl_virus'
+                    'late_blight', 'healthy', 'early_blight',
+                    'bacterial_spot', 'leaf_mold', 'septoria_leaf_spot',
+                    'tomato_yellow_leaf_curl_virus'
                 ],
             },
             'wheat': {

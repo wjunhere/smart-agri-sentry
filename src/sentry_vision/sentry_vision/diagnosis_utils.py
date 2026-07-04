@@ -23,17 +23,14 @@ def get_input_format(crop_type: str) -> str:
     return _INPUT_FORMATS.get(crop_type, 'nv12')
 
 
-# 10-class tomato disease labels
+# 7-class tomato disease labels (model outputs 8; class 7 reserved)
 TOMATO_LABELS = [
-    'bacterial_spot',
-    'early_blight',
-    'healthy',
     'late_blight',
+    'healthy',
+    'early_blight',
+    'bacterial_spot',
     'leaf_mold',
     'septoria_leaf_spot',
-    'spider_mites_two-spotted_spider_mite',
-    'target_spot',
-    'tomato_mosaic_virus',
     'tomato_yellow_leaf_curl_virus',
 ]
 
