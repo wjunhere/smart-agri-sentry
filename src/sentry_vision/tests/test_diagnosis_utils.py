@@ -3,7 +3,7 @@
 import os
 import pytest
 
-from sentry_vision.diagnosis_utils import get_labels, resolve_model_path
+from sentry_vision.diagnosis_utils import get_labels, resolve_model_path, get_input_format
 
 
 class TestResolveModelPath:
@@ -34,15 +34,17 @@ class TestResolveModelPath:
         assert not path.endswith('.tflite')
 
     def test_relative_path_resolved_with_search(self, tmp_path, monkeypatch):
-        # Create a fake model file so resolution succeeds
-        model_dir = tmp_path / 'models'
-        model_dir.mkdir()
-        (model_dir / 'tomato_mobilenetv3.bin').write_text('fake')
+        # Create a fake quantized model file at the new default path so
+        # resolution succeeds.
+        rel = 'models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin'
+        model_file = tmp_path / rel
+        model_file.parent.mkdir(parents=True)
+        model_file.write_text('fake')
 
         monkeypatch.chdir(tmp_path)
         path = resolve_model_path('tomato', '', 224)
         assert os.path.isabs(path)
-        assert path.endswith('tomato_mobilenetv3.bin')
+        assert path.endswith('tomato_mobilenetv3_bayese_224x224_nv12.bin')
 
 
 class TestGetLabels:
@@ -68,3 +70,17 @@ class TestGetLabels:
         labels = get_labels('unknown')
         assert len(labels) == 10
         assert labels[0] == 'bacterial_spot'
+
+
+class TestGetInputFormat:
+    def test_tomato_is_nv12(self):
+        assert get_input_format('tomato') == 'nv12'
+
+    def test_wheat_is_nv12(self):
+        assert get_input_format('wheat') == 'nv12'
+
+    def test_strawberry_is_rgb(self):
+        assert get_input_format('strawberry') == 'rgb'
+
+    def test_unknown_falls_back_to_nv12(self):
+        assert get_input_format('unknown') == 'nv12'

@@ -1,0 +1,26 @@
+model_parameters:
+  onnx_model: '../wheat_mobilenetv3.onnx'
+  march: "bayes-e"
+  layer_out_dump: False
+  working_dir: 'wheat_mobilenetv3_output'
+  output_model_file_prefix: 'wheat_mobilenetv3_bayese_224x224_nv12'
+
+input_parameters:
+  input_name: "input"
+  input_type_rt: 'nv12'
+  input_type_train: 'rgb'
+  input_layout_train: 'NCHW'
+  input_shape: '1x3x224x224'
+  norm_type: 'data_mean_and_scale'
+  mean_value: 123.675 116.28 103.53
+  scale_value: 0.01712475 0.017507 0.01742919
+
+calibration_parameters:
+  cal_data_dir: './calibration/wheat'
+  cal_data_type: 'float32'
+  calibration_type: 'default'
+
+compiler_parameters:
+  compile_mode: 'latency'
+  debug: False
+  optimize_level: 'O3'

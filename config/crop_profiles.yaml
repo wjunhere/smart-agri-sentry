@@ -1,4 +1,5 @@
 # Crop-specific profiles for fusion node
+# Disease risk class names must match the model output labels in diagnosis_utils.py.
 tomato:
   lwd_threshold_hours: 6.0
   high_humidity_threshold: 85.0
@@ -12,6 +13,7 @@ tomato:
   disease_risk_classes:
     - bacterial_spot
     - early_blight
+    - healthy
     - late_blight
     - leaf_mold
     - septoria_leaf_spot
@@ -31,10 +33,11 @@ wheat:
     env: 0.3
     interaction: 0.2
   disease_risk_classes:
-    - powdery_mildew
-    - stripe_rust
-    - leaf_rust
-    - fusarium_head_blight
+    - healthy
+    - wheat_powdery_mildew
+    - wheat_scab
+    - wheat_stripe_rust
+    - wheat_yellow_dwarf
 
 strawberry:
   lwd_threshold_hours: 10.0
@@ -47,7 +50,11 @@ strawberry:
     env: 0.3
     interaction: 0.2
   disease_risk_classes:
+    - leaf_spot
+    - powdery_mildew_leaf
     - gray_mold
-    - powdery_mildew
-    - leaf_scorch
-    - anthracnose
+    - angular_leaf_spot
+    - blossom_blight
+    - powdery_mildew_fruit
+    - anthracnose_fruit_rot
+    - healthy

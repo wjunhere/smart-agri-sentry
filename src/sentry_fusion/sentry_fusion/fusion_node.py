@@ -103,8 +103,9 @@ class FusionNode(Node):
                 'drought_threshold': 30.0,
                 'weights': {'vision': 0.5, 'env': 0.3, 'interaction': 0.2},
                 'disease_risk_classes': [
-                    'bacterial_spot', 'early_blight', 'late_blight',
+                    'bacterial_spot', 'early_blight', 'healthy', 'late_blight',
                     'leaf_mold', 'septoria_leaf_spot',
+                    'spider_mites_two-spotted_spider_mite', 'target_spot',
                     'tomato_mosaic_virus', 'tomato_yellow_leaf_curl_virus'
                 ],
             },
@@ -114,8 +115,8 @@ class FusionNode(Node):
                 'drought_threshold': 25.0,
                 'weights': {'vision': 0.5, 'env': 0.3, 'interaction': 0.2},
                 'disease_risk_classes': [
-                    'powdery_mildew', 'stripe_rust', 'leaf_rust',
-                    'fusarium_head_blight'
+                    'healthy', 'wheat_powdery_mildew', 'wheat_scab',
+                    'wheat_stripe_rust', 'wheat_yellow_dwarf'
                 ],
             },
             'strawberry': {
@@ -124,8 +125,9 @@ class FusionNode(Node):
                 'drought_threshold': 35.0,
                 'weights': {'vision': 0.5, 'env': 0.3, 'interaction': 0.2},
                 'disease_risk_classes': [
-                    'gray_mold', 'powdery_mildew', 'leaf_scorch',
-                    'anthracnose'
+                    'leaf_spot', 'powdery_mildew_leaf', 'gray_mold',
+                    'angular_leaf_spot', 'blossom_blight',
+                    'powdery_mildew_fruit', 'anthracnose_fruit_rot', 'healthy'
                 ],
             },
         }

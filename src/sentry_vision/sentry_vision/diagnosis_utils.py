@@ -3,6 +3,26 @@
 import os
 
 
+# Quantized BPU model paths (relative to workspace root)
+_QUANTIZED_MODEL_PATHS = {
+    'tomato': 'models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin',
+    'wheat': 'models/quantization/wheat_mobilenetv3_output/wheat_mobilenetv3_bayese_224x224_nv12.bin',
+    'strawberry': 'models/quantization/strawberry_mobilenetv3_output/strawberry_mobilenetv3_bayese_224x224_rgb.bin',
+}
+
+# Input format per crop type (nv12 = packed NV12 uint8, rgb = NCHW uint8)
+_INPUT_FORMATS = {
+    'tomato': 'nv12',
+    'wheat': 'nv12',
+    'strawberry': 'rgb',
+}
+
+
+def get_input_format(crop_type: str) -> str:
+    """Return the BPU input format for the given crop type."""
+    return _INPUT_FORMATS.get(crop_type, 'nv12')
+
+
 # 10-class tomato disease labels
 TOMATO_LABELS = [
     'bacterial_spot',
@@ -54,13 +74,9 @@ def get_labels(crop_type: str) -> list:
 
 
 def resolve_model_path(crop_type: str, model_path: str, input_size: int) -> str:
-    """Resolve the absolute path to the inference model.
-
-    Board-side models are .bin files converted from ONNX. Explicit .tflite
-    paths are rewritten to .bin with a warning.
-    """
+    """Resolve the absolute path to the BPU inference model (.bin)."""
     if not model_path:
-        model_path = f'models/{crop_type}_mobilenetv3.bin'
+        model_path = _QUANTIZED_MODEL_PATHS.get(crop_type, _QUANTIZED_MODEL_PATHS['tomato'])
 
     if model_path.endswith('.tflite'):
         model_path = model_path[:-7] + '.bin'

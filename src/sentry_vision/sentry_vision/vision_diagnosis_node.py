@@ -4,10 +4,28 @@ from sensor_msgs.msg import Image
 from sentry_interfaces.msg import Diagnosis
 from cv_bridge import CvBridge
 import numpy as np
-import tflite_runtime.interpreter as tflite
 import cv2
 
-from .diagnosis_utils import get_labels, resolve_model_path
+from .diagnosis_utils import get_labels, resolve_model_path, get_input_format
+
+
+def bgr_to_nv12(bgr: np.ndarray) -> np.ndarray:
+    """Convert BGR uint8 (H, W, 3) to packed NV12 flat uint8."""
+    h, w = bgr.shape[:2]
+    yuv = cv2.cvtColor(bgr, cv2.COLOR_BGR2YUV_I420)
+    y = yuv[:h, :w]
+    u = yuv[h:h + h // 4, :w]
+    v = yuv[h + h // 4:, :w]
+    uv = np.empty((h // 2, w), dtype=np.uint8)
+    uv[0::2, :] = u
+    uv[1::2, :] = v
+    return np.concatenate([y.reshape(-1), uv.reshape(-1)])
+
+
+def bgr_to_rgb_nchw(bgr: np.ndarray) -> np.ndarray:
+    """Convert BGR uint8 (H, W, 3) to RGB NCHW uint8 [1, 3, H, W]."""
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    return np.transpose(rgb, (2, 0, 1))[np.newaxis, :, :, :].copy()
 
 
 class VisionDiagnosisNode(Node):
@@ -23,18 +41,24 @@ class VisionDiagnosisNode(Node):
 
         model_path = resolve_model_path(self.crop_type, model_path, self.input_size)
         self.labels = get_labels(self.crop_type)
+        self.input_format = get_input_format(self.crop_type)
 
-        self.get_logger().info(f'Loading model: {model_path}')
-        self.interpreter = tflite.Interpreter(model_path=model_path)
-        self.interpreter.allocate_tensors()
-        self.input_details = self.interpreter.get_input_details()
-        self.output_details = self.interpreter.get_output_details()
+        self.get_logger().info(
+            f'Loading BPU model: {model_path} (format={self.input_format})')
+        import hbm_runtime
+        self.model = hbm_runtime.HB_HBMRuntime(model_path)
+        self.model_name = self.model.model_names[0]
+        input_props = self.model.input_shapes[self.model_name]
+        self.input_name = list(input_props.keys())[0]
+        self.get_logger().info(
+            f'BPU model loaded. input={self.input_name} '
+            f'shape={input_props[self.input_name]}')
 
         self.bridge = CvBridge()
         self.sub = self.create_subscription(
             Image, '/sentry/camera/image_raw', self.on_image, 1)
         self.pub = self.create_publisher(Diagnosis, '/vision/diagnosis', 10)
-        self.get_logger().info('Vision diagnosis node ready')
+        self.get_logger().info('Vision diagnosis node ready (BPU)')
 
     def on_image(self, msg: Image):
         try:
@@ -43,15 +67,14 @@ class VisionDiagnosisNode(Node):
             self.get_logger().error(f'CV bridge error: {e}')
             return
 
-        resized = self.preprocess(cv_image)
-        self.interpreter.set_tensor(self.input_details[0]['index'], resized)
-        self.interpreter.invoke()
-        output = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
+        input_tensor = self.preprocess(cv_image)
 
-        # Softmax if logits
-        exp_out = np.exp(output - np.max(output))
-        probs = exp_out / np.sum(exp_out)
+        outputs = self.model.run({self.model_name: {self.input_name: input_tensor}})
+        output = outputs[self.model_name][0]
+        if hasattr(output, 'reshape'):
+            output = output.reshape(-1)
 
+        probs = self._softmax(output)
         class_idx = int(np.argmax(probs))
         confidence = float(probs[class_idx])
 
@@ -59,7 +82,8 @@ class VisionDiagnosisNode(Node):
         out_msg.header.stamp = self.get_clock().now().to_msg()
         out_msg.header.frame_id = 'camera'
         out_msg.crop_type = self.crop_type
-        out_msg.disease_class = self.labels[class_idx] if class_idx < len(self.labels) else 'unknown'
+        out_msg.disease_class = (
+            self.labels[class_idx] if class_idx < len(self.labels) else 'unknown')
         out_msg.class_id = class_idx
         out_msg.confidence = confidence
         out_msg.probabilities = probs.tolist()
@@ -67,9 +91,16 @@ class VisionDiagnosisNode(Node):
 
     def preprocess(self, image: np.ndarray) -> np.ndarray:
         resized = cv2.resize(image, (self.input_size, self.input_size))
-        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        normalized = rgb.astype(np.float32) / 127.5 - 1.0
-        return np.expand_dims(normalized, axis=0)
+        if self.input_format == 'nv12':
+            return bgr_to_nv12(resized)
+        else:
+            return bgr_to_rgb_nchw(resized)
+
+    @staticmethod
+    def _softmax(x: np.ndarray) -> np.ndarray:
+        x = x - np.max(x)
+        e = np.exp(x)
+        return e / np.sum(e)
 
 
 def main(args=None):
