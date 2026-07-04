@@ -62,8 +62,16 @@ PLAN.md
 # openspec
 openspec/
 
-# fix plan
-fix/
+# Models — only track ONNX and BPU .bin files
+models/*
+!models/*.onnx
+!models/quantization/
+models/quantization/*
+!models/quantization/*_config.yaml
+!models/quantization/*_output/
+models/quantization/*_output/*
+!models/quantization/*_output/*.bin
+models/quantization/calibration/
 
 #mcp
 .serial_mcp
