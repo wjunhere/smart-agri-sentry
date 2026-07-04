@@ -45,14 +45,12 @@ class VisionDiagnosisNode(Node):
 
         self.get_logger().info(
             f'Loading BPU model: {model_path} (format={self.input_format})')
-        import hbm_runtime
-        self.model = hbm_runtime.HB_HBMRuntime(model_path)
-        self.model_name = self.model.model_names[0]
-        input_props = self.model.input_shapes[self.model_name]
-        self.input_name = list(input_props.keys())[0]
+        from hobot_dnn import pyeasy_dnn as dnn
+        self._dnn = dnn
+        self.model = dnn.load(model_path)[0]
         self.get_logger().info(
-            f'BPU model loaded. input={self.input_name} '
-            f'shape={input_props[self.input_name]}')
+            f'BPU model loaded. name={self.model.name} '
+            f'inputs={len(self.model.inputs)} outputs={len(self.model.outputs)}')
 
         self.bridge = CvBridge()
         self.sub = self.create_subscription(
@@ -68,11 +66,8 @@ class VisionDiagnosisNode(Node):
             return
 
         input_tensor = self.preprocess(cv_image)
-
-        outputs = self.model.run({self.model_name: {self.input_name: input_tensor}})
-        output = outputs[self.model_name][0]
-        if hasattr(output, 'reshape'):
-            output = output.reshape(-1)
+        outputs = self.model.forward([input_tensor])
+        output = outputs[0].buffer.reshape(-1)
 
         probs = self._softmax(output)
         class_idx = int(np.argmax(probs))
