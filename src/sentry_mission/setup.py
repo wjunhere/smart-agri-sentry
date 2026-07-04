@@ -31,6 +31,7 @@ setup(
             'mission_control_node = sentry_mission.mission_control_node:main',
             'wheel_odom_node = sentry_mission.wheel_odom_node:main',
             'web_remote_node = sentry_mission.web_remote_node:main',
+            'chassis_cmd = sentry_mission.chassis_cmd:main',
         ],
     },
 )
