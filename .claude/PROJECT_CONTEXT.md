@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v2.1+ · 更新日期 2026-06-25  
+> 架构版本 v2.2 · 更新日期 2026-07-04  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -10,7 +10,7 @@
 面向番茄/小麦/草莓多作物病害巡检的嵌入式比赛原型机：
 
 - 底盘自动巡航（当前 mapless Nav2，目标 LiDAR SLAM）
-- 植株检测触发停车 → 端侧 AI 病害识别（RDK X5 NPU）
+- 植株检测触发停车 → 端侧 AI 病害识别（RDK X5 BPU，`pyeasy_dnn` 推理）
 - 移动/固定环境数据融合决策 → 农艺建议
 - 本地 ros2 bag 数据记录
 
@@ -37,7 +37,7 @@
 - ROS2 Humble on Ubuntu 22.04
 - Nav2 + robot_localization EKF
 - Python/C++ 混合节点（`sentry_*` 包）
-- ONNX 源模型 → RDK X5 运行时 `.bin`
+- ONNX 训练模型 → `hb_mapper` 量化 → RDK X5 BPU `.bin`（`pyeasy_dnn` 加载）
 
 ---
 
@@ -59,8 +59,19 @@
 
 ## 当前重点
 
-1. 导航升级：从 mapless Nav2 迁移到 LiDAR SLAM/mapping。
-2. STM32 固件：扩展 `TYPE_CHASSIS` 到 19 字节，接入编码器脉冲。
-3. 补齐七合一空气/土壤传感器 UART 协议。
-4. 训练/获取小麦、草莓病害模型与植株检测模型。
-5. 完成固定环境节点 STM32L072 + LoRa 硬件与固件。
+1. **病害模型量化部署 ✅**：三作物 MobileNetV3 已量化为 BPU `.bin`，`vision_diagnosis_node` 迁移至 `pyeasy_dnn` 推理。
+2. **底盘控制 ✅**：STM32F407 固件编译烧录通过，RDK↔STM32 UART 协议（状态帧+控制帧+配置帧）联调完成。
+3. 导航升级：从 mapless Nav2 迁移到 LiDAR SLAM/mapping。
+4. 补齐七合一空气/土壤传感器 UART 协议。
+5. 植株检测：训练/获取植株检测模型（YOLO），实现检测触发停车→分类的两阶段管线。
+6. 完成固定环境节点 STM32L072 + LoRa 硬件与固件。
+
+## 病害模型矩阵
+
+| 作物 | 架构 | 类别数 | BPU 精度 | 输入 | Cosine | 部署状态 |
+|------|------|--------|---------|------|--------|---------|
+| 番茄 | MobileNetV3-**Large** | 7 | int8 | NV12 224×224 | 0.9997 | ✅ 已部署 |
+| 小麦 | MobileNetV3-Small | 5 | int8 | NV12 224×224 | 0.977 | ✅ 已部署 |
+| 草莓 | MobileNetV3-Small | 8 | int16 | RGB 224×224 | 0.977 | ✅ 已部署 |
+
+> 量化配置与 ONNX 模型见 `models/quantization/`；推理节点见 `src/sentry_vision/`。
