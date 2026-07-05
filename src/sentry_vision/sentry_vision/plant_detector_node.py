@@ -38,6 +38,10 @@ class PlantDetectorNode(Node):
         self.pause_srv = self.create_service(
             SetBool, '/vision/plant_detector/pause', self.on_pause)
 
+        if self.use_simulation:
+            self._sim_timer = self.create_timer(0.5, self._sim_tick)
+            self.get_logger().info('Simulation mode: publishing at 2 Hz')
+
         self.get_logger().info('Plant detector node ready (YOLOv8n BPU)')
 
     def _load_model(self, model_path: str):
@@ -138,6 +142,19 @@ class PlantDetectorNode(Node):
             return False, bbox, confidence, area_ratio
 
         return True, bbox, confidence, area_ratio
+
+    def _sim_tick(self):
+        """Timer callback: publish simulated detection."""
+        if self._paused:
+            return
+        out = PlantDetection()
+        out.header.stamp = self.get_clock().now().to_msg()
+        out.header.frame_id = 'camera'
+        out.detected = True
+        out.bbox = [0.3, 0.3, 0.7, 0.7]
+        out.confidence = 0.95
+        out.area_ratio = 0.16
+        self.pub.publish(out)
 
     def _simulate(self, image):
         """Simulation mode: always detect a centered plant."""
