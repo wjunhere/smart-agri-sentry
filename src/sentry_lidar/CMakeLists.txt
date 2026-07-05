@@ -9,7 +9,6 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
 find_package(sentry_interfaces REQUIRED)
 
 include_directories(
@@ -29,7 +28,7 @@ set(LDLIDAR_SRCS
 
 add_executable(${PROJECT_NAME} ${LDLIDAR_SRCS})
 ament_target_dependencies(${PROJECT_NAME}
-  rclcpp sensor_msgs std_msgs tf2_ros sentry_interfaces
+  rclcpp sensor_msgs std_msgs sentry_interfaces
 )
 target_link_libraries(${PROJECT_NAME} pthread)
 

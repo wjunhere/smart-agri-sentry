@@ -1,0 +1,47 @@
+<!--
+  sentry.urdf — 智农哨兵机器人统一运动学模型
+
+  坐标系约定（ROS REP-103）：
+    base_link: 底盘几何中心，地面 Z=0，X=车头前方，Y=左侧，Z=上方
+    laser:     STL19P 2D LiDAR，左手系，原生 X=右，需 yaw=-90° 对准 ROS X
+    imu_link:  YB-IMU，左手系，原生 X=右/Y=前/Z=地，需 roll=180°+yaw=-90°
+
+  位置测量基准：底盘几何中心为原点，车头方向为 X 轴（单位：米）
+-->
+<robot name="sentry">
+  <!-- ===== base_link: 底盘几何中心，地面高度 ===== -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.40 0.30 0.22"/>
+      </geometry>
+      <origin xyz="0 0 0.11"/>
+    </visual>
+  </link>
+
+  <!-- ===== LiDAR: (80.4, 0, 282) mm, 左手系, X=原-Y → yaw=-90° ===== -->
+  <joint name="base_to_laser" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser"/>
+    <origin xyz="0.0804 0 0.282" rpy="0 0 -1.57079"/>
+  </joint>
+  <link name="laser"/>
+
+  <!-- ===== IMU: (27.5, 19.8, 191) mm, 左手系, X=右/Y=前/Z=地 → roll=180°+yaw=-90° ===== -->
+  <joint name="base_to_imu" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0.0275 0.0198 0.191" rpy="3.14159 0 -1.57079"/>
+  </joint>
+  <link name="imu_link"/>
+
+  <!-- ===== Camera: TODO 待测量实际安装位置 ===== -->
+  <!--
+  <joint name="base_to_camera" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="camera_link"/>
+  -->
+</robot>

@@ -2,7 +2,7 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, Command
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -12,6 +12,10 @@ def generate_launch_description():
     config_dir = os.path.join(pkg_dir, '..', '..', '..', 'config')
     if not os.path.exists(config_dir):
         config_dir = os.path.join(os.getcwd(), 'config')
+
+    urdf_path = os.path.join(pkg_dir, 'urdf', 'sentry.urdf')
+    with open(urdf_path, 'r') as f:
+        robot_description = f.read()
 
     crop_profiles_path = os.path.join(config_dir, 'crop_profiles.yaml')
     mission_params_path = os.path.join(config_dir, 'mission_params.yaml')
@@ -33,6 +37,15 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
+
+        # ── Unified TF tree (URDF → robot_state_publisher) ──
+        Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            name='robot_state_publisher',
+            parameters=[{'robot_description': robot_description}],
+            output='screen',
+        ),
 
         # Vision nodes
         Node(

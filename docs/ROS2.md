@@ -120,15 +120,19 @@
 
 ```
 odom
- └── base_link
-      ├── laser           (z = 0.18 m)
-      ├── imu_link        (静态零偏移)
-      └── camera_link     (根据实际安装)
+ └── base_link                          ← EKF (dynamic, publish_tf: true)
+      ├── laser        z=0.0804m        ← URDF (robot_state_publisher)
+      │   rpy=(0, 0, -90°) for native left-hand frame
+      ├── imu_link     z=0.191m         ← URDF (robot_state_publisher)
+      │   rpy=(180°, 0, -90°) for native left-hand frame
+      └── camera_link                   ← 待实际测量后加入 URDF
 ```
 
-- `odom → base_link`：由 `robot_localization` EKF 发布
-- `base_link → laser`：由 `sentry_lidar` 或 URDF/static_transform_publisher 发布
+- `odom → base_link`：由 `robot_localization` EKF 动态发布（融合 `/wheel/odom` + `/sensor/imu/data`）
+- 所有静态 TF 统一由 `robot_state_publisher` 从 `sentry_bringup/urdf/sentry.urdf` 发布
+- 实测位置：LiDAR=(80.4, 0, 282)mm，IMU=(27.5, 19.8, 191)mm（以底盘几何中心为原点，车头为 X 轴）
 - Madgwick `publish_tf: false`，避免与 EKF 冲突
+- `sentry_lidar` 和 `imu.launch.py` 不再各自发布静态 TF
 
 ---
 

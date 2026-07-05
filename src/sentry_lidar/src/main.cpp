@@ -1,7 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
-#include <tf2_ros/static_transform_broadcaster.h>
-#include <geometry_msgs/msg/transform_stamped.hpp>
 #include "ros2_api.h"
 #include "ldlidar_driver.h"
 #include "obstacle_processor.h"
@@ -90,20 +88,6 @@ int main(int argc, char** argv) {
     RCLCPP_ERROR(node->get_logger(), "Error, input <product_name> is illegal.");
     return EXIT_FAILURE;
   }
-
-  auto tf_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
-  geometry_msgs::msg::TransformStamped tf_stamped;
-  tf_stamped.header.stamp = node->now();
-  tf_stamped.header.frame_id = "base_link";
-  tf_stamped.child_frame_id = setting.frame_id;
-  tf_stamped.transform.translation.x = 0.0;
-  tf_stamped.transform.translation.y = 0.0;
-  tf_stamped.transform.translation.z = 0.18;
-  tf_stamped.transform.rotation.x = 0.0;
-  tf_stamped.transform.rotation.y = 0.0;
-  tf_stamped.transform.rotation.z = 0.0;
-  tf_stamped.transform.rotation.w = 1.0;
-  tf_broadcaster->sendTransform(tf_stamped);
 
   ldlidar::LDLidarDriver* lidar = new ldlidar::LDLidarDriver();
   lidar->RegisterGetTimestampFunctional(std::bind(&GetSystemTimeStamp));

@@ -33,17 +33,7 @@ def generate_launch_description():
         output='screen',
     )
 
-    # Static TF: base_link -> imu_link
-    # Adjust xyz/rpy if IMU is not mounted at robot center
-    static_tf_node = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='imu_static_tf',
-        arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'imu_link'],
-    )
-
     return LaunchDescription([
         imu_node,
         imu_filter_node,
-        static_tf_node,
     ])
