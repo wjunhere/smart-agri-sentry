@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'vision_diagnosis_node = sentry_vision.vision_diagnosis_node:main',
             'plant_detector_node = sentry_vision.plant_detector_node:main',
+            'vision_pipeline_node = sentry_vision.vision_pipeline_node:main',
         ],
     },
 )

@@ -24,6 +24,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ServoCmd.msg"
   "msg/ChassisConfig.msg"
   "msg/ObstacleInfo.msg"
+  "srv/PipelineTrigger.srv"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
 

@@ -1,32 +1,33 @@
 #!/usr/bin/env python3
-"""Mission control node with Nav2 waypoint navigation + visual servoing.
+"""Mission control node with Nav2 waypoint navigation + vision pipeline.
 
 States:
-  PATROL      - Nav2 waypoint cruising
-  APPROACHING - Visual servoing toward detected plant
-  STOPPED     - Brief pause before analysis
+  PATROL      - Nav2 waypoint cruising, YOLO real-time detection
+  STOPPED     - Stop and trigger vision pipeline scan
+  SCANNING    - Wait for vision pipeline to complete (gimbal + two-stage inference)
   ANALYZING   - Wait for fusion diagnosis result
   ACTION      - Record the diagnosis result
   RESUME      - Brief pause before resuming patrol
   MANUAL      - Web remote control mode, Nav2 paused
 """
 
+import math
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist, Quaternion
 from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator
-from sentry_interfaces.msg import (
-    PlantDetection, FusionResult, MissionStatus)
+from sentry_interfaces.msg import PlantDetection, FusionResult, MissionStatus, Diagnosis
+from sentry_interfaces.srv import PipelineTrigger
 from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 import yaml
-import math
 
 
 STATE_PATROL = 'PATROL'
-STATE_APPROACHING = 'APPROACHING'
 STATE_STOPPED = 'STOPPED'
+STATE_SCANNING = 'SCANNING'
 STATE_ANALYZING = 'ANALYZING'
 STATE_ACTION = 'ACTION'
 STATE_RESUME = 'RESUME'
@@ -37,29 +38,27 @@ class MissionControlNode(Node):
     def __init__(self):
         super().__init__('mission_control_node')
 
-        # -- Parameters --
         self.declare_parameter('cruise_speed', 0.3)
-        self.declare_parameter('approach_speed', 0.15)
-        self.declare_parameter('detection_confidence_threshold', 0.6)
-        self.declare_parameter('min_area_ratio', 0.1)
-        self.declare_parameter('stop_distance_tolerance', 0.05)
+        self.declare_parameter('detection_confidence_threshold', 0.5)
+        self.declare_parameter('min_area_ratio', 0.05)
         self.declare_parameter('analyze_timeout_sec', 5.0)
         self.declare_parameter('resume_delay_sec', 2.0)
-        self.declare_parameter('bbox_center_tolerance', 0.15)
         self.declare_parameter('waypoints_file', '')
         self.declare_parameter('wheel_base', 0.23)
         self.declare_parameter('pulses_per_meter', 11035)
+        self.declare_parameter('min_resume_distance', 0.5)
+        self.declare_parameter('crop_type', 'tomato')
+        self.declare_parameter('max_scan_shots', 3)
 
         self.cruise_speed = self.get_parameter('cruise_speed').value
-        self.approach_speed = self.get_parameter('approach_speed').value
         self.det_conf_th = self.get_parameter(
             'detection_confidence_threshold').value
         self.min_area_ratio = self.get_parameter('min_area_ratio').value
-        self.stop_tol = self.get_parameter('stop_distance_tolerance').value
         self.analyze_timeout = self.get_parameter('analyze_timeout_sec').value
         self.resume_delay = self.get_parameter('resume_delay_sec').value
-        self.bbox_center_tol = self.get_parameter('bbox_center_tolerance').value
-        self.wheel_base = self.get_parameter('wheel_base').value
+        self.min_resume_distance = self.get_parameter('min_resume_distance').value
+        self.crop_type = self.get_parameter('crop_type').value
+        self.max_scan_shots = self.get_parameter('max_scan_shots').value
 
         # -- Waypoints --
         wp_file = self.get_parameter('waypoints_file').value
@@ -91,15 +90,26 @@ class MissionControlNode(Node):
             FusionResult, '/fusion/diagnosis', self.on_fusion, 10)
         self.sub_resume = self.create_subscription(
             Bool, '/resume_navigation', self.on_resume, 10)
+        self.sub_odom = self.create_subscription(
+            Odometry, '/odom', self.on_odom, 10)
 
         # -- Publishers --
         self.pub_cmd = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_status = self.create_publisher(
             MissionStatus, '/mission/status', 10)
+        self.pub_diag = self.create_publisher(Diagnosis, '/vision/diagnosis', 10)
 
         # -- Service --
         self.srv = self.create_service(
             SetBool, '/set_auto_mode', self.set_auto_mode_cb)
+
+        # -- Pipeline client --
+        self.pipeline_client = self.create_client(
+            PipelineTrigger, '/vision/pipeline/trigger')
+
+        # -- Plant detector pause client --
+        self.pause_detector_client = self.create_client(
+            SetBool, '/vision/plant_detector/pause')
 
         # -- State --
         self.state = STATE_PATROL
@@ -110,10 +120,19 @@ class MissionControlNode(Node):
         self.last_fusion = None
         self.sending_goal = False
 
+        # -- De-duplication --
+        self.reference_x = 0.0
+        self.reference_y = 0.0
+        self.odom_x = 0.0
+        self.odom_y = 0.0
+
+        # -- Async action tracking --
+        self._pending_future = None
+        self._pending_action = ''  # 'pause', 'pipeline', 'resume'
+
         # -- Timer --
         self.timer = self.create_timer(0.1, self.tick)
 
-        # Start first waypoint
         self._send_next_waypoint()
         self.get_logger().info('Mission control node ready')
 
@@ -126,7 +145,6 @@ class MissionControlNode(Node):
         return q
 
     def _send_next_waypoint(self):
-        """Send current waypoint to Nav2."""
         if self.state == STATE_MANUAL:
             return
         if self.current_wp_idx >= len(self.waypoints):
@@ -152,6 +170,10 @@ class MissionControlNode(Node):
 
     # ---- Callbacks ----
 
+    def on_odom(self, msg: Odometry):
+        self.odom_x = msg.pose.pose.position.x
+        self.odom_y = msg.pose.pose.position.y
+
     def on_plant_detected(self, msg: PlantDetection):
         self.last_plant = msg
         if msg.detected and msg.confidence >= self.det_conf_th:
@@ -170,7 +192,6 @@ class MissionControlNode(Node):
 
     def set_auto_mode_cb(self, request, response):
         if request.data:
-            # Switch to AUTO
             if self.state == STATE_MANUAL:
                 self._transition(STATE_PATROL)
                 self.current_wp_idx = self.saved_wp_idx
@@ -179,7 +200,6 @@ class MissionControlNode(Node):
             response.success = True
             response.message = 'Switched to AUTO mode'
         else:
-            # Switch to MANUAL
             if self.state != STATE_MANUAL:
                 self.saved_wp_idx = self.current_wp_idx
                 self.navigator.cancelTask()
@@ -187,6 +207,40 @@ class MissionControlNode(Node):
             response.success = True
             response.message = 'Switched to MANUAL mode'
         return response
+
+    # ---- De-duplication ----
+
+    def _distance_from_reference(self) -> float:
+        dx = self.odom_x - self.reference_x
+        dy = self.odom_y - self.reference_y
+        return math.sqrt(dx * dx + dy * dy)
+
+    def _should_trigger_scan(self) -> bool:
+        """Check if we're far enough from the last scan position."""
+        if self._distance_from_reference() >= self.min_resume_distance:
+            return True
+        self.get_logger().debug(
+            f'Suppressing trigger: distance={self._distance_from_reference():.2f} '
+            f'< {self.min_resume_distance}')
+        return False
+
+    # ---- Pipeline helpers ----
+
+    def _pause_detector_async(self):
+        req = SetBool.Request()
+        req.data = True
+        return self.pause_detector_client.call_async(req)
+
+    def _resume_detector_async(self):
+        req = SetBool.Request()
+        req.data = False
+        return self.pause_detector_client.call_async(req)
+
+    def _call_pipeline_async(self):
+        req = PipelineTrigger.Request()
+        req.crop_type = self.crop_type
+        req.max_shots = self.max_scan_shots
+        return self.pipeline_client.call_async(req)
 
     # ---- State machine ----
 
@@ -205,7 +259,6 @@ class MissionControlNode(Node):
             status.state = STATE_PATROL
             status.current_action = 'patrolling waypoints'
 
-            # Check Nav2 goal completion
             if self.sending_goal and self.navigator.isTaskComplete():
                 self.current_wp_idx += 1
                 self.sending_goal = False
@@ -216,47 +269,62 @@ class MissionControlNode(Node):
                 else:
                     self.get_logger().info('All waypoints completed')
 
-            # Check for plant detection trigger
+            # Check for plant detection trigger (with de-duplication)
             if (self.last_plant is not None
                     and self.last_plant.detected
                     and self.last_plant.confidence >= self.det_conf_th
-                    and self.last_plant.area_ratio >= self.min_area_ratio):
+                    and self.last_plant.area_ratio >= self.min_area_ratio
+                    and self._should_trigger_scan()):
                 self.saved_wp_idx = self.current_wp_idx
                 self.navigator.cancelTask()
                 self.sending_goal = False
-                self._transition(STATE_APPROACHING, now)
-
-        elif self.state == STATE_APPROACHING:
-            status.state = STATE_APPROACHING
-            status.current_action = 'approaching plant'
-
-            if self.last_plant is None or not self.last_plant.detected:
-                # Lost plant, resume patrol
-                self._transition(STATE_RESUME, now)
-            else:
-                bbox = self.last_plant.bbox  # [xmin, ymin, xmax, ymax]
-                cx = (bbox[0] + bbox[2]) / 2.0
-                cy = (bbox[1] + bbox[3]) / 2.0
-                area = self.last_plant.area_ratio
-
-                # Center the plant
-                if abs(cx - 0.5) > self.bbox_center_tol:
-                    cmd.angular.z = -1.0 * (cx - 0.5) * 2.0
-                if abs(cy - 0.5) > self.bbox_center_tol:
-                    cmd.linear.x = self.approach_speed * (0.5 - cy)
-                else:
-                    cmd.linear.x = self.approach_speed
-
-                # Stop when close enough
-                if area > (self.min_area_ratio + 0.15):
-                    self._transition(STATE_STOPPED, now)
+                self._transition(STATE_STOPPED, now)
 
         elif self.state == STATE_STOPPED:
             status.state = STATE_STOPPED
-            status.current_action = 'stopped for analysis'
+            status.current_action = 'stopping for scan'
             cmd.linear.x = 0.0
             cmd.angular.z = 0.0
-            self._transition(STATE_ANALYZING, now)
+
+            if self._pending_action == '':
+                if self.pause_detector_client.wait_for_service(timeout_sec=1.0):
+                    self._pending_future = self._pause_detector_async()
+                    self._pending_action = 'pause'
+                else:
+                    self.get_logger().error('Detector pause unavailable, resuming')
+                    self._transition(STATE_RESUME, now)
+
+            elif self._pending_action == 'pause':
+                if self._pending_future.done():
+                    if self._pending_future.result() is not None and self._pending_future.result().success:
+                        if self.pipeline_client.wait_for_service(timeout_sec=1.0):
+                            self._pending_future = self._call_pipeline_async()
+                            self._pending_action = 'pipeline'
+                        else:
+                            self.get_logger().error('Pipeline service unavailable')
+                            self._resume_detector_async()
+                            self._pending_action = ''
+                            self._transition(STATE_RESUME, now)
+                    else:
+                        self.get_logger().error('Failed to pause detector')
+                        self._transition(STATE_RESUME, now)
+
+            elif self._pending_action == 'pipeline':
+                if self._pending_future.done():
+                    result = self._pending_future.result()
+                    self._pending_action = ''
+                    if result is not None and result.success:
+                        self.pub_diag.publish(result.result)
+                        self.get_logger().info(
+                            f'Pipeline result: {result.result.disease_class} '
+                            f'conf={result.result.confidence:.3f}')
+                        self.reference_x = self.odom_x
+                        self.reference_y = self.odom_y
+                    else:
+                        self.get_logger().warn('Pipeline failed or timed out')
+
+                    self._resume_detector_async()
+                    self._transition(STATE_ANALYZING, now)
 
         elif self.state == STATE_ANALYZING:
             status.state = STATE_ANALYZING
@@ -294,7 +362,7 @@ class MissionControlNode(Node):
             status.current_action = 'resuming patrol'
             elapsed = now - self.state_enter_time
             if elapsed < self.resume_delay:
-                cmd.linear.x = 0.0  # brief pause
+                cmd.linear.x = 0.0
             else:
                 cmd.linear.x = self.cruise_speed
                 self._transition(STATE_PATROL, now)
@@ -304,12 +372,9 @@ class MissionControlNode(Node):
         elif self.state == STATE_MANUAL:
             status.state = STATE_MANUAL
             status.current_action = 'manual control'
-            # Do not publish cmd_vel in MANUAL mode;
-            # web remote handles /cmd_vel directly.
 
         status.progress = self._compute_progress()
         self.pub_status.publish(status)
-        # Only publish cmd_vel when not in MANUAL mode
         if self.state != STATE_MANUAL:
             self.pub_cmd.publish(cmd)
 

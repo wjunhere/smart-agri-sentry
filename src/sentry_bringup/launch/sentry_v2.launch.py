@@ -71,9 +71,23 @@ def generate_launch_description():
             executable='plant_detector_node',
             name='plant_detector_node',
             parameters=[{
-                'confidence_threshold': 0.6,
-                'min_area_ratio': 0.1,
+                'confidence_threshold': 0.5,
+                'min_area_ratio': 0.05,
                 'use_simulation': LaunchConfiguration('use_sim_plant'),
+                'model_path': '',
+            }],
+            output='screen',
+        ),
+        Node(
+            package='sentry_vision',
+            executable='vision_pipeline_node',
+            name='vision_pipeline_node',
+            parameters=[{
+                'settle_sec': 0.5,
+                'timeout_sec': 15.0,
+                'edge_threshold': 0.35,
+                'step_yaw': 20,
+                'step_pitch': 15,
             }],
             output='screen',
         ),
@@ -158,7 +172,7 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Mission control (Nav2 + waypoint + visual servoing)
+        # Mission control (Nav2 + waypoint + vision pipeline)
         Node(
             package='sentry_mission',
             executable='mission_control_node',
@@ -167,6 +181,11 @@ def generate_launch_description():
                 'waypoints_file': waypoints_config,
                 'wheel_base': 0.23,
                 'pulses_per_meter': 11035,
+                'crop_type': LaunchConfiguration('crop_type'),
+                'detection_confidence_threshold': 0.5,
+                'min_area_ratio': 0.05,
+                'min_resume_distance': 0.5,
+                'max_scan_shots': 3,
             }],
             output='screen',
         ),

@@ -1,0 +1,5 @@
+string crop_type
+uint8 max_shots
+---
+bool success
+sentry_interfaces/Diagnosis result

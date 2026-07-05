@@ -1,39 +1,93 @@
+"""Plant detector node using YOLOv8n BPU inference (crop/weed)."""
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from std_srvs.srv import SetBool
 from sentry_interfaces.msg import PlantDetection
 from cv_bridge import CvBridge
-import cv2
-import numpy as np
+
+from .yolo_utils import bgr_to_nv12_resized, yolo_postprocess
 
 
 class PlantDetectorNode(Node):
-    """Lightweight plant detector using color-based segmentation.
-
-    Phase 1 uses a simplified green-channel threshold approach.
-    Replace with a trained TFLite model (plant_detector_nano.tflite)
-    before competition.
-    """
-
     def __init__(self):
         super().__init__('plant_detector_node')
-        self.declare_parameter('confidence_threshold', 0.6)
-        self.declare_parameter('min_area_ratio', 0.1)
+        self.declare_parameter('confidence_threshold', 0.5)
+        self.declare_parameter('min_area_ratio', 0.05)
         self.declare_parameter('use_simulation', False)
+        self.declare_parameter('model_path', '')
 
-        self.confidence_threshold = self.get_parameter(
-            'confidence_threshold').value
+        self.conf_threshold = self.get_parameter('confidence_threshold').value
         self.min_area_ratio = self.get_parameter('min_area_ratio').value
         self.use_simulation = self.get_parameter('use_simulation').value
+        model_path = self.get_parameter('model_path').value
+
+        self._model = None
+        self._dnn = None
+        self._paused = False
+
+        if not self.use_simulation:
+            self._load_model(model_path)
 
         self.bridge = CvBridge()
         self.sub = self.create_subscription(
             Image, '/sentry/camera/image_raw', self.on_image, 1)
         self.pub = self.create_publisher(
             PlantDetection, '/vision/plant_detected', 10)
-        self.get_logger().info('Plant detector node ready')
+
+        self.pause_srv = self.create_service(
+            SetBool, '/vision/plant_detector/pause', self.on_pause)
+
+        self.get_logger().info('Plant detector node ready (YOLOv8n BPU)')
+
+    def _load_model(self, model_path: str):
+        from hobot_dnn import pyeasy_dnn as dnn
+        self._dnn = dnn
+
+        resolved = model_path
+        if not resolved:
+            import os
+            candidates = [
+                os.path.join(os.getcwd(), 'models',
+                             'yolov8n_crop_weed_bayese_640x640_nv12.bin'),
+                os.path.join(os.path.dirname(__file__), '..', '..', '..',
+                             'models', 'yolov8n_crop_weed_bayese_640x640_nv12.bin'),
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    resolved = c
+                    break
+
+        self.get_logger().info(f'Loading YOLO model: {resolved}')
+        self._model = dnn.load(resolved)[0]
+        self.get_logger().info(
+            f'YOLO model loaded. name={self._model.name}')
+
+    def _unload_model(self):
+        self._model = None
+
+    def on_pause(self, request, response):
+        if request.data:
+            if not self._paused:
+                self._paused = True
+                self._unload_model()
+                self.get_logger().info('Paused — model unloaded')
+            response.success = True
+            response.message = 'paused'
+        else:
+            if self._paused:
+                self._paused = False
+                model_path = self.get_parameter('model_path').value
+                self._load_model(model_path)
+                self.get_logger().info('Resumed — model reloaded')
+            response.success = True
+            response.message = 'resumed'
+        return response
 
     def on_image(self, msg: Image):
+        if self._paused:
+            return
+
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as e:
@@ -54,55 +108,44 @@ class PlantDetectorNode(Node):
         out.area_ratio = area_ratio
         self.pub.publish(out)
 
-    def _detect(self, image: np.ndarray):
-        """Color-based plant segmentation.
+    def _detect(self, image):
+        """Run YOLOv8n BPU inference."""
+        if self._model is None:
+            return False, [0.0, 0.0, 0.0, 0.0], 0.0, 0.0
 
-        Returns (detected, bbox[4], confidence, area_ratio)
-        """
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        # Green hue range in HSV
-        lower_green = np.array([35, 40, 40])
-        upper_green = np.array([85, 255, 255])
-        mask = cv2.inRange(hsv, lower_green, upper_green)
+        input_tensor = bgr_to_nv12_resized(image, 640)
+        outputs = self._model.forward([input_tensor])
+        output = outputs[0].buffer.reshape(-1)
 
-        # Morphological cleanup
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        # Reshape based on actual size
+        expected = 6 * 8400
+        if output.size != expected:
+            self.get_logger().warn(
+                f'Unexpected YOLO output size: {output.size}, expected {expected}')
+            return False, [0.0, 0.0, 0.0, 0.0], 0.0, 0.0
 
-        total_pixels = mask.shape[0] * mask.shape[1]
-        plant_pixels = cv2.countNonZero(mask)
-        area_ratio = plant_pixels / total_pixels
+        output = output.reshape(1, 6, 8400)
+        detected, bbox, confidence = yolo_postprocess(
+            output, input_size=640, conf_threshold=self.conf_threshold)
+
+        if not detected:
+            return False, bbox, confidence, 0.0
+
+        x1, y1, x2, y2 = bbox
+        area_ratio = float((x2 - x1) * (y2 - y1))
 
         if area_ratio < self.min_area_ratio:
-            return False, [0.0, 0.0, 0.0, 0.0], 0.0, area_ratio
+            return False, bbox, confidence, area_ratio
 
-        # Find largest contour for bbox
-        contours, _ = cv2.findContours(
-            mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return False, [0.0, 0.0, 0.0, 0.0], 0.0, area_ratio
+        return True, bbox, confidence, area_ratio
 
-        largest = max(contours, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest)
-        h_img, w_img = image.shape[:2]
-
-        bbox = [
-            float(x) / w_img,
-            float(y) / h_img,
-            float(x + w) / w_img,
-            float(y + h) / h_img,
-        ]
-
-        # Confidence scales with area_ratio relative to min threshold
-        confidence = min(1.0, area_ratio / self.min_area_ratio * 0.8)
-        detected = confidence >= self.confidence_threshold
-
-        return detected, bbox, confidence, area_ratio
-
-    def _simulate(self, image: np.ndarray):
+    def _simulate(self, image):
         """Simulation mode: always detect a centered plant."""
-        return True, [0.3, 0.3, 0.7, 0.7], 0.95, 0.25
+        return True, [0.3, 0.3, 0.7, 0.7], 0.95, 0.16
+
+    def destroy_node(self):
+        self._unload_model()
+        super().destroy_node()
 
 
 def main(args=None):
