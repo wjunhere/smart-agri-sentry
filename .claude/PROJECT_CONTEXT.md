@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v2.3 · 更新日期 2026-07-05  
+> 架构版本 v2.4 · 更新日期 2026-07-05  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -65,7 +65,7 @@
 4. 导航升级：从 mapless Nav2 迁移到 LiDAR SLAM/mapping。
 5. **传感器协议 ✅**：CJ702 七合一空气传感器 UART 协议已解析；叶面传感器 RS485 ModBus 驱动完成；土壤 NPK 七合一 TTL ModBus 驱动完成（含地址自动探针）。
 6. **固定环境节点固件 🔄**：STM32F103RCT6 三传感器同步采集固件完成（空气 CJ702 + 叶面 RS485 + 土壤 NPK ModBus），LoRa 帧打包就绪；待完成低功耗睡眠逻辑与 LoRa 发送联调。
-7. 植株检测 + 病害分类两阶段管线集成到 sentry_vision。
+7. **植株检测 + 病害分类两阶段管线 ✅**：YOLOv8n BPU 接入 `plant_detector_node`，新建 `vision_pipeline_node` 云台多角度扫描编排，`mission_control_node` 重构（移除 APPROACHING，新增 SCANNING + 里程计去重）。板端相机驱动（IMX219 overlay）和 YOLO 推理已调通。舵机初始位置已校准（yaw=67.5°, pitch=45°）。待 MobileNet 联调和全链路实测。
 
 ## 模型矩阵
 
@@ -81,6 +81,6 @@
 
 | 任务 | 架构 | 类别数 | BPU 精度 | 输入 | Cosine | mAP50 | 部署状态 |
 |------|------|--------|---------|------|--------|:---:|---------|
-| Crop/Weed | YOLOv8n | 2 | int8 | NV12 640×640 | ≥0.997 | 0.860 | ✅ 已部署 |
+| Crop/Weed | YOLOv8n | 2 | int8 | NV12 640×640 | ≥0.997 | 0.860 | ✅ 已集成（`plant_detector_node`） |
 
 > 量化配置与 ONNX 模型见 `models/quantization/`；推理节点见 `src/sentry_vision/`。YOLO 训练脚本与报告见 `D:\wjun\data\yolo\`。
