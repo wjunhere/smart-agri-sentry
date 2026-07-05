@@ -57,7 +57,20 @@ class ServoDriverNode(Node):
 
     def _load_config(self, path):
         if not path:
-            return self._default_config()
+            # Auto-search default config locations
+            candidates = [
+                os.path.join(os.getcwd(), 'config', 'servo_config.yaml'),
+                os.path.join(os.path.dirname(__file__), '..', '..', '..',
+                             'config', 'servo_config.yaml'),
+                os.path.join(os.path.dirname(__file__), '..', '..', '..',
+                             'src', 'sentry_servo', 'config', 'servo_config.yaml'),
+            ]
+            for c in candidates:
+                if os.path.exists(os.path.normpath(c)):
+                    path = c
+                    break
+            if not os.path.exists(path):
+                return self._default_config()
         if not os.path.isabs(path):
             candidates = [
                 path,
