@@ -6,6 +6,8 @@ from std_srvs.srv import SetBool
 from sentry_interfaces.msg import PlantDetection
 from cv_bridge import CvBridge
 import numpy as np
+import signal
+import sys
 
 from .yolo_utils import bgr_to_yolo_input, yolo_postprocess
 
@@ -174,9 +176,10 @@ class PlantDetectorNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = PlantDetectorNode()
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         pass
     finally:
         node.destroy_node()

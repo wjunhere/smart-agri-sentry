@@ -14,6 +14,8 @@ from cv_bridge import CvBridge
 import cv2
 import numpy as np
 import sys
+import signal
+import atexit
 
 
 DEFAULT_IMAGE_TOPIC = '/sentry/camera/image_raw'
@@ -202,9 +204,17 @@ class MipiCameraNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MipiCameraNode()
+
+    def _cleanup():
+        if hasattr(node, 'destroy_node'):
+            node.destroy_node()
+
+    atexit.register(_cleanup)
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         pass
     finally:
         node.destroy_node()
