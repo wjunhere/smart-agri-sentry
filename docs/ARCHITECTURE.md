@@ -77,7 +77,7 @@ smart-agri-sentry/
 │   ├── sentry_fusion/         # fusion_node + lwd_calculator
 │   ├── sentry_forecast/       # forecast_node
 │   ├── sentry_advisory/       # advisory_node + rule_engine
-│   ├── sentry_mission/        # mission_control + web_remote + wheel_odom
+│   ├── sentry_mission/        # mission_control + web_remote + wheel_odom + chassis_cmd + imu_turn
 │   ├── sentry_sensors/        # lora_bridge + uart_bridge + imu
 │   ├── sentry_servo/          # RDK X5 直接 PWM 云台驱动
 │   └── sentry_data_logger/    # rosbag2 录制 + CRITICAL 快照

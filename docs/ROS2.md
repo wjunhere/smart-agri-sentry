@@ -1,6 +1,6 @@
 # ROS2 节点与接口
 
-> 更新日期：2026-06-28
+> 更新日期：2026-07-05
 
 ---
 
@@ -61,6 +61,12 @@
   │  web_remote_    │    │ data_logger_    │
   │     node        │    │     node        │
   └─────────────────┘    └─────────────────┘
+
+  ┌──────────────────────────┐  ┌──────────────────────────┐
+  │  chassis_cmd (CLI工具)    │  │  imu_turn (CLI工具)       │
+  │  → /cmd_vel              │  │  → /cmd_vel              │
+  │  ← /sentry/chassis/status│  │  ← /sensor/imu/data_raw  │
+  └──────────────────────────┘  └──────────────────────────┘
 ```
 
 ---
@@ -333,3 +339,35 @@ int32 front_point_count       # 前方扇区有效点数量
 ### GPS Topic（已弃用）
 
 `/sentry/gps/fix`（`sensor_msgs/NavSatFix`）不再使用，已从话题表中移除。遗留节点仅存在于旧版启动文件 `sentry_bringup/launch/sentry.launch.py`。
+
+---
+
+## 8. 底盘控制 CLI 工具
+
+`sentry_mission` 包提供两个独立的调试/测试工具，用于底盘运动验证。
+
+### 8.1 chassis_cmd — 编码器闭环运动测试
+
+基于编码器反馈的底盘直线/转弯/弧线运动，到达目标后自动停止。
+
+```bash
+ros2 run sentry_mission chassis_cmd --forward 0.3 --dist 2.0    # 前进 2 米
+ros2 run sentry_mission chassis_cmd --turn-left 0.5 --angle 90  # 左转 90°
+ros2 run sentry_mission chassis_cmd --turn-right 0.3 --angle 45 # 右转 45°
+ros2 run sentry_mission chassis_cmd --stop                      # 急停
+```
+
+依赖：`uart_bridge_node` 正在运行以提供 `/sentry/chassis/status` 编码器反馈。
+
+### 8.2 imu_turn — IMU 陀螺仪闭环原地转弯
+
+利用陀螺仪 `angular_velocity.z` 梯形积分，实现与地面无关的高精度原地旋转。三阶段控制：TURN（PID @ 0.3 rad/s）→ BRAKE（反向推力 0.15s）→ LOCK（零速保持 2s），精度 ~4%。
+
+```bash
+ros2 run sentry_mission imu_turn --angle 90     # 左转 90°
+ros2 run sentry_mission imu_turn --angle -45    # 右转 45°
+ros2 run sentry_mission imu_turn --angle 180 --max-speed 0.5 --kp 0.8
+ros2 run sentry_mission imu_turn --stop         # 急停
+```
+
+依赖：IMU 节点正在运行，启动时自动校准陀螺仪零偏（100 样本）。

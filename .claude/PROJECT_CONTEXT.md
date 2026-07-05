@@ -60,7 +60,7 @@
 ## 当前重点
 
 1. **病害模型量化部署 ✅**：三作物 MobileNetV3 已量化为 BPU `.bin`，`vision_diagnosis_node` 迁移至 `pyeasy_dnn` 推理。
-2. **底盘控制 ✅**：STM32F407 固件编译烧录通过，RDK↔STM32 UART 协议（状态帧+控制帧+配置帧）联调完成。
+2. **底盘控制 ✅**：STM32F407 固件编译烧录通过，RDK↔STM32 UART 协议联调完成。新增 `chassis_cmd` 编码器闭环运动测试工具与 `imu_turn_controller` IMU 陀螺仪闭环原地转弯控制器（地面无关精度 ~4%）。
 3. **YOLOv8 植株检测 ✅**：Crop/Weed 二分类检测模型训练完成（mAP50=0.860），已量化为 BPU `.bin`（cosine ≥ 0.997）。
 4. 导航升级：从 mapless Nav2 迁移到 LiDAR SLAM/mapping。
 5. 补齐七合一空气/土壤传感器 UART 协议。

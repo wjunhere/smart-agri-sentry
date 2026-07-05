@@ -25,7 +25,7 @@
 
 ### STM32 固件
 
-- [ ] **扩展 `TYPE_CHASSIS` 到 19 字节 payload**：追加 `left_pulse`、`right_pulse`、`encoder_timestamp`
+- [x] **扩展 `TYPE_CHASSIS` 到 19 字节 payload**：追加 `left_pulse`、`right_pulse`、`encoder_timestamp`（v2.1 协议，2026-06-30）
 - [ ] **验证编码器正交输入**：1000 线编码器 ×2 与定时器配置
 - [ ] **确认电机驱动电流**：空载/堵转电流，决定 TB6612FNG 是否更换为 BTN7971B
 - [ ] **确认电机 PID 参数**：与 Nav2 / MPPI 配合
@@ -77,6 +77,7 @@
 
 ## 近期已完成
 
+- [x] **底盘运动控制工具**：`chassis_cmd` 编码器闭环运动测试 + `imu_turn_controller` IMU 陀螺仪闭环原地转弯（精度 ~4%）
 - [x] Phase 2 节点：`forecast_node`、`advisory_node`、`data_logger_node` 落地
 - [x] RDK X5 直接 PWM 驱动云台舵机
 - [x] IMU 集成设计（待实现）

@@ -293,6 +293,18 @@ ls -l /dev/myimu
 groups sunrise  # 确认包含 gpio
 ```
 
+### 8.5 底盘运动测试
+
+```bash
+# 编码器闭环：前进 0.3 m/s × 2 米
+ros2 run sentry_mission chassis_cmd --forward 0.3 --dist 2.0
+
+# IMU 闭环转弯：左转 90°
+ros2 run sentry_mission imu_turn --angle 90
+```
+
+详细用法见 [`docs/ROS2.md`](ROS2.md) §8。
+
 ---
 
 ## 9. 参考文档
