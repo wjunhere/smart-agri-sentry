@@ -1,6 +1,6 @@
 # 环境搭建与编译烧录
 
-> 更新日期：2026-06-25
+> 更新日期：2026-07-05
 
 ---
 
@@ -167,41 +167,77 @@ STM32_Programmer_CLI -c port=SWD -w build/chassis.bin 0x08000000 -v -rst
 
 ## 6. 模型部署
 
-### 6.1 源模型
+### 6.1 病害分类模型（MobileNetV3）
 
-仓库中 `models/` 目录保存 ONNX 源模型：
+已量化为 BPU `.bin`，位于 `models/quantization/`：
 
 ```
 models/
+├── quantization/
+│   ├── tomato_mobilenetv3_output/
+│   │   └── tomato_mobilenetv3_bayese_224x224_nv12.bin     # 7-class, int8, 5.0MB
+│   ├── wheat_mobilenetv3_output/
+│   │   └── wheat_mobilenetv3_bayese_224x224_nv12.bin      # 5-class, int8, 2.1MB
+│   └── strawberry_mobilenetv3_output/
+│       └── strawberry_mobilenetv3_bayese_224x224_rgb.bin   # 8-class, int16, 2.9MB
 ├── tomato_mobilenetv3.onnx
 ├── wheat_mobilenetv3.onnx
 └── strawberry_mobilenetv3.onnx
 ```
 
-### 6.2 转换为 RDK X5 .bin
+### 6.2 植株检测模型（YOLOv8n）
 
-RDK X5 NPU 运行时要求 `.bin` 格式。转换命令示例：
+```
+models/
+└── yolov8n_crop_weed_bayese_640x640_nv12.bin     # 2-class, int8, 3.7MB
+```
+
+| 属性 | 值 |
+|------|-----|
+| 任务 | Crop/Weed 二分类检测 |
+| 输入 | NV12 640×640 |
+| 输出 | 6 tensors (3 cls + 3 bbox, NHWC) |
+| Cosine | ≥ 0.997 |
+| mAP50 | 0.860 |
+| 训练数据 | Roboflow Crop and Weed Detection (3071 张) |
+
+### 6.3 量化方式
+
+使用地平线 OpenExplore v1.2.8 工具链（Docker 容器 `oe_cpu`）：
 
 ```bash
-# 使用 RDK 提供的转换工具（具体命令以官方文档为准）
-python3 convert_onnx_to_bin.py \
-  --input models/tomato_mobilenetv3.onnx \
-  --output models/tomato_mobilenetv3.bin \
-  --input-shape 1x3x224x224
+# 病害分类
+hb_mapper makertbin -c <crop>_config.yaml --model-type onnx
+
+# YOLOv8 检测（需 BPU 友好 ONNX + mapper.py）
+python3 export_monkey_patch.py --pt best.pt    # 导出 NHWC 6 输出 ONNX
+python3 mapper.py --onnx best.onnx --cal-images ./calibration \
+  --cal-sample-num 50 --optimize-level O3 --output-dir .
 ```
 
-### 6.3 运行时自动适配
+### 6.4 板端推理 API
 
-`vision_diagnosis_node` 在配置中传入 `.tflite` 路径时，会自动重写为 `.bin`。建议配置中直接使用 `.bin` 路径：
+RDK X5 OS 3.3.1 使用 `pyeasy_dnn`（非 `hbm_runtime`）：
 
-```yaml
-model_path: "models/tomato_mobilenetv3.bin"
+```python
+from hobot_dnn import pyeasy_dnn as dnn
+import numpy as np
+
+# 分类
+m = dnn.load('models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin')[0]
+nv12 = np.zeros(224 * 224 * 3 // 2, dtype=np.uint8)
+out = m.forward([nv12])
+
+# 检测（6 输出，需板端 DFL + NMS 后处理）
+m = dnn.load('models/yolov8n_crop_weed_bayese_640x640_nv12.bin')[0]
+nv12 = np.zeros(640 * 640 * 3 // 2, dtype=np.uint8)
+outputs = m.forward([nv12])
 ```
 
-### 6.4 输入尺寸
+### 6.5 输入尺寸
 
 - 分类模型：224×224
-- 植株检测：YOLO-Nano / MobileNet-SSD（具体尺寸以模型训练为准）
+- 检测模型：640×640
 
 ---
 
