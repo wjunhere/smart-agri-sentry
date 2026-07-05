@@ -65,6 +65,7 @@ openspec/
 # Models — only track ONNX and BPU .bin files
 models/*
 !models/*.onnx
+!models/*.bin
 !models/quantization/
 models/quantization/*
 !models/quantization/*_config.yaml
