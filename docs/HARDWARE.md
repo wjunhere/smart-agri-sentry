@@ -32,17 +32,18 @@
 ### 2.2 固定环境节点（田间 24 h 连续，低功耗野外版）
 
 > 环境数据全部由固定节点采集并通过 LoRa 回传，底盘 STM32F407 不再转发移动传感器。
+> 固件源码见 `test/stm32_cj702_lora_hal/`（STM32F103RCT6，HAL 库，Makefile + MDK-ARM 双构建）。
 
-| 传感器 | 型号 | 接口 | 数据项 | 采样周期 | 备注 |
-|---|---|---|---|---|---|
-| **空气温湿** | SHT30 | I²C (0x44) | 温度、湿度 | 5 min | 百叶箱内，冠层中部 |
-| **CO₂** | SCD40 | I²C (0x62) | CO₂ | 5 min | 同百叶箱 |
-| **土壤参数** | RS485 三合一 | UART→RS485 | 温度、湿度、EC | 5 min | 根区 10–15 cm |
-| **叶面湿度** | LWS10 | ADC 模拟 | 叶面湿度 | 5 min | 代表性叶片背面 |
+| 传感器 | 型号 | 接口 | STM32 引脚 | 数据项 | 采样周期 | 备注 |
+|---|---|---|---|---|---|---|
+| **空气七合一** | CJ702 | UART3 (TTL, 9600bps) | PB11 TX / PB10 RX | CO₂, HCHO, TVOC, PM2.5, PM10, 温度, 湿度 | 1 s（每秒推帧） | 固定 17 字节协议帧，含校验和 |
+| **叶面温湿度** | RS485 ModBus | UART1 (RS485, 4800bps) | PA9 TX / PA10 RX | 叶面温度、叶面湿度 | 每 CJ702 帧触发 | 地址 0x01，03 功能码读 2 寄存器 |
+| **土壤七合一** | TTL ModBus | UART4 (TTL, 9600bps) | PC10 TX / PC11 RX | 温度、湿度、EC、pH、N、P、K、盐分 | 每 CJ702 帧触发 | 地址自动探针 0x01→0x02→0x03，03 功能码读 8 寄存器 |
 
 **固定节点通信链**：
-- 节点端：STM32F103RCT6 采集传感器 → UART → E22-400TBH-SC 内置 STM32F103CBT6 → SX1262 LoRa 发送
+- 节点端：STM32F103RCT6 采集三传感器 → UART3→CJ702 / UART1→叶面 RS485 / UART4→土壤 TTL → 秒级聚合（60s 窗口取平均）→ UART2 → E22-400TBH-SC（内置 STM32F103CBT6）→ SX1262 LoRa 发送
 - 网关端：E22-400TBH-SC（内置 STM32F103CBT6）接收 → UART → RDK X5（USB 转串口）→ `env_bridge_node` → `/sensor/environment_fixed`
+- 固件构建：`make -j`（GCC ARM Embedded）或 Keil MDK-ARM
 
 ---
 
@@ -125,20 +126,32 @@ typedef struct {
 
 ### 5.2 固定环境节点 ↔ LoRa 网关（LoRa，433 MHz/470 MHz）
 
+**帧格式**（自定义二进制帧，与 RDK↔STM32 协议同源）：
+
+```
+[0xAA] [0x55] [device_id 1B] [msg_type 1B] [payload_len 1B] [payload N bytes] [CRC8 Maxim 1B]
+```
+
+- `msg_type=0x01`：数据帧，payload 为 24 字节 sensor payload（12 个 big-endian int16 字段：CO₂/HCHO/TVOC/PM2.5/PM10/air_temp/air_hum/soil_temp/soil_hum/EC/leaf_wetness/leaf_temp）
+- `msg_type=0xFF`：错误帧，payload 为 1 字节 error_code（`0x01`=timeout, `0x02`=incomplete）
+- CRC8 Maxim：多项式 `0x31`，校验范围从 header 到 payload 末尾
+
 **节点端（STM32F103RCT6）**：
 
-- 深度睡眠，每 5 分钟唤醒采集一次
-- 每小时批量发送 12 条记录，或异常时立即上报
-- 数据包格式（JSON 简化）：`{"node_id":"01","t":23.5,"h":78.0,"co2":450,"st":22.1,"sh":65.0,"ec":1.2,"lw":0,"seq":123}`
+- `app_fsm` 状态机：`ACCUMULATE`（60s 窗口采样聚合）→ `TX`（打包发送）→ `WAIT`
+- 每 60s 发送一帧数据（含 60 个样本的均值）或错误帧
+- 当前未实现低功耗睡眠——采样期间持续运行
+- 硬件串口分配：UART1=叶面 RS485 / UART2=LoRa 模块 / UART3=CJ702 空气 / UART4=土壤 TTL
+- 提供 OpenOCD 可读调试变量（`g_dbg_*`），覆盖所有传感器原始值、状态位、土壤探针地址
+- 源码位置：`test/stm32_cj702_lora_hal/`
 
-**网关端（STM32F103CBT6）**：
-- 接收 LoRa 数据包，通过 USB 转串口转发给 RDK X5
-- 转发格式：JSON + `\n` 换行分隔
+**网关端（STM32F103CBT6 / E22-400TBH-SC 内置）**：
+- 接收 LoRa 数据包，通过 USB 转串口透明转发给 RDK X5
+- 转发内容为原始二进制帧，由 RDK X5 的 `lora_bridge_node` 解析
 
-**RDK X5 端（env_bridge_node）**：
-- 解析串口 JSON，转换为 `Environment` 消息
+**RDK X5 端（lora_bridge_node）**：
+- 解析串口二进制帧，转换为 `Environment` 消息（含 air_temp/humidity/CO₂/soil_temp/soil_humidity/EC/leaf_wetness/leaf_temp 及土壤 NPK/pH 扩展字段）
 - `data_source` 字段设为 `FIXED_NODE_01` / `FIXED_NODE_02` / ...
-- 支持多点，Fusion Node 内部取平均
 
 ---
 

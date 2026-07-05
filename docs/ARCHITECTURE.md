@@ -138,7 +138,7 @@ smart-agri-sentry/
 │  /sensor/soil_nutrition                                              │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  USB转串口 ← LoRa网关 ← [固定环境节点: STM32F103RCT6+CJ702+E22-400T30S] │
+│  │  USB转串口 ← LoRa网关 ← [固定环境节点: STM32F103RCT6+CJ702+leaf(RS485)+soil(NPK)+E22-400T30S] │
 │  │         lora_bridge_node → /sensor/environment_fixed        │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                                                                      │
