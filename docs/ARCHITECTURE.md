@@ -1,7 +1,7 @@
 # 系统架构
 
-> 架构版本：v2.1 导航增强 + 事件驱动巡检  
-> 更新日期：2026-06-28
+> 架构版本：v2.2 两阶段视觉管线  
+> 更新日期：2026-07-05
 
 ---
 
@@ -9,7 +9,7 @@
 
 **智农哨兵**是一款面向番茄/小麦/草莓多作物病害巡检的嵌入式比赛原型机，核心能力包括：
 
-- 底盘自动巡航与植株检测触发停车
+- 底盘自动巡航与植株检测触发停车（YOLOv8n 检测 → MobileNetV3 分类 两阶段管线）
 - 端侧 AI 病害识别（RDK X5 NPU）
 - 环境数据融合决策（移动传感器 + 固定环境节点）
 - 农艺建议生成与本地数据记录
@@ -24,7 +24,7 @@
 
 | 层级 | 职责 | 关键节点/组件 |
 |---|---|---|
-| **感知层** | 视觉推理、移动/固定环境传感、底盘状态、LiDAR/IMU | `camera_node`, `plant_detector_node`, `vision_diagnosis_node`, `uart_bridge_node`, `lora_bridge_node`, `sentry_lidar`, `imu_node` |
+| **感知层** | 视觉推理（YOLO 检测 + 分类）、移动/固定环境传感、底盘状态、LiDAR/IMU | `camera_node`, `plant_detector_node`, `vision_diagnosis_node`, `yolo_detection_node`(计划), `uart_bridge_node`, `lora_bridge_node`, `sentry_lidar`, `imu_node` |
 | **决策层** | 实时融合、趋势预测、农艺建议 | `fusion_node`, `forecast_node`, `advisory_node` |
 | **控制层** | 巡检状态机、底盘/云台控制、数据记录 | `mission_control_node`, `wheel_odom_node`, `web_remote_node`, `servo_driver_node`, `data_logger_node`, Nav2 |
 
