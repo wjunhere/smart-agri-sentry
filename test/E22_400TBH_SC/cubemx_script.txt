@@ -1,3 +1,0 @@
-config load "E:\smart_agri_sentry\test\E22_400TBH_SC\project.ioc"
-project generate
-exit

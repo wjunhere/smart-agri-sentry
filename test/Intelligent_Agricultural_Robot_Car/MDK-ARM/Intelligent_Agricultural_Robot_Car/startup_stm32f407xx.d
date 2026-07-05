@@ -1,1 +1,0 @@
-intelligent_agricultural_robot_car\startup_stm32f407xx.o: startup_stm32f407xx.s
