@@ -79,3 +79,7 @@ models/quantization/calibration/
 
 # Test & reference code
 test/
+
+#videos making
+videos/
+video/

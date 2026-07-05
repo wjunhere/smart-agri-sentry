@@ -9,7 +9,7 @@ servos:
     channel: 0
     min_angle: 0
     max_angle: 180
-    initial_angle: 45
+    initial_angle: 67.5
     step_deg: 5
   pitch:
     channel: 1
