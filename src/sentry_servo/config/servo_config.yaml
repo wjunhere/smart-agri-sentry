@@ -15,5 +15,5 @@ servos:
     channel: 1
     min_angle: 30
     max_angle: 150
-    initial_angle: 90
+    initial_angle: 45
     step_deg: 5
