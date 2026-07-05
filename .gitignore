@@ -76,3 +76,6 @@ models/quantization/calibration/
 
 #mcp
 .serial_mcp
+
+# Test & reference code
+test/

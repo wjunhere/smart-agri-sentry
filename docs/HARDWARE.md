@@ -32,7 +32,7 @@
 ### 2.2 固定环境节点（田间 24 h 连续，低功耗野外版）
 
 > 环境数据全部由固定节点采集并通过 LoRa 回传，底盘 STM32F407 不再转发移动传感器。
-> 固件源码见 `test/stm32_cj702_lora_hal/`（STM32F103RCT6，HAL 库，Makefile + MDK-ARM 双构建）。
+> 固件源码见 `firmware/stm32_cj702_lora_hal/`（STM32F103RCT6，HAL 库，Makefile + MDK-ARM 双构建）。
 
 | 传感器 | 型号 | 接口 | STM32 引脚 | 数据项 | 采样周期 | 备注 |
 |---|---|---|---|---|---|---|
@@ -143,7 +143,7 @@ typedef struct {
 - 当前未实现低功耗睡眠——采样期间持续运行
 - 硬件串口分配：UART1=叶面 RS485 / UART2=LoRa 模块 / UART3=CJ702 空气 / UART4=土壤 TTL
 - 提供 OpenOCD 可读调试变量（`g_dbg_*`），覆盖所有传感器原始值、状态位、土壤探针地址
-- 源码位置：`test/stm32_cj702_lora_hal/`
+- 源码位置：`firmware/stm32_cj702_lora_hal/`
 
 **网关端（STM32F103CBT6 / E22-400TBH-SC 内置）**：
 - 接收 LoRa 数据包，通过 USB 转串口透明转发给 RDK X5

@@ -81,7 +81,7 @@ smart-agri-sentry/
 │   ├── sentry_sensors/        # lora_bridge + uart_bridge + imu
 │   ├── sentry_servo/          # RDK X5 直接 PWM 云台驱动
 │   └── sentry_data_logger/    # rosbag2 录制 + CRITICAL 快照
-├── firmware/                  # STM32F407 底盘固件
+├── firmware/                  # STM32F407 底盘 + STM32F103 固定环境节点
 ├── models/                    # *.onnx 源模型（RDK 运行时为 .bin）
 ├── config/                    # 作物/规则/任务参数
 ├── docs/                      # 项目文档
