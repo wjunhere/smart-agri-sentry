@@ -35,5 +35,8 @@ intelligent_agricultural_robot_car\bsp_protocol.o: ../Drivers/STM32F4xx_HAL_Driv
 intelligent_agricultural_robot_car\bsp_protocol.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h
 intelligent_agricultural_robot_car\bsp_protocol.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h
 intelligent_agricultural_robot_car\bsp_protocol.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h
+intelligent_agricultural_robot_car\bsp_protocol.o: ..\Users\pid.h
+intelligent_agricultural_robot_car\bsp_protocol.o: ..\Users\pid_autotune.h
+intelligent_agricultural_robot_car\bsp_protocol.o: ..\Users\bsp_encoder.h
 intelligent_agricultural_robot_car\bsp_protocol.o: D:\keil\ARM\ARMCC\Bin\..\include\string.h
 intelligent_agricultural_robot_car\bsp_protocol.o: D:\keil\ARM\ARMCC\Bin\..\include\stdio.h

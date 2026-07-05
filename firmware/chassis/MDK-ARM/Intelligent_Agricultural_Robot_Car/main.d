@@ -48,6 +48,9 @@ intelligent_agricultural_robot_car\main.o: ../Users/bsp_protocol.h
 intelligent_agricultural_robot_car\main.o: ../Users/bsp_debug.h
 intelligent_agricultural_robot_car\main.o: ../Users/bsp_diag.h
 intelligent_agricultural_robot_car\main.o: ../Users/pid.h
+intelligent_agricultural_robot_car\main.o: ../Users/pid_autotune.h
+intelligent_agricultural_robot_car\main.o: ../Users/pid_disturbance.h
+intelligent_agricultural_robot_car\main.o: ../Users/cross_track.h
 intelligent_agricultural_robot_car\main.o: D:\keil\ARM\ARMCC\Bin\..\include\stdio.h
 intelligent_agricultural_robot_car\main.o: D:\keil\ARM\ARMCC\Bin\..\include\stdlib.h
 intelligent_agricultural_robot_car\main.o: D:\keil\ARM\ARMCC\Bin\..\include\rt_misc.h
