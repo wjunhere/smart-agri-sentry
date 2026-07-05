@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v2.2 · 更新日期 2026-07-04  
+> 架构版本 v2.3 · 更新日期 2026-07-05  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -61,12 +61,15 @@
 
 1. **病害模型量化部署 ✅**：三作物 MobileNetV3 已量化为 BPU `.bin`，`vision_diagnosis_node` 迁移至 `pyeasy_dnn` 推理。
 2. **底盘控制 ✅**：STM32F407 固件编译烧录通过，RDK↔STM32 UART 协议（状态帧+控制帧+配置帧）联调完成。
-3. 导航升级：从 mapless Nav2 迁移到 LiDAR SLAM/mapping。
-4. 补齐七合一空气/土壤传感器 UART 协议。
-5. 植株检测：训练/获取植株检测模型（YOLO），实现检测触发停车→分类的两阶段管线。
+3. **YOLOv8 植株检测 ✅**：Crop/Weed 二分类检测模型训练完成（mAP50=0.860），已量化为 BPU `.bin`（cosine ≥ 0.997）。
+4. 导航升级：从 mapless Nav2 迁移到 LiDAR SLAM/mapping。
+5. 补齐七合一空气/土壤传感器 UART 协议。
 6. 完成固定环境节点 STM32L072 + LoRa 硬件与固件。
+7. 植株检测 + 病害分类两阶段管线集成到 sentry_vision。
 
-## 病害模型矩阵
+## 模型矩阵
+
+### 病害分类
 
 | 作物 | 架构 | 类别数 | BPU 精度 | 输入 | Cosine | 部署状态 |
 |------|------|--------|---------|------|--------|---------|
@@ -74,4 +77,10 @@
 | 小麦 | MobileNetV3-Small | 5 | int8 | NV12 224×224 | 0.977 | ✅ 已部署 |
 | 草莓 | MobileNetV3-Small | 8 | int16 | RGB 224×224 | 0.977 | ✅ 已部署 |
 
-> 量化配置与 ONNX 模型见 `models/quantization/`；推理节点见 `src/sentry_vision/`。
+### 植株检测
+
+| 任务 | 架构 | 类别数 | BPU 精度 | 输入 | Cosine | mAP50 | 部署状态 |
+|------|------|--------|---------|------|--------|:---:|---------|
+| Crop/Weed | YOLOv8n | 2 | int8 | NV12 640×640 | ≥0.997 | 0.860 | ✅ 已部署 |
+
+> 量化配置与 ONNX 模型见 `models/quantization/`；推理节点见 `src/sentry_vision/`。YOLO 训练脚本与报告见 `D:\wjun\data\yolo\`。
