@@ -98,8 +98,8 @@ def yolo_postprocess(
 
         boxes = np.stack([x1.ravel(), y1.ravel(), x2.ravel(), y2.ravel()], axis=1)
 
-        # Crop class (index 0) scores
-        scores = cls_probs[:, :, 0].ravel()
+        # Take max confidence across BOTH classes (crop + weed)
+        scores = cls_probs.max(axis=-1).ravel()
         all_boxes.append(boxes)
         all_scores.append(scores)
 
