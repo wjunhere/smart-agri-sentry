@@ -50,9 +50,15 @@ def generate_launch_description():
         # Vision nodes
         Node(
             package='sentry_bringup',
-            executable='camera_node',
-            name='camera_node',
-            parameters=[{'device_id': 0, 'fps': 2.0}],
+            executable='mipi_camera_node',
+            name='mipi_camera_node',
+            parameters=[{
+                'width': 1920,
+                'height': 1080,
+                'fps': 2.0,
+                'sensor_width': 1920,
+                'sensor_height': 1080,
+            }],
             output='screen',
         ),
         Node(
