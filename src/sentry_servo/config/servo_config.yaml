@@ -1,20 +1,19 @@
-servo_driver_node:
-  pwm:
-    chip: 0
-    frequency_hz: 50
-    min_pulse_us: 500
-    max_pulse_us: 2500
+pwm:
+  chip: 0
+  frequency_hz: 50
+  min_pulse_us: 500
+  max_pulse_us: 2500
 
-  servos:
-    yaw:
-      channel: 0
-      min_angle: 0
-      max_angle: 180
-      initial_angle: 45
-      step_deg: 5
-    pitch:
-      channel: 1
-      min_angle: 30
-      max_angle: 150
-      initial_angle: 90
-      step_deg: 5
+servos:
+  yaw:
+    channel: 0
+    min_angle: 0
+    max_angle: 180
+    initial_angle: 45
+    step_deg: 5
+  pitch:
+    channel: 1
+    min_angle: 30
+    max_angle: 150
+    initial_angle: 90
+    step_deg: 5
