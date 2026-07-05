@@ -119,18 +119,10 @@ class PlantDetectorNode(Node):
 
         input_tensor = bgr_to_nv12_resized(image, 640)
         outputs = self._model.forward([input_tensor])
-        output = outputs[0].buffer.reshape(-1)
 
-        # Reshape based on actual size
-        expected = 6 * 8400
-        if output.size != expected:
-            self.get_logger().warn(
-                f'Unexpected YOLO output size: {output.size}, expected {expected}')
-            return False, [0.0, 0.0, 0.0, 0.0], 0.0, 0.0
-
-        output = output.reshape(1, 6, 8400)
         detected, bbox, confidence = yolo_postprocess(
-            output, input_size=640, conf_threshold=self.conf_threshold)
+            [o.buffer for o in outputs],
+            input_size=640, conf_threshold=self.conf_threshold)
 
         if not detected:
             return False, bbox, confidence, 0.0

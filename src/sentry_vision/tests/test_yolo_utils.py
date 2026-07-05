@@ -54,30 +54,37 @@ class TestNMS:
 
 
 class TestYoloPostprocess:
+    @staticmethod
+    def _make_outputs(cls_val=5.0, bbox_val=0.0):
+        """Build 6-tensor output mimicking quantized YOLOv8n BPU."""
+        outputs = []
+        for h, w in [(80, 80), (40, 40), (20, 20)]:
+            cls_t = np.full((h, w, 2), cls_val, dtype=np.float32)
+            bbox_t = np.full((h, w, 4, 16), bbox_val, dtype=np.float32)
+            outputs.append(cls_t)
+            outputs.append(bbox_t)
+        return outputs
+
     def test_no_detection_low_conf(self):
         """All class scores below threshold → no detection."""
-        output = np.zeros((1, 6, 8400), dtype=np.float32)
-        output[:, 4, :] = -10.0  # low logits
-        output[:, 5, :] = -10.0
-        detected, bbox, conf = yolo_postprocess(output, conf_threshold=0.5)
+        outputs = self._make_outputs(cls_val=-5.0)
+        detected, bbox, conf = yolo_postprocess(outputs, conf_threshold=0.5)
         assert not detected
         assert conf == 0.0
 
-    def test_output_with_batch_dim(self):
-        """3D input [1, 6, 8400] should be handled."""
-        output = np.random.randn(1, 6, 8400).astype(np.float32)
-        output[:, 4, :] = 5.0   # high crop score
-        output[:, 5, :] = -5.0  # low weed score
-        detected, bbox, conf = yolo_postprocess(output, conf_threshold=0.5)
-        # Post-processing may or may not produce a detection depending on
-        # random bbox decoding; just check it doesn't crash.
+    def test_output_with_high_conf(self):
+        """High crop score, low weed score → detection."""
+        outputs = self._make_outputs(cls_val=5.0, bbox_val=0.5)
+        # Set crop cls high, weed cls low
+        for si in [0, 2, 4]:
+            outputs[si][:, :, 0] = 5.0   # crop
+            outputs[si][:, :, 1] = -5.0  # weed
+        detected, bbox, conf = yolo_postprocess(outputs, conf_threshold=0.5)
         assert isinstance(detected, bool)
         assert len(bbox) == 4
 
-    def test_output_2d(self):
-        """2D input [6, 8400] should be handled."""
-        output = np.random.randn(6, 8400).astype(np.float32)
-        output[4, :] = 5.0
-        output[5, :] = -5.0
-        detected, bbox, conf = yolo_postprocess(output, conf_threshold=0.5)
-        assert isinstance(detected, bool)
+    def test_all_zeros_no_detection(self):
+        """All-zero output → no detection."""
+        outputs = self._make_outputs(cls_val=0.0, bbox_val=0.0)
+        detected, bbox, conf = yolo_postprocess(outputs, conf_threshold=0.5)
+        assert not detected

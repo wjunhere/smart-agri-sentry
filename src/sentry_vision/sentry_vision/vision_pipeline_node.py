@@ -171,15 +171,9 @@ class VisionPipelineNode(Node):
             # YOLO detect
             yolo_input = bgr_to_nv12_resized(cv_image, 640)
             yolo_out = yolo.forward([yolo_input])
-            yolo_raw = yolo_out[0].buffer.reshape(-1)
-
-            if yolo_raw.size != 6 * 8400:
-                self.get_logger().warn(
-                    f'Unexpected YOLO output size: {yolo_raw.size}')
-                break
 
             detected, bbox, conf = yolo_postprocess(
-                yolo_raw.reshape(1, 6, 8400),
+                [o.buffer for o in yolo_out],
                 input_size=640,
                 conf_threshold=0.3,  # lower threshold during scan
             )

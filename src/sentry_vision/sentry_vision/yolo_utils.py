@@ -1,4 +1,9 @@
-"""YOLOv8n utilities: NV12 preprocessing and postprocessing (decode + NMS)."""
+"""YOLOv8n utilities: NV12 preprocessing and multi-output postprocessing.
+
+The quantized YOLOv8n BPU model outputs 6 tensors (2 per stride level):
+  - Class scores: (1, H, W, 2) per stride
+  - Bbox DFL features: (1, H, W, 64) per stride  (64 = 4 coords * 16 bins)
+"""
 
 import cv2
 import numpy as np
@@ -23,99 +28,103 @@ def bgr_to_nv12(bgr: np.ndarray) -> np.ndarray:
     return np.concatenate([y.reshape(-1), uv.reshape(-1)])
 
 
+# Strides and grid sizes for 640×640 input
+STRIDES = [8, 16, 32]
+GRID_SIZES = [(80, 80), (40, 40), (20, 20)]
+REG_MAX = 16  # DFL regression bins per coordinate
+
+
 def yolo_postprocess(
-    output: np.ndarray,
+    outputs: list,
     input_size: int = 640,
     conf_threshold: float = 0.5,
     iou_threshold: float = 0.45,
 ) -> tuple:
-    """Decode YOLOv8n raw output and apply NMS.
+    """Decode multi-output YOLOv8n BPU output and apply NMS.
 
     Args:
-        output: raw BPU output tensor, shape [1, 6, 8400] or [6, 8400].
+        outputs: list of 6 numpy arrays from model.forward() — each is the
+                 .buffer of a model output tensor (already flat u8 → float32).
+                 Order: [cls_s0, bbox_s0, cls_s1, bbox_s1, cls_s2, bbox_s2].
         input_size: model input resolution (square).
         conf_threshold: minimum class confidence.
         iou_threshold: NMS IoU threshold.
 
     Returns:
         (detected: bool, bbox: [xmin, ymin, xmax, ymax] normalized, confidence: float)
-        bbox is empty list if no detection.
     """
-    if output.ndim == 3:
-        output = output[0]  # [1, 6, 8400] -> [6, 8400]
+    all_boxes = []
+    all_scores = []
 
-    # Split: [cx, cy, w, h, cls0, cls1] x 8400
-    bbox_raw = output[:4, :]    # [4, 8400]
-    cls_raw = output[4:, :]     # [2, 8400]
+    for si, stride in enumerate(STRIDES):
+        h, w = GRID_SIZES[si]
 
-    # Class confidence via softmax, take max across classes
-    cls_max = cls_raw.max(axis=0) - np.log(np.sum(np.exp(cls_raw - cls_raw.max(axis=0)), axis=0) + 1e-8)
-    # Numerically stable softmax-max per column:
-    cls_exp = np.exp(cls_raw - cls_raw.max(axis=0, keepdims=True))
-    cls_probs = cls_exp / cls_exp.sum(axis=0, keepdims=True)
-    cls_conf = cls_probs.max(axis=0)  # [8400]
-    cls_id = cls_probs.argmax(axis=0)  # [8400]
+        cls_out = outputs[si * 2]       # (1, H, W, 2)
+        bbox_out = outputs[si * 2 + 1]  # (1, H, W, 64)
+
+        cls_out = cls_out.reshape(h, w, 2)
+        bbox_out = bbox_out.reshape(h, w, 4, REG_MAX)
+
+        # Class scores: sigmoid
+        cls_probs = 1.0 / (1.0 + np.exp(-cls_out))  # (H, W, 2)
+
+        # Bbox DFL: softmax on last dim → integral
+        bbox_out = bbox_out - bbox_out.max(axis=-1, keepdims=True)
+        bbox_exp = np.exp(bbox_out)
+        bbox_soft = bbox_exp / bbox_exp.sum(axis=-1, keepdims=True)  # (H, W, 4, 16)
+        dfl_bins = np.arange(REG_MAX, dtype=np.float32)
+        offsets = np.sum(bbox_soft * dfl_bins, axis=-1)  # (H, W, 4)
+
+        # Pre-compute anchor grid centers
+        yv, xv = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+        anchors_x = xv.astype(np.float32)  # (H, W)
+        anchors_y = yv.astype(np.float32)  # (H, W)
+
+        # Decode: lt_rb offsets to x1,y1,x2,y2 normalized
+        left = offsets[:, :, 0]
+        top = offsets[:, :, 1]
+        right = offsets[:, :, 2]
+        bottom = offsets[:, :, 3]
+
+        x1 = (anchors_x - left) * stride / input_size
+        y1 = (anchors_y - top) * stride / input_size
+        x2 = (anchors_x + right) * stride / input_size
+        y2 = (anchors_y + bottom) * stride / input_size
+
+        x1 = np.clip(x1, 0.0, 1.0)
+        y1 = np.clip(y1, 0.0, 1.0)
+        x2 = np.clip(x2, 0.0, 1.0)
+        y2 = np.clip(y2, 0.0, 1.0)
+
+        boxes = np.stack([x1.ravel(), y1.ravel(), x2.ravel(), y2.ravel()], axis=1)
+
+        # Crop class (index 0) scores
+        scores = cls_probs[:, :, 0].ravel()
+        all_boxes.append(boxes)
+        all_scores.append(scores)
+
+    if not all_boxes:
+        return False, [0.0, 0.0, 0.0, 0.0], 0.0
+
+    boxes = np.concatenate(all_boxes, axis=0)
+    scores = np.concatenate(all_scores, axis=0)
 
     # Filter by confidence
-    mask = cls_conf > conf_threshold
+    mask = scores > conf_threshold
     if not mask.any():
         return False, [0.0, 0.0, 0.0, 0.0], 0.0
 
-    bbox_raw = bbox_raw[:, mask]
-    cls_conf = cls_conf[mask]
-    cls_id = cls_id[mask]
+    boxes = boxes[mask]
+    scores = scores[mask]
 
-    # Decode boxes: cx, cy are sigmoid offsets from grid cell centers
-    # Pre-compute grid cell offsets
-    grid = []
-    strides = [8, 16, 32]
-    for si, stride in enumerate(strides):
-        h = input_size // stride
-        w = input_size // stride
-        yv, xv = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
-        grid.append(np.stack([xv.ravel(), yv.ravel()], axis=0))  # [2, h*w]
-    anchors = np.concatenate(grid, axis=1).astype(np.float32)  # [2, 8400]
-
-    # Rebuild strides array matching each detection index
-    all_strides = []
-    for stride in strides:
-        h = input_size // stride
-        w = input_size // stride
-        all_strides.append(np.full(h * w, stride, dtype=np.float32))
-    all_strides = np.concatenate(all_strides)
-
-    # Filter anchors and strides to surviving detections
-    anchors = anchors[:, mask]
-    strides_f = all_strides[mask]
-
-    # Apply sigmoid to cx, cy
-    cx = (1.0 / (1.0 + np.exp(-bbox_raw[0, :]))) * 2.0 - 0.5
-    cy = (1.0 / (1.0 + np.exp(-bbox_raw[1, :]))) * 2.0 - 0.5
-
-    cx = (cx + anchors[0, :]) * strides_f / input_size
-    cy = (cy + anchors[1, :]) * strides_f / input_size
-    bw = bbox_raw[2, :] * bbox_raw[2, :] * 4.0 * strides_f / input_size
-    bh = bbox_raw[3, :] * bbox_raw[3, :] * 4.0 * strides_f / input_size
-
-    x1 = np.clip(cx - bw / 2.0, 0.0, 1.0)
-    y1 = np.clip(cy - bh / 2.0, 0.0, 1.0)
-    x2 = np.clip(cx + bw / 2.0, 0.0, 1.0)
-    y2 = np.clip(cy + bh / 2.0, 0.0, 1.0)
-
-    boxes = np.stack([x1, y1, x2, y2], axis=1)
-
-    # NMS (only crop class = 0)
-    crop_mask = cls_id == 0
-    if not crop_mask.any():
-        return False, [0.0, 0.0, 0.0, 0.0], 0.0
-
-    keep = _nms(boxes[crop_mask], cls_conf[crop_mask], iou_threshold)
+    # NMS
+    keep = _nms(boxes, scores, iou_threshold)
     if len(keep) == 0:
         return False, [0.0, 0.0, 0.0, 0.0], 0.0
 
-    best_idx = np.argmax(cls_conf[crop_mask][keep])
-    best_box = boxes[crop_mask][keep][best_idx]
-    best_conf = float(cls_conf[crop_mask][keep][best_idx])
+    best_idx = np.argmax(scores[keep])
+    best_box = boxes[keep][best_idx]
+    best_conf = float(scores[keep][best_idx])
 
     bbox = [float(best_box[0]), float(best_box[1]),
             float(best_box[2]), float(best_box[3])]
@@ -144,7 +153,7 @@ def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> np.ndar
         w = np.maximum(0.0, xx2 - xx1)
         h = np.maximum(0.0, yy2 - yy1)
         inter = w * h
-        iou = inter / (areas[i] + areas[order[1:]] - inter)
+        iou = inter / np.maximum(areas[i] + areas[order[1:]] - inter, 1e-12)
 
         remaining = np.where(iou <= iou_threshold)[0]
         order = order[remaining + 1]
