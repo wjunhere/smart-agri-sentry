@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from sentry_vision.yolo_utils import bgr_to_nv12, bgr_to_nv12_resized, yolo_postprocess, _nms
+from sentry_vision.yolo_utils import bgr_to_nv12, bgr_to_yolo_input, yolo_postprocess, _nms
 
 
 class TestNV12Conversion:
@@ -13,11 +13,12 @@ class TestNV12Conversion:
         assert len(nv12) == int(480 * 640 * 1.5)
         assert nv12.dtype == np.uint8
 
-    def test_bgr_to_nv12_resized(self):
-        """Resize to 640×640 then convert to NV12."""
+    def test_bgr_to_yolo_input(self):
+        """Resize to 640×640 then convert to RGB NCHW."""
         bgr = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
-        nv12 = bgr_to_nv12_resized(bgr, 640)
-        assert len(nv12) == int(640 * 640 * 1.5)
+        tensor = bgr_to_yolo_input(bgr, 640)
+        assert tensor.shape == (1, 3, 640, 640)
+        assert tensor.dtype == np.uint8
 
     def test_nv12_roundtrip_visual(self):
         """NV12 → BGR should roughly recover a solid color image."""

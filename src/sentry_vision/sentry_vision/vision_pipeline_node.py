@@ -14,7 +14,7 @@ from sentry_interfaces.msg import Diagnosis, ServoCmd
 from sentry_interfaces.srv import PipelineTrigger
 from cv_bridge import CvBridge
 
-from .yolo_utils import bgr_to_nv12_resized, yolo_postprocess
+from .yolo_utils import bgr_to_yolo_input, yolo_postprocess
 from .diagnosis_utils import get_labels, resolve_model_path, get_input_format
 
 
@@ -169,7 +169,7 @@ class VisionPipelineNode(Node):
             cv_image = self.bridge.imgmsg_to_cv2(frame_msg, desired_encoding='bgr8')
 
             # YOLO detect
-            yolo_input = bgr_to_nv12_resized(cv_image, 640)
+            yolo_input = bgr_to_yolo_input(cv_image, 640)
             yolo_out = yolo.forward([yolo_input])
 
             detected, bbox, conf = yolo_postprocess(

@@ -9,10 +9,11 @@ import cv2
 import numpy as np
 
 
-def bgr_to_nv12_resized(bgr: np.ndarray, size: int = 640) -> np.ndarray:
-    """Resize BGR image to size×size and convert to flat NV12 uint8 for BPU."""
+def bgr_to_yolo_input(bgr: np.ndarray, size: int = 640) -> np.ndarray:
+    """Resize BGR image to size×size and convert to RGB NCHW uint8 for YOLO BPU."""
     resized = cv2.resize(bgr, (size, size))
-    return bgr_to_nv12(resized)
+    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    return np.transpose(rgb, (2, 0, 1))[np.newaxis, :, :, :].copy()
 
 
 def bgr_to_nv12(bgr: np.ndarray) -> np.ndarray:

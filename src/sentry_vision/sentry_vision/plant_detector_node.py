@@ -6,7 +6,7 @@ from std_srvs.srv import SetBool
 from sentry_interfaces.msg import PlantDetection
 from cv_bridge import CvBridge
 
-from .yolo_utils import bgr_to_nv12_resized, yolo_postprocess
+from .yolo_utils import bgr_to_yolo_input, yolo_postprocess
 
 
 class PlantDetectorNode(Node):
@@ -117,7 +117,7 @@ class PlantDetectorNode(Node):
         if self._model is None:
             return False, [0.0, 0.0, 0.0, 0.0], 0.0, 0.0
 
-        input_tensor = bgr_to_nv12_resized(image, 640)
+        input_tensor = bgr_to_yolo_input(image, 640)
         outputs = self._model.forward([input_tensor])
 
         detected, bbox, confidence = yolo_postprocess(
