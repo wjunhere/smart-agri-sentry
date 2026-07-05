@@ -5,7 +5,6 @@ from sensor_msgs.msg import Image
 from std_srvs.srv import SetBool
 from sentry_interfaces.msg import PlantDetection
 from cv_bridge import CvBridge
-import numpy as np
 import signal
 import sys
 
@@ -40,8 +39,6 @@ class PlantDetectorNode(Node):
 
         self.pause_srv = self.create_service(
             SetBool, '/vision/plant_detector/pause', self.on_pause)
-
-        self._frame_count = 0
 
         if self.use_simulation:
             self._sim_timer = self.create_timer(0.5, self._sim_tick)
@@ -128,17 +125,6 @@ class PlantDetectorNode(Node):
         detected, bbox, confidence = yolo_postprocess(
             [o.buffer for o in outputs],
             input_size=640, conf_threshold=self.conf_threshold)
-
-        self._frame_count += 1
-        if self._frame_count % 10 == 0:
-            # Log max scores across all strides every 10 frames
-            for si in range(3):
-                cls = outputs[si * 2].buffer.reshape(-1, 2)
-                probs = 1.0 / (1.0 + np.exp(-cls))
-                self.get_logger().info(
-                    f'Frame {self._frame_count} Stride{si}: '
-                    f'max_crop={probs[:, 0].max():.4f} max_weed={probs[:, 1].max():.4f} '
-                    f'detected={detected} conf={confidence:.4f}')
 
         if not detected:
             return False, bbox, confidence, 0.0
