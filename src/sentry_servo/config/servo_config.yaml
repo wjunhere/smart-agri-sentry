@@ -10,7 +10,7 @@ servo_driver_node:
       channel: 0
       min_angle: 0
       max_angle: 180
-      initial_angle: 90
+      initial_angle: 45
       step_deg: 5
     pitch:
       channel: 1
