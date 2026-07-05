@@ -14,10 +14,10 @@ class TestNV12Conversion:
         assert nv12.dtype == np.uint8
 
     def test_bgr_to_yolo_input(self):
-        """Resize to 640×640 then convert to RGB NCHW."""
+        """Resize to 640×640 then convert to NV12."""
         bgr = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
         tensor = bgr_to_yolo_input(bgr, 640)
-        assert tensor.shape == (1, 3, 640, 640)
+        assert len(tensor) == int(640 * 640 * 1.5)
         assert tensor.dtype == np.uint8
 
     def test_nv12_roundtrip_visual(self):
