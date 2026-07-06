@@ -79,6 +79,10 @@ class MissionControlNode(Node):
 
         self.current_wp_idx = 0
         self.saved_wp_idx = 0
+        self.waypoint_labels = [
+            f'WP{i}: ({wp["x"]:.1f}, {wp["y"]:.1f})'
+            for i, wp in enumerate(self.waypoints)
+        ]
 
         # -- Nav2 --
         self.navigator = BasicNavigator()
@@ -260,10 +264,7 @@ class MissionControlNode(Node):
         status.plants_analyzed = self.plants_analyzed
         status.current_wp_idx = self.current_wp_idx
         status.total_wps = len(self.waypoints)
-        status.waypoint_labels = [
-            f'WP{i}: ({wp["x"]:.1f}, {wp["y"]:.1f})'
-            for i, wp in enumerate(self.waypoints)
-        ]
+        status.waypoint_labels = self.waypoint_labels
 
         if self.state == STATE_PATROL:
             status.state = STATE_PATROL
