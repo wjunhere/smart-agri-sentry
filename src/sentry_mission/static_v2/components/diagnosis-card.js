@@ -1,13 +1,16 @@
 const DiagnosisCard = {
   template: `
   <div class="card">
-    <h3>病害分类 · {{ store.cropType }}</h3>
+    <h3>
+      病害分类 · {{ store.cropType.toUpperCase() }}
+      <span class="status-dot" :class="store.diagnosisDisease ? 'red' : 'grey'"></span>
+    </h3>
     <div v-if="store.diagnosisDisease">
       <span class="value disease">{{ store.diagnosisDisease }}</span>
-      <div class="stat">置信度: {{ (store.diagnosisConfidence * 100).toFixed(1) }}%</div>
+      <div class="stat">置信度 {{ (store.diagnosisConfidence * 100).toFixed(1) }}%</div>
       <div class="probabilities" v-if="store.diagnosisProbabilities.length">
         <div v-for="(p, i) in store.diagnosisProbabilities.slice(0, 3)" class="prob-row">
-          <span class="label">{{ i }}</span>
+          <span style="min-width:20px;color:var(--text-muted)">#{{ i }}</span>
           <span class="bar" :style="{width: (p * 100) + '%'}"></span>
           <span>{{ (p * 100).toFixed(0) }}%</span>
         </div>

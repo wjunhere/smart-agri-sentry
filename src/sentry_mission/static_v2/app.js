@@ -2,8 +2,15 @@
 
 const app = Vue.createApp({
   data() {
-    return { store };
+    return { store: window.store };
   },
+});
+
+// Global mixin injects store into every component's data scope
+app.mixin({
+  data() {
+    return { store: window.store };
+  }
 });
 
 // Register all components

@@ -2,9 +2,18 @@ const ControlPanel = {
   template: `
   <div class="control-panel">
     <dpad></dpad>
-    <div style="border-left:1px solid #1e2d45;height:100%;margin:0 8px"></div>
+    <div class="estop-wrap">
+      <button class="estop-btn" @click="emergencyStop">急停</button>
+      <span class="estop-label">E-STOP</span>
+    </div>
     <crop-selector></crop-selector>
     <div style="flex:1"></div>
     <cruise-panel></cruise-panel>
-  </div>`
+  </div>`,
+  methods: {
+    emergencyStop() {
+      publishCmdVel(0, 0);
+      callSetAutoMode(false);
+    }
+  }
 };

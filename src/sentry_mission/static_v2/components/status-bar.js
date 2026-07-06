@@ -1,9 +1,13 @@
 const StatusBar = {
   template: `
   <div class="status-bar">
-    <span>状态: <strong>{{ store.missionState }}</strong></span>
+    <span>{{ store.missionState }}</span>
     <span v-if="store.missionCurrentAction">| {{ store.missionCurrentAction }}</span>
-    <span>| 检测: {{ store.missionPlantsDetected }} | 分析: {{ store.missionPlantsAnalyzed }}</span>
-    <span>| 进度: {{ (store.missionProgress * 100).toFixed(0) }}%</span>
+    <span>| DET: {{ store.missionPlantsDetected }}</span>
+    <span>| ANZ: {{ store.missionPlantsAnalyzed }}</span>
+    <span>| WP: {{ store.missionCurrentWpIdx + 1 }}/{{ store.missionTotalWps || '--' }}</span>
+    <span class="progress-track">
+      <span class="progress-fill" :style="{ width: (store.missionProgress * 100) + '%' }"></span>
+    </span>
   </div>`
 };
