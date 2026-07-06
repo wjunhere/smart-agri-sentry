@@ -4,7 +4,6 @@ const app = Vue.createApp({
   data() {
     return { store };
   },
-  template: '<div>App mounted</div>',
 });
 
 // Register all components
