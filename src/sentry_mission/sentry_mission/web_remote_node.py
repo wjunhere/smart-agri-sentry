@@ -175,14 +175,32 @@ def _get_app(node: WebRemoteNode):
     def set_crop_type():
         data = request.get_json()
         crop = data.get('crop_type', '')
-        if node.crop_type_client.wait_for_service(timeout_sec=1.0):
-            req = SetCropType.Request()
-            req.crop_type = crop
-            future = node.crop_type_client.call_async(req)
-            rclpy.spin_until_future_complete(node, future, timeout_sec=2.0)
-            if future.result() is not None and future.result().success:
-                return jsonify({'status': 'ok', 'message': future.result().message})
-        return jsonify({'status': 'error', 'message': 'Service unavailable'})
+        if not node.crop_type_client.wait_for_service(timeout_sec=1.0):
+            return jsonify({'status': 'error', 'message': 'Service unavailable'})
+
+        req = SetCropType.Request()
+        req.crop_type = crop
+        future = node.crop_type_client.call_async(req)
+        event = threading.Event()
+        result = {}
+
+        def done_cb(fut):
+            try:
+                result['response'] = fut.result()
+            except Exception as e:
+                result['error'] = str(e)
+            finally:
+                event.set()
+
+        future.add_done_callback(done_cb)
+        if not event.wait(timeout=2.0):
+            return jsonify({'status': 'error', 'message': 'Request timed out'})
+        if result.get('error'):
+            return jsonify({'status': 'error', 'message': result['error']})
+        resp = result.get('response')
+        if resp is not None and resp.success:
+            return jsonify({'status': 'ok', 'message': resp.message})
+        return jsonify({'status': 'error', 'message': resp.message if resp else 'Unknown error'})
 
     return _app
 
