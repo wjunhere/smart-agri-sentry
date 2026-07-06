@@ -90,12 +90,17 @@ PUTCHAR_PROTOTYPE
     return ch;
 }
 
-/* Full C library retarget (when MicroLIB is disabled) */
+/* Full C library retarget (when MicroLIB is disabled).
+ * Arm Compiler 5 / 6 compatible — AC5 uses rt_misc.h + pragma import,
+ * AC6 uses standard C stubs without extra headers. */
 #if !defined(__MICROLIB)
-#include <rt_misc.h>
-#pragma import(__use_no_semihosting)
-struct __FILE { int handle; };
-FILE __stdout;
+  #if defined(__ARMCC_VERSION) && (__ARMCC_VERSION < 7000000)
+    /* AC5 only */
+    #include <rt_misc.h>
+    #pragma import(__use_no_semihosting)
+    struct __FILE { int handle; };
+    FILE __stdout;
+  #endif
 void _sys_exit(int x) { while(1); }
 int _write(int fd, const unsigned char *buf, unsigned int len)
 {
@@ -104,6 +109,7 @@ int _write(int fd, const unsigned char *buf, unsigned int len)
         return len;
     }
     return -1;
+}
 }
 #endif
 
