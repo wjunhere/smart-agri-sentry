@@ -3,8 +3,8 @@ const ROS_CONFIG = {
   url: 'ws://' + window.location.hostname + ':9090'
 };
 
-// Reactive global state (Vue 3 reactive)
-const store = Vue.reactive({
+// Reactive global state — on window so Vue templates can access it
+window.store = Vue.reactive({
   connected: false,
   cameraFrame: null,
   plantDetected: false,
@@ -46,6 +46,7 @@ const store = Vue.reactive({
   cropType: 'tomato',
   selectedAlert: null,
 });
+const store = window.store;  // local alias for internal use in this file
 
 let ros = null;
 
