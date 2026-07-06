@@ -9,6 +9,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_srvs.srv import SetBool
+from sentry_interfaces.srv import SetCropType
 import threading
 import time
 from pathlib import Path
@@ -22,6 +23,7 @@ class WebRemoteNode(Node):
         super().__init__('web_remote_node')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.mode_srv = self.create_client(SetBool, '/set_auto_mode')
+        self.crop_type_client = self.create_client(SetCropType, '/set_crop_type')
 
         self.declare_parameter('max_linear', 0.5)
         self.declare_parameter('max_angular', 1.0)
@@ -168,6 +170,19 @@ def _get_app(node: WebRemoteNode):
     @_app.route('/status', methods=['GET'])
     def status():
         return jsonify(node.get_status())
+
+    @_app.route('/crop_type', methods=['POST'])
+    def set_crop_type():
+        data = request.get_json()
+        crop = data.get('crop_type', '')
+        if node.crop_type_client.wait_for_service(timeout_sec=1.0):
+            req = SetCropType.Request()
+            req.crop_type = crop
+            future = node.crop_type_client.call_async(req)
+            rclpy.spin_until_future_complete(node, future, timeout_sec=2.0)
+            if future.result() is not None and future.result().success:
+                return jsonify({'status': 'ok', 'message': future.result().message})
+        return jsonify({'status': 'error', 'message': 'Service unavailable'})
 
     return _app
 

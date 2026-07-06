@@ -19,7 +19,7 @@ from geometry_msgs.msg import PoseStamped, Twist, Quaternion
 from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator
 from sentry_interfaces.msg import PlantDetection, FusionResult, MissionStatus, Diagnosis
-from sentry_interfaces.srv import PipelineTrigger
+from sentry_interfaces.srv import PipelineTrigger, SetCropType
 from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 import yaml
@@ -110,6 +110,9 @@ class MissionControlNode(Node):
         # -- Service --
         self.srv = self.create_service(
             SetBool, '/set_auto_mode', self.set_auto_mode_cb)
+
+        self.crop_type_srv = self.create_service(
+            SetCropType, '/set_crop_type', self.set_crop_type_cb)
 
         # -- Pipeline client --
         self.pipeline_client = self.create_client(
@@ -214,6 +217,20 @@ class MissionControlNode(Node):
                 self._transition(STATE_MANUAL)
             response.success = True
             response.message = 'Switched to MANUAL mode'
+        return response
+
+    def set_crop_type_cb(self, request, response):
+        valid = {'tomato', 'wheat', 'strawberry'}
+        if request.crop_type not in valid:
+            response.success = False
+            response.message = f'Invalid crop type: {request.crop_type}. Valid: {valid}'
+            return response
+
+        self.crop_type = request.crop_type
+        self.get_logger().info(f'Crop type switched to {request.crop_type}')
+
+        response.success = True
+        response.message = f'Crop type set to {request.crop_type}'
         return response
 
     # ---- De-duplication ----
