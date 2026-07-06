@@ -32,8 +32,8 @@
   --radius-pill: 6px;
 
   /* Fonts */
-  --font:       'Inter', 'PingFang SC', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
-  --font-mono:  'JetBrains Mono', 'Roboto Mono', 'Cascadia Code', monospace;
+  --font:       'Inter', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  --font-mono:  'JetBrains Mono', 'Roboto Mono', 'Cascadia Code', 'Consolas', monospace;
 
   /* Layout */
   --topbar-h:   48px;
@@ -275,11 +275,11 @@ body {
 
 .value {
   font-size: 28px; font-weight: 700; font-family: var(--font-mono);
-  line-height: 1; tabular-nums: tabular-nums;
+  line-height: 1; font-variant-numeric: tabular-nums;
 }
-.value.disease { color: var(--red); }
-.stat { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
-.muted { color: var(--text-muted); font-size: 11px; }
+.value.disease { color: var(--red); font-family: var(--font-mono); }
+.stat { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+.muted { color: var(--text-muted); font-size: 12px; }
 .probabilities { margin-top: 8px; }
 .prob-row {
   display: flex; align-items: center; gap: 8px;
@@ -290,7 +290,7 @@ body {
   height: 4px; background: var(--blue); border-radius: 2px;
   min-width: 2px; transition: width 300ms;
 }
-.advisory-text { font-size: 12px; line-height: 1.6; }
+.advisory-text { font-size: 14px; line-height: 1.65; font-weight: 500; }
 
 /* ============ ENVIRONMENT SENSOR STRIP (bottom, 80px fixed) ============ */
 .env-bar {
