@@ -76,6 +76,10 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6000000)
+__asm(".global __use_no_semihosting");
+#endif
+
 /*
  * printf retargeting for both MicroLIB and ARM full C library.
  */
