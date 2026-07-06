@@ -69,7 +69,7 @@ class KeyboardControlNode(Node):
         self.declare_parameter('max_linear', 0.5)
         self.declare_parameter('max_angular', 1.0)
         self.declare_parameter('step_linear', 0.05)
-        self.declare_parameter('step_angular', 0.1)
+        self.declare_parameter('step_angular', 0.05)
 
         self.max_linear = self.get_parameter('max_linear').value
         self.max_angular = self.get_parameter('max_angular').value
