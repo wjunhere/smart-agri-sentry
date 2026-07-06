@@ -139,9 +139,19 @@ def _get_app(node: WebRemoteNode):
     from flask import Flask, request, jsonify, send_from_directory
     _app = Flask(__name__)
     STATIC_DIR = Path(__file__).parent / 'static'
+    STATIC_V2_DIR = Path(__file__).parent / 'static_v2'
 
     @_app.route('/')
     def index():
+        return send_from_directory(str(STATIC_DIR), 'index.html')
+
+    @_app.route('/v2')
+    def v2_index():
+        return send_from_directory(str(STATIC_V2_DIR), 'index.html')
+
+    @_app.route('/v2/<path:filename>')
+    def v2_static(filename):
+        return send_from_directory(str(STATIC_V2_DIR), filename)
         return send_from_directory(str(STATIC_DIR), 'index.html')
 
     @_app.route('/mode', methods=['POST'])

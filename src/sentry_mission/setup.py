@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+import glob
 
 package_name = 'sentry_mission'
 
@@ -18,6 +19,13 @@ setup(
         ('share/' + package_name + '/static', [
             'static/index.html',
         ]),
+        ('share/' + package_name + '/static_v2', [
+            'static_v2/index.html',
+        ]),
+        ('share/' + package_name + '/static_v2/components',
+            glob.glob('static_v2/components/*.js')),
+        ('share/' + package_name + '/static_v2',
+            glob.glob('static_v2/*.js') + glob.glob('static_v2/*.css')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
