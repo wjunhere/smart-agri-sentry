@@ -6,8 +6,8 @@ const ControlPanel = {
       <button class="estop-btn" @click="emergencyStop">急停</button>
       <span class="estop-label">E-STOP</span>
     </div>
-    <crop-selector></crop-selector>
     <div style="flex:1"></div>
+    <crop-selector></crop-selector>
     <cruise-panel></cruise-panel>
   </div>`,
   methods: {

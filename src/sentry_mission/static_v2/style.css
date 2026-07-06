@@ -326,9 +326,11 @@ body {
 
 /* ============ STATUS BAR (inline, below control) ============ */
 .status-bar {
-  padding: 4px 10px; font-size: 10px; color: var(--text-muted);
+  padding: 6px 10px; font-size: 10px; color: var(--text-muted);
   font-family: var(--font-mono);
   display: flex; gap: 16px; align-items: center;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 .status-bar strong { color: var(--text-dim); font-weight: 500; }
 .status-bar .progress-track {
