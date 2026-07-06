@@ -76,15 +76,13 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6000000)
-__asm(".global __use_no_semihosting");
-#endif
-
 /*
  * printf retargeting for both MicroLIB and ARM full C library.
  */
 #ifdef __GNUC__
   #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#elif defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6000000)
+  #define PUTCHAR_PROTOTYPE __attribute__((used)) int fputc(int ch, FILE *f)
 #else
   #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
 #endif
