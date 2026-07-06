@@ -212,7 +212,7 @@ body {
 .estop-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
 
 /* Crop Selector */
-.crop-selector { display: flex; align-items: center; gap: 6px; }
+.crop-selector { display: flex; align-items: center; gap: 8px; }
 .crop-selector label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 .crop-pills { display: flex; gap: 2px; }
 .crop-pill {
@@ -226,6 +226,10 @@ body {
 
 /* Cruise */
 .cruise-panel { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cruise-panel .cruise-label {
+  font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+  letter-spacing: 0.05em; font-weight: 600;
+}
 .cruise-panel .wp-list { display: flex; gap: 3px; flex-wrap: wrap; }
 .cruise-panel .wp-item {
   font-size: 10px; font-family: var(--font-mono);
