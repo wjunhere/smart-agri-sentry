@@ -240,4 +240,13 @@ def generate_launch_description():
             parameters=[os.path.join(config_dir, 'data_logger_params.yaml')],
             output='screen',
         ),
+
+        # rosbridge WebSocket (for web frontend)
+        Node(
+            package='rosbridge_server',
+            executable='rosbridge_websocket',
+            name='rosbridge_websocket',
+            parameters=[{'port': 9090}],
+            output='screen',
+        ),
     ])
