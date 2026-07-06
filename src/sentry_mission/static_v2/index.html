@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智农哨兵 · 仪表盘</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <top-bar></top-bar>
+    <div class="main-layout">
+      <div class="left-panel">
+        <camera-panel></camera-panel>
+        <env-data-bar></env-data-bar>
+      </div>
+      <div class="right-panel">
+        <detection-card></detection-card>
+        <diagnosis-card></diagnosis-card>
+        <advisory-card></advisory-card>
+        <forecast-panel></forecast-panel>
+      </div>
+    </div>
+    <control-panel></control-panel>
+    <status-bar></status-bar>
+    <alert-detail-modal></alert-detail-modal>
+  </div>
+
+  <!-- Component files (order matters) -->
+  <script src="ros.js"></script>
+  <script src="components/top-bar.js"></script>
+  <script src="components/camera-panel.js"></script>
+  <script src="components/detection-card.js"></script>
+  <script src="components/diagnosis-card.js"></script>
+  <script src="components/advisory-card.js"></script>
+  <script src="components/forecast-panel.js"></script>
+  <script src="components/alert-detail-modal.js"></script>
+  <script src="components/env-data-bar.js"></script>
+  <script src="components/dpad.js"></script>
+  <script src="components/crop-selector.js"></script>
+  <script src="components/cruise-panel.js"></script>
+  <script src="components/status-bar.js"></script>
+  <script src="components/control-panel.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

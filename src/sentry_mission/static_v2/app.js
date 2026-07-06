@@ -1,0 +1,25 @@
+// app.js — Vue 3 application entry
+
+const app = Vue.createApp({
+  data() {
+    return { store };
+  },
+  template: '<div>App mounted</div>',
+});
+
+// Register all components
+app.component('TopBar', TopBar);
+app.component('CameraPanel', CameraPanel);
+app.component('DetectionCard', DetectionCard);
+app.component('DiagnosisCard', DiagnosisCard);
+app.component('AdvisoryCard', AdvisoryCard);
+app.component('ForecastPanel', ForecastPanel);
+app.component('AlertDetailModal', AlertDetailModal);
+app.component('EnvDataBar', EnvDataBar);
+app.component('Dpad', Dpad);
+app.component('CropSelector', CropSelector);
+app.component('CruisePanel', CruisePanel);
+app.component('StatusBar', StatusBar);
+app.component('ControlPanel', ControlPanel);
+
+app.mount('#app');
