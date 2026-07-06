@@ -90,15 +90,18 @@ PUTCHAR_PROTOTYPE
     return ch;
 }
 
-/* Full C library retarget (when MicroLIB is disabled).
- * Works with Arm Compiler 5 and 6. */
+/* Full C library retarget (when MicroLIB is disabled) */
 #if !defined(__MICROLIB)
-void _sys_exit(int x) { (void)x; while(1); }
+#include <rt_misc.h>
+#pragma import(__use_no_semihosting)
+struct __FILE { int handle; };
+FILE __stdout;
+void _sys_exit(int x) { while(1); }
 int _write(int fd, const unsigned char *buf, unsigned int len)
 {
     if (fd == 1) {
         HAL_UART_Transmit(&huart1, (uint8_t *)buf, len, HAL_MAX_DELAY);
-        return (int)len;
+        return len;
     }
     return -1;
 }
