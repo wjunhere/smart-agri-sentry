@@ -370,12 +370,12 @@ body {
   border-radius: var(--radius); cursor: pointer;
   display: flex; gap: 6px; align-items: center; font-size: 11px;
   transition: background 150ms;
-  font-family: var(--font-mono);
+  font-family: var(--font);
 }
 .alert-row:hover { background: var(--bg-hover); }
-.alert-time { color: var(--text-muted); min-width: 40px; font-size: 10px; }
-.alert-desc { flex: 1; font-size: 11px; }
-.alert-risk { font-weight: 600; font-size: 11px; }
+.alert-time { color: var(--text-dim); min-width: 40px; font-size: 10px; font-family: var(--font); }
+.alert-desc { flex: 1; font-size: 12px; font-family: var(--font); }
+.alert-risk { font-weight: 600; font-size: 12px; font-family: var(--font-mono); }
 
 .alert-level-NORMAL     { border-left: 2px solid var(--green); }
 .alert-level-SUSPICION  { border-left: 2px solid var(--amber); }
