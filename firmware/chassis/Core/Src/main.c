@@ -110,7 +110,6 @@ int _write(int fd, const unsigned char *buf, unsigned int len)
     }
     return -1;
 }
-}
 #endif
 
 /* Boot marker via bare-metal USART1 */
