@@ -4,9 +4,10 @@
 Arrow keys: UP/DOWN linear velocity, LEFT/RIGHT angular velocity.
 SPACE: emergency stop.  Q/Ctrl+C: quit.
 
-Reuses the MANUAL mode pattern from web_remote_node: calls /set_auto_mode
-to switch to MANUAL, then publishes Twist to /cmd_vel at 20Hz with a 0.5s
-safety timeout.
+Publishes Twist directly to /cmd_vel.  uart_bridge_node is the sole
+subscriber and converts Twist → differential drive → UART frame → STM32.
+No dependency on mission_control_node; if it is running we try to switch
+it to MANUAL as a best-effort to avoid conflicting /cmd_vel publishers.
 """
 
 import os
@@ -76,67 +77,64 @@ class KeyboardControlNode(Node):
         self.step_angular = self.get_parameter('step_angular').value
 
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.mode_srv = self.create_client(SetBool, '/set_auto_mode')
 
-        self.mode = 'AUTO'
         self.linear = 0.0
         self.angular = 0.0
         self.lock = threading.Lock()
         self.last_cmd_time = time.time()
         self.TIMEOUT = 0.5
+        self._had_mission_control = False
 
         self.timer = self.create_timer(0.05, self.timer_cb)
 
     # -- timer ---------------------------------------------------------------
 
     def timer_cb(self):
+        """Always publish — uart_bridge_node is the sole /cmd_vel consumer
+        and doesn't know about AUTO/MANUAL."""
         with self.lock:
             now = time.time()
-            if self.mode == 'MANUAL' and (now - self.last_cmd_time) > self.TIMEOUT:
+            if (now - self.last_cmd_time) > self.TIMEOUT:
                 self.linear = 0.0
                 self.angular = 0.0
-            if self.mode == 'MANUAL':
-                twist = Twist()
-                twist.linear.x = self.linear
-                twist.angular.z = self.angular
-                self.cmd_pub.publish(twist)
+            twist = Twist()
+            twist.linear.x = self.linear
+            twist.angular.z = self.angular
+            self.cmd_pub.publish(twist)
 
-    # -- mode switching ------------------------------------------------------
+    # -- optional mode switching ---------------------------------------------
 
-    def switch_to_manual(self) -> bool:
-        if not self.mode_srv.wait_for_service(timeout_sec=3.0):
-            self.get_logger().error('/set_auto_mode service not available')
-            return False
+    def _try_disable_mission_control(self):
+        """Best-effort: if mission_control_node is running, switch to MANUAL
+        so it stops publishing its own /cmd_vel messages."""
+        client = self.create_client(SetBool, '/set_auto_mode')
+        if not client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info(
+                '/set_auto_mode not available — publishing /cmd_vel directly')
+            return
         req = SetBool.Request()
         req.data = False
-        future = self.mode_srv.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-        if future.result() is None:
-            self.get_logger().error('/set_auto_mode call timed out')
-            return False
-        if future.result().success:
-            with self.lock:
-                self.mode = 'MANUAL'
-                self.linear = 0.0
-                self.angular = 0.0
-                self.last_cmd_time = time.time()
-            self.get_logger().info('Switched to MANUAL mode')
-            return True
-        self.get_logger().warn(f'/set_auto_mode rejected: {future.result().message}')
-        return False
+        future = client.call_async(req)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
+        if future.result() is not None and future.result().success:
+            self._had_mission_control = True
+            self.get_logger().info('mission_control_node switched to MANUAL')
+        else:
+            self.get_logger().info(
+                'mission_control_node not running — publishing /cmd_vel directly')
+        self.destroy_client(client)
 
-    def switch_to_auto(self):
-        if not self.mode_srv.wait_for_service(timeout_sec=3.0):
-            self.get_logger().error('/set_auto_mode service not available')
+    def _try_restore_mission_control(self):
+        if not self._had_mission_control:
+            return
+        client = self.create_client(SetBool, '/set_auto_mode')
+        if not client.wait_for_service(timeout_sec=1.0):
             return
         req = SetBool.Request()
         req.data = True
-        future = self.mode_srv.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-        if future.result() is not None and future.result().success:
-            with self.lock:
-                self.mode = 'AUTO'
-            self.get_logger().info('Switched to AUTO mode')
+        future = client.call_async(req)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
+        self.destroy_client(client)
 
     # -- keyboard loop -------------------------------------------------------
 
@@ -144,9 +142,7 @@ class KeyboardControlNode(Node):
         fd = sys.stdin.fileno()
         old_term = _set_raw_mode(fd)
 
-        if not self.switch_to_manual():
-            _restore_mode(fd, old_term)
-            return
+        self._try_disable_mission_control()
 
         self._print_help()
         try:
@@ -157,7 +153,7 @@ class KeyboardControlNode(Node):
                 rclpy.spin_once(self, timeout_sec=0.001)
         finally:
             _restore_mode(fd, old_term)
-            self.switch_to_auto()
+            self._try_restore_mission_control()
             self.get_logger().info('Keyboard control exited')
 
     def _handle_key(self, ch: str):
@@ -178,7 +174,7 @@ class KeyboardControlNode(Node):
         elif ch.lower() == 'q' or ch == '\x03':  # Q or Ctrl+C
             raise KeyboardInterrupt
         else:
-            return  # unrecognised key, no status line reprint
+            return
 
         self._print_status()
 
