@@ -348,11 +348,8 @@ int main(void)
 
             } else {
                 /* ---- Cross-Track Stabilizer ----
-                 * Modifies targets to compensate for uneven terrain:
-                 *   - Yaw drift: cancels cumulative L-R speed asymmetry
-                 *   - Load balance: prevents free-spinning on unloaded track
-                 *   - Consensus: catches bounce artifacts on one track
-                 * Returns corrected targets that PID_Calc will track. */
+                 *   Yaw drift + load balance + consensus filter
+                 * Modifies targets to compensate for uneven farmland terrain. */
                 float cts_tgt_l = target_speed_left;
                 float cts_tgt_r = target_speed_right;
                 CTS_Update(&cts, (float)speed_left, (float)speed_right,
