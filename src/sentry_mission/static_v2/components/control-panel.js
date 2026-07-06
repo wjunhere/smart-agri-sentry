@@ -8,6 +8,7 @@ const ControlPanel = {
     </div>
     <div style="flex:1"></div>
     <crop-selector></crop-selector>
+    <div style="flex:1"></div>
     <cruise-panel></cruise-panel>
   </div>`,
   methods: {
