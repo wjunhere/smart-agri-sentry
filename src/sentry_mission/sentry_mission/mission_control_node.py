@@ -258,6 +258,12 @@ class MissionControlNode(Node):
         status.header.stamp = self.get_clock().now().to_msg()
         status.plants_detected = self.plants_detected
         status.plants_analyzed = self.plants_analyzed
+        status.current_wp_idx = self.current_wp_idx
+        status.total_wps = len(self.waypoints)
+        status.waypoint_labels = [
+            f'WP{i}: ({wp["x"]:.1f}, {wp["y"]:.1f})'
+            for i, wp in enumerate(self.waypoints)
+        ]
 
         if self.state == STATE_PATROL:
             status.state = STATE_PATROL

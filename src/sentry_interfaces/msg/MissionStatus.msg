@@ -4,3 +4,6 @@ float32 progress
 string current_action
 uint32 plants_analyzed
 uint32 plants_detected
+uint32 current_wp_idx
+uint32 total_wps
+string[] waypoint_labels
