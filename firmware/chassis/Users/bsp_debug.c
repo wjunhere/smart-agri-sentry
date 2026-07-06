@@ -9,6 +9,8 @@
  *   STOP               Stop both wheels (target = 0)
  *   STATUS             Print current system status
  *   INFO               Print chip/firmware info
+ *   TUNE <mm_s> [C]    Auto-tune PID at speed (mm/s). C=0.5–1.5 conservativeness.
+ *   TUNE STOP          Abort auto-tuning.
  *   TEST <L> <R>       Send a test RDK X5 protocol frame on USART2
  *   SEND <hex>         Send raw hex bytes on USART2 (e.g. SEND AA010400000000AE)
  *   HELP or ?          Show this help
@@ -20,6 +22,10 @@
 #include "bsp_protocol.h"
 #include "bsp_encoder.h"
 #include "pid.h"
+#include "pid_autotune.h"
+#include "pid_disturbance.h"
+#include "cross_track.h"
+#include "bsp_encoder.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +35,10 @@ extern UART_HandleTypeDef huart2;
 extern volatile float target_speed_left;
 extern volatile float target_speed_right;
 extern PID_TypeDef pid_left, pid_right;
+extern PID_AutoTuner autotuner;
+extern DOB_Observer dob_left, dob_right;
+extern float dob_ff_left, dob_ff_right;
+extern CTS_Stabilizer cts;
 
 #define DBG_LINE_MAX  64
 
@@ -40,10 +50,10 @@ static uint8_t  dbg_line_ready = 0;
 static void Cmd_STATUS(void);
 static void Cmd_INFO(void);
 static void Cmd_HELP(void);
+static void Cmd_TUNE(const char *args);
 static void Cmd_TEST(int l_spd, int r_spd);
 static void Cmd_SEND(const char *hex_str);
 static void USART2_Send(const uint8_t *data, uint16_t len);
-static uint8_t Checksum8(const uint8_t *data, uint16_t len);
 
 /* ---- UART RX callback (called from HAL_UART_IRQHandler in ISR context) ---- */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
@@ -102,7 +112,8 @@ void Debug_Process(void) {
         PID_Reset(&pid_left);
         PID_Reset(&pid_right);
         Encoder_Reset_Filters();
-        printf("  [OK] Both motors stopped (PID reset)\r\n");
+        CTS_Reset(&cts);
+        printf("  [OK] Both motors stopped (PID+CTS reset)\r\n");
     }
     else if (strncmp(line, "LR ", 3) == 0 || strncmp(line, "lr ", 3) == 0) {
         int l = 0, r = 0;
@@ -113,6 +124,9 @@ void Debug_Process(void) {
         } else {
             printf("  [ERR] Usage: LR <left_speed> <right_speed>\r\n");
         }
+    }
+    else if (strncmp(line, "TUNE", 4) == 0 || strncmp(line, "tune", 4) == 0) {
+        Cmd_TUNE(line + 4);
     }
     else if (strncmp(line, "TEST ", 5) == 0 || strncmp(line, "test ", 5) == 0) {
         int l = 0, r = 0;
@@ -163,43 +177,108 @@ static void USART2_Send(const uint8_t *data, uint16_t len) {
     HAL_UART_Transmit(&huart2, (uint8_t *)data, len, 100);
 }
 
-/* 8-bit additive checksum (same as bsp_protocol.c) */
-static uint8_t Checksum8(const uint8_t *data, uint16_t len) {
-    uint8_t sum = 0;
-    for (uint16_t i = 0; i < len; i++) {
-        sum += data[i];
-    }
-    return sum;
-}
-
 /* ---- Commands ---- */
 
+/* TUNE: Relay auto-tuning for PID gains.
+ * Usage:
+ *   TUNE <speed_mm_s> [conservativeness]
+ *     speed_mm_s      — test speed in mm/s (e.g. 300 = 0.3 m/s)
+ *     conservativeness — 0.5=gentle, 1.0=standard ZN (default), 1.5=aggressive
+ *   TUNE STOP         — abort in-progress tuning */
+static void Cmd_TUNE(const char *args) {
+    /* Skip leading spaces */
+    while (*args == ' ') args++;
+
+    if (strncmp(args, "STOP", 4) == 0 || strncmp(args, "stop", 4) == 0) {
+        if (AT_Is_Active(&autotuner)) {
+            AT_Abort(&autotuner);
+            printf("  [OK] Auto-tuning aborted.\r\n");
+        } else {
+            printf("  [INFO] Auto-tuner is not running.\r\n");
+        }
+        return;
+    }
+
+    if (AT_Is_Active(&autotuner)) {
+        printf("  [ERR] Auto-tuner already running (state=%s).  "
+               "Use TUNE STOP first.\r\n",
+               AT_State_Name(autotuner.state));
+        return;
+    }
+
+    int speed_mm_s = 0;
+    float conservativeness = 1.0f;
+    int n = sscanf(args, "%d %f", &speed_mm_s, &conservativeness);
+
+    if (n < 1 || speed_mm_s <= 0) {
+        printf("  [ERR] Usage: TUNE <speed_mm_s> [conservativeness]\r\n");
+        printf("        e.g. TUNE 300       - tune at 0.3 m/s (standard)\r\n");
+        printf("        e.g. TUNE 600 0.5   - tune at 0.6 m/s (conservative)\r\n");
+        printf("        e.g. TUNE 300 1.5   - tune at 0.3 m/s (aggressive)\r\n");
+        printf("        e.g. TUNE STOP      - abort tuning\r\n");
+        return;
+    }
+
+    /* Convert mm/s → pulses/10ms */
+    float speed_pulses = (float)speed_mm_s * (ENCODER_PULSES_PER_METER / 100000.0f);
+
+    /* Map speed to PID zone */
+    int zone;
+    if (speed_pulses < 2.0f)       zone = PID_ZONE_STOP;
+    else if (speed_pulses < 15.0f) zone = PID_ZONE_LOW;
+    else if (speed_pulses < 60.0f) zone = PID_ZONE_MED;
+    else                           zone = PID_ZONE_HIGH;
+
+    /* Ensure car is stopped before tuning */
+    target_speed_left  = 0.0f;
+    target_speed_right = 0.0f;
+    PID_Reset(&pid_left);
+    PID_Reset(&pid_right);
+    Encoder_Reset_Filters();
+    CTS_Reset(&cts);
+
+    printf("  [TUNE] Starting auto-tune...\r\n");
+    printf("         Speed: %d mm/s = %.1f pulses/10ms\r\n",
+           speed_mm_s, (double)speed_pulses);
+    printf("         Zone: %d (%s)\r\n", zone,
+           zone == PID_ZONE_STOP ? "STOP" :
+           zone == PID_ZONE_LOW  ? "LOW"  :
+           zone == PID_ZONE_MED  ? "MED"  : "HIGH");
+    printf("         Conservativeness: %.1f\r\n", (double)conservativeness);
+    printf("         *** Ensure car is on the ground with room to move! ***\r\n");
+
+    if (!AT_Start(&autotuner, speed_pulses, zone, conservativeness)) {
+        printf("  [ERR] Failed to start auto-tuner (busy?).\r\n");
+    }
+}
+
 /* TEST: Send a simulated RDK X5 speed-control frame on USART2
- * Frame: AA 01 04 <left_L> <left_H> <right_L> <right_H> <crc>
+ * New protocol frame: AA 55 81 04 <left_L> <left_H> <right_L> <right_H> <CRC16_H> <CRC16_L>
  */
 static void Cmd_TEST(int l_spd, int r_spd) {
-    uint8_t frame[9];
+    uint8_t frame[10];
     int16_t l = (int16_t)l_spd;
     int16_t r = (int16_t)r_spd;
 
-    frame[0] = 0xAA;                    /* Header */
-    frame[1] = 0x01;                    /* CMD: speed control */
-    frame[2] = 0x04;                    /* LEN: 4 bytes payload */
-    frame[3] = (uint8_t)(l & 0xFF);     /* Left speed LSB */
-    frame[4] = (uint8_t)((l >> 8) & 0xFF); /* Left speed MSB */
-    frame[5] = (uint8_t)(r & 0xFF);     /* Right speed LSB */
-    frame[6] = (uint8_t)((r >> 8) & 0xFF); /* Right speed MSB */
-    frame[7] = Checksum8(frame, 8);     /* CRC over first 8 bytes */
-    frame[8] = Checksum8(frame, 9);     /* Wait, CRC is byte 8 of 9 total */
+    frame[0] = 0xAA;                         /* Header byte 0 */
+    frame[1] = 0x55;                         /* Header byte 1 */
+    frame[2] = 0x81;                         /* TYPE: motion command */
+    frame[3] = 0x04;                         /* LEN: 4 bytes payload */
+    frame[4] = (uint8_t)(l & 0xFF);
+    frame[5] = (uint8_t)((l >> 8) & 0xFF);
+    frame[6] = (uint8_t)(r & 0xFF);
+    frame[7] = (uint8_t)((r >> 8) & 0xFF);
 
-    /* Recalculate: frame is 9 bytes: AA 01 04 L L H H C */
-    frame[7] = Checksum8(frame, 8);     /* CRC over bytes 0-7 */
+    /* CRC16-CCITT over TYPE + LEN + DATA (bytes 2..7, length 6) */
+    uint16_t crc = crc16_ccitt(&frame[2], 6);
+    frame[8] = (uint8_t)(crc >> 8);
+    frame[9] = (uint8_t)(crc & 0xFF);
 
-    USART2_Send(frame, 9);
+    USART2_Send(frame, 10);
 
     printf("  [TEST] Sent RDK X5 frame on USART2:\r\n");
-    printf("         AA 01 04 %02X %02X %02X %02X %02X\r\n",
-           frame[3], frame[4], frame[5], frame[6], frame[7]);
+    printf("         AA 55 81 04 %02X %02X %02X %02X %02X %02X\r\n",
+           frame[4], frame[5], frame[6], frame[7], frame[8], frame[9]);
     printf("         Speed: L=%d R=%d\r\n", l, r);
 }
 
@@ -254,24 +333,64 @@ static void Cmd_STATUS(void) {
     extern float out_left, out_right;
     extern float battery_voltage;
     extern PID_TypeDef pid_left, pid_right;
+    extern PID_AutoTuner autotuner;
+
     printf("  ===== STATUS =====\r\n");
     printf("  Target:  L=%.0f  R=%.0f\r\n", target_speed_left, target_speed_right);
-    printf("  Speed:   L=%d  R=%d  (pulses/10ms, filtered)\r\n", (int)speed_left, (int)speed_right);
+    printf("  Encoder: L=%d  R=%d  ", (int)speed_left, (int)speed_right);
     if (speed_left == 0 && speed_right == 0 &&
         (target_speed_left != 0 || target_speed_right != 0)) {
-        printf("           ** NO ENCODER - PWM will saturate! **\r\n");
+        printf("(NO ENCODER - PWM will saturate!)\r\n");
+    } else {
+        printf("\r\n");
     }
-    printf("  Accum:   L=%d  R=%d  (raw pulses, never cleared)\r\n",
-           (int)Encoder_Get_Left_Accum(), (int)Encoder_Get_Right_Accum());
-    printf("  Dist:    L=%.3f  R=%.3f  (meters)\r\n",
-           (double)Encoder_Get_Left_Distance_M(), (double)Encoder_Get_Right_Distance_M());
     printf("  PWM out: L=%.0f  R=%.0f  (ARR=999)\r\n", out_left, out_right);
-    printf("  Friction: L=%.0f  R=%.0f  (PWM offset, learned)\r\n",
+    printf("  DOB est: L=%.0f  R=%.0f  (disturbance PWM)\r\n",
+           dob_ff_left, dob_ff_right);
+    printf("  Friction: L=%.0f  R=%.0f  (learned)\r\n",
            pid_left.friction, pid_right.friction);
-    printf("  Battery: %.2f V\r\n", battery_voltage);
+    printf("  K_accel:  L=%.3f R=%.3f (accel FF)\r\n",
+           pid_left.K_accel, pid_right.K_accel);
+    printf("  Outliers: L=%d  R=%d  (encoder glitch counter)\r\n",
+           (int)Encoder_Get_Left_Outlier_Count(),
+           (int)Encoder_Get_Right_Outlier_Count());
+    printf("  CTS:      yaw=%.1f bias=%.1f/%.1f  evt: Y=%d B=%d C=%d\r\n",
+           (double)cts.yaw_integral,
+           (double)cts.bias_left, (double)cts.bias_right,
+           (int)cts.yaw_events, (int)cts.balance_events, (int)cts.consensus_events);
+    printf("  Battery: %.2f V  (comp scale: %.2f)\r\n",
+           battery_voltage,
+           (double)(12.6f / (battery_voltage > 8.0f ? battery_voltage : 12.6f)));
     printf("  Uptime:  %lu ms\r\n", (unsigned long)HAL_GetTick());
     printf("  USART1:  %lu baud (this console)\r\n", (unsigned long)huart1.Init.BaudRate);
     printf("  USART2:  %lu baud DMA (RDK X5 protocol)\r\n", (unsigned long)huart2.Init.BaudRate);
+
+    /* Auto-tuner status */
+    if (AT_Is_Active(&autotuner)) {
+        printf("  AutoTune: %s | tgt=%.1f p/tick  cycles=%d\r\n",
+               AT_State_Name(autotuner.state),
+               (double)autotuner.test_speed,
+               autotuner.half_cycles / 2);
+    } else if (autotuner.state == AT_DONE) {
+        printf("  AutoTune: DONE  Kp=%.3f Ki=%.3f Kd=%.3f\r\n",
+               (double)autotuner.tuned_Kp,
+               (double)autotuner.tuned_Ki,
+               (double)autotuner.tuned_Kd);
+    } else if (autotuner.state == AT_ERROR) {
+        printf("  AutoTune: ERROR - %s\r\n",
+               autotuner.error_msg ? autotuner.error_msg : "unknown");
+    } else {
+        printf("  AutoTune: idle\r\n");
+    }
+
+    /* Zone gains */
+    for (int z = 0; z < 4; z++) {
+        const PID_GainEntry *g = PID_Get_Gain_Entry(z);
+        printf("  Zone %d: Kp=%.3f Ki=%.3f Kd=%.3f i_sep=%.0f slew=%u alpha=%.2f\r\n",
+               z, (double)g->Kp, (double)g->Ki, (double)g->Kd,
+               (double)g->integral_sep, (unsigned)g->slew_max, (double)g->encoder_alpha);
+    }
+
     printf("  ==================\r\n");
 }
 
@@ -305,7 +424,7 @@ static void Cmd_INFO(void) {
     printf("  HCLK:    %lu MHz\r\n", (unsigned long)(hclk / 1000000));
     printf("  PCLK1:   %lu MHz\r\n", (unsigned long)(pclk1 / 1000000));
     printf("  PCLK2:   %lu MHz\r\n", (unsigned long)(pclk2 / 1000000));
-    printf("  FW Ver:  v1.0 (modified - Diag disabled)\r\n");
+    printf("  FW Ver:  v1.3 (PID+DOB+CTS+AutoTune+BatComp)\r\n");
     printf("  =======================\r\n");
 }
 
@@ -316,8 +435,11 @@ static void Cmd_HELP(void) {
     printf("    R<value>          set right speed (e.g. R200)\r\n");
     printf("    LR <L> <R>        set both speeds\r\n");
     printf("    STOP              stop both motors\r\n");
+    printf("  PID Auto-Tune:\r\n");
+    printf("    TUNE <mm_s> [C]   auto-tune PID (e.g. TUNE 300)\r\n");
+    printf("    TUNE STOP         abort tuning\r\n");
     printf("  Info:\r\n");
-    printf("    STATUS            print voltage/speed/PWM\r\n");
+    printf("    STATUS            print voltage/speed/PWM/zone gains\r\n");
     printf("    INFO              print chip/firmware info\r\n");
     printf("  USART2 Test (RDK X5 protocol):\r\n");
     printf("    TEST <L> <R>      send speed frame on USART2\r\n");

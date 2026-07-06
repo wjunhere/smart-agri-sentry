@@ -277,10 +277,16 @@ void USART2_IRQHandler(void)
   extern volatile uint16_t rx_len;
 
   if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_IDLE)) {
-      /* Read NDTR BEFORE stopping DMA to avoid stale count from ISR latency */
+      /* Read NDTR BEFORE stopping DMA to avoid stale count from ISR latency.
+       * Use targeted RX DMA abort — HAL_UART_DMAStop would kill TX DMA too! */
       uint16_t dma_remain = __HAL_DMA_GET_COUNTER(huart2.hdmarx);
       __HAL_UART_CLEAR_IDLEFLAG(&huart2);
-      HAL_UART_DMAStop(&huart2);
+
+      /* Abort RX DMA only (Stream5), leave TX DMA (Stream6) untouched */
+      if (huart2.hdmarx != NULL) {
+          HAL_DMA_Abort(huart2.hdmarx);
+      }
+      huart2.RxState = HAL_UART_STATE_READY;
 
       rx_len = RX_BUFF_SIZE - dma_remain;
       rx_flag = 1;
