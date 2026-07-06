@@ -92,8 +92,8 @@ PUTCHAR_PROTOTYPE
     return ch;
 }
 
-/* Full C library retarget (when MicroLIB is disabled) */
-#if !defined(__MICROLIB)
+/* Full C library retarget (when MicroLIB is disabled, Arm Compiler only) */
+#if !defined(__MICROLIB) && !defined(__GNUC__)
 #include <rt_misc.h>
 #pragma import(__use_no_semihosting)
 struct __FILE { int handle; };
