@@ -33,6 +33,7 @@ setup(
             'web_remote_node = sentry_mission.web_remote_node:main',
             'chassis_cmd = sentry_mission.chassis_cmd:main',
             'imu_turn = sentry_mission.imu_turn_controller:main',
+            'keyboard_control = sentry_mission.keyboard_control_node:main',
         ],
     },
 )

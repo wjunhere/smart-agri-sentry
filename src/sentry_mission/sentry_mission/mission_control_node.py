@@ -33,6 +33,10 @@ STATE_ACTION = 'ACTION'
 STATE_RESUME = 'RESUME'
 STATE_MANUAL = 'MANUAL'
 
+_CMDV_OWNER_STATES = {
+    STATE_STOPPED, STATE_SCANNING, STATE_ANALYZING, STATE_ACTION, STATE_RESUME
+}
+
 
 class MissionControlNode(Node):
     def __init__(self):
@@ -375,7 +379,7 @@ class MissionControlNode(Node):
 
         status.progress = self._compute_progress()
         self.pub_status.publish(status)
-        if self.state != STATE_MANUAL:
+        if self.state in _CMDV_OWNER_STATES:
             self.pub_cmd.publish(cmd)
 
     def _transition(self, new_state: str, now: float = None):
