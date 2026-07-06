@@ -91,22 +91,14 @@ PUTCHAR_PROTOTYPE
 }
 
 /* Full C library retarget (when MicroLIB is disabled).
- * Arm Compiler 5 / 6 compatible — AC5 uses rt_misc.h + pragma import,
- * AC6 uses standard C stubs without extra headers. */
+ * Works with Arm Compiler 5 and 6. */
 #if !defined(__MICROLIB)
-  #if defined(__ARMCC_VERSION) && (__ARMCC_VERSION < 7000000)
-    /* AC5 only */
-    #include <rt_misc.h>
-    #pragma import(__use_no_semihosting)
-    struct __FILE { int handle; };
-    FILE __stdout;
-  #endif
-void _sys_exit(int x) { while(1); }
+void _sys_exit(int x) { (void)x; while(1); }
 int _write(int fd, const unsigned char *buf, unsigned int len)
 {
     if (fd == 1) {
         HAL_UART_Transmit(&huart1, (uint8_t *)buf, len, HAL_MAX_DELAY);
-        return len;
+        return (int)len;
     }
     return -1;
 }
