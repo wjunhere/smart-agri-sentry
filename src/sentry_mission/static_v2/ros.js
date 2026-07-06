@@ -222,13 +222,8 @@ function callSetCropType(cropType) {
   });
 }
 
-// Auto-connect on load
-rosConnect();
-
-// ── Mock data for local testing (remove in production) ──
-setTimeout(() => {
-  if (store.connected) return;  // skip if real ROS is connected
-
+// ── Mock data for local testing (inject before ROS connect) ──
+(function injectMock() {
   // Camera — generate a dark placeholder image
   const canvas = document.createElement('canvas');
   canvas.width = 640; canvas.height = 480;
@@ -343,4 +338,7 @@ setTimeout(() => {
   }
 
   console.log('[MOCK] Injected test data into store');
-}, 500);
+})();
+
+// Auto-connect on load (real ROS data will overwrite mock if connected)
+try { rosConnect(); } catch(e) { console.log('[ROS] Connection deferred'); }
