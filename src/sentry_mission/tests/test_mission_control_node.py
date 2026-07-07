@@ -58,7 +58,7 @@ def test_nav2_task_failed_retries_same_waypoint(node):
         node.tick()
 
         assert node.current_wp_idx == 1
-        assert node.sending_goal == True  # Re-set by retry _send_next_waypoint
+        assert node.sending_goal == False  # Mocked _send_next_waypoint skips real call
         mock_send.assert_called_once()
 
 
