@@ -15,6 +15,8 @@ window.store = Vue.reactive({
   diagnosisDisease: '',
   diagnosisConfidence: 0,
   diagnosisProbabilities: [],
+  _diagBuf: [],        // temporal smoothing buffer
+  _diagBufSize: 10,    // buffer last 10 frames
   advisoryText: '',
   advisoryUrgency: 0,
   advisoryFungicide: '',
@@ -83,10 +85,30 @@ const TOPICS = [
    }],
   ['/vision/diagnosis', 'sentry_interfaces/Diagnosis',
    (msg) => {
+     // Temporal smoothing: buffer N recent predictions, show majority class
+     store._diagBuf.push({ cls: msg.disease_class, conf: msg.confidence, probs: msg.probabilities });
+     if (store._diagBuf.length > store._diagBufSize) store._diagBuf.shift();
+
+     // Count class occurrences in buffer
+     const counts = {};
+     let maxCls = msg.disease_class, maxCnt = 0;
+     store._diagBuf.forEach(d => {
+       counts[d.cls] = (counts[d.cls] || 0) + 1;
+       if (counts[d.cls] > maxCnt) { maxCnt = counts[d.cls]; maxCls = d.cls; }
+     });
+
+     // Use most frequent class; average confidence and probabilities
+     const matching = store._diagBuf.filter(d => d.cls === maxCls);
+     const avgConf = matching.reduce((s, d) => s + d.conf, 0) / matching.length;
+     const avgProbs = msg.probabilities.length
+       ? store._diagBuf[0].probs.map((_, i) =>
+           store._diagBuf.reduce((s, d) => s + (d.probs[i] || 0), 0) / store._diagBuf.length)
+       : [];
+
      store.diagnosisCropType = msg.crop_type;
-     store.diagnosisDisease = msg.disease_class;
-     store.diagnosisConfidence = msg.confidence;
-     store.diagnosisProbabilities = msg.probabilities;
+     store.diagnosisDisease = maxCls;
+     store.diagnosisConfidence = avgConf;
+     store.diagnosisProbabilities = avgProbs;
    }],
   ['/advisory/action', 'sentry_interfaces/AdvisoryAction',
    (msg) => {
