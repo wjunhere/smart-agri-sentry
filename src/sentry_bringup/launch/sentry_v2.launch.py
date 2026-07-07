@@ -68,9 +68,9 @@ def generate_launch_description():
             executable='mipi_camera_node',
             name='mipi_camera_node',
             parameters=[{
-                'width': 1920,
-                'height': 1080,
-                'fps': 2.0,
+                'width': 640,
+                'height': 480,
+                'fps': 5.0,
                 'sensor_width': 1920,
                 'sensor_height': 1080,
             }],

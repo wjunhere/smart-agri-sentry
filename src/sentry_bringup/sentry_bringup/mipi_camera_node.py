@@ -158,10 +158,9 @@ class MipiCameraNode(Node):
 
     def capture(self):
         try:
-            # Fetch from the SECOND output channel (1920x1080) directly,
-            # avoiding the CPU upscale from 512x512.
-            # hobot_vio: module 0 for channel 1 (full res), module 2 for channel 0 (512)
-            img_buf = self.cam.get_img(0, self.width, self.height)
+            # Fetch from the SECOND output channel (full resolution) directly.
+            # hobot_vio get_img: type 2=channel0 NV12, type 3=channel1 NV12
+            img_buf = self.cam.get_img(3, self.width, self.height)
             if img_buf is None:
                 self.get_logger().warn('get_img returned None')
                 return
