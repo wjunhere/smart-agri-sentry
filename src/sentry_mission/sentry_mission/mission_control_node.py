@@ -158,6 +158,7 @@ class MissionControlNode(Node):
         if not self._nav2_ready:
             return
         if self.state == STATE_MANUAL:
+            return
         if self.current_wp_idx >= len(self.waypoints):
             self.get_logger().info('All waypoints reached')
             self.sending_goal = False
