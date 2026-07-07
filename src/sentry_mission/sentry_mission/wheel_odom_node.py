@@ -64,9 +64,11 @@ class WheelOdomNode(Node):
             now = self.get_clock().now()
             if (self.last_timeout_log_time is None or
                     (now - self.last_timeout_log_time).nanoseconds > 5e9):
-                self.get_logger().warning(
-                    'Chassis communication timeout, skipping odometry update')
+                self.get_logger().warn(
+                    'Chassis communication timeout, holding last odometry')
                 self.last_timeout_log_time = now
+            # Publish current pose even during timeout (keeps EKF alive)
+            self._publish_odom(now, 0.0, 0.0, 0.0, 0.0)
             return
 
         self.last_timeout_log_time = None
@@ -110,9 +112,15 @@ class WheelOdomNode(Node):
         d_center = (dl + dr) / 2.0
         d_theta = (dr - dl) / self.wheel_base
 
-        self.theta += d_theta
-        self.x += d_center * math.cos(self.theta)
-        self.y += d_center * math.sin(self.theta)
+        self._publish_odom(now, dl, dr, d_center, d_theta)
+
+    def _publish_odom(self, now, dl, dr, d_center, d_theta):
+        """Publish an odometry message (used for normal updates and timeout fallback)."""
+        dt = 0.05
+        if d_center != 0.0 or d_theta != 0.0:
+            self.theta += d_theta
+            self.x += d_center * math.cos(self.theta)
+            self.y += d_center * math.sin(self.theta)
 
         linear = d_center / dt
         angular = d_theta / dt
