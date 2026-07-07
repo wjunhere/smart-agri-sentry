@@ -62,7 +62,6 @@ def test_valid_frame_computes_odometry(node):
 
         assert mock_pub.call_count == 1
         odom = mock_pub.call_args[0][0]
-        # Both wheels moved 100 pulses forward = 100/11035 m
         expected_dist = 100.0 / node.pulses_per_m
         expected_linear = expected_dist / 0.05
         assert abs(odom.pose.pose.position.x - expected_dist) < 1e-6
@@ -71,3 +70,50 @@ def test_valid_frame_computes_odometry(node):
         assert abs(odom.twist.twist.angular.z) < 1e-6
         assert abs(odom.pose.pose.orientation.z) < 1e-6
         assert abs(odom.pose.pose.orientation.w - 1.0) < 1e-6
+
+
+def test_publish_odom_uses_passed_dt(node):
+    """Verify _publish_odom uses the caller-provided dt, not a hardcoded value."""
+    node.x = node.y = node.theta = 0.0
+
+    with patch.object(node.pub, 'publish') as mock_pub:
+        node._publish_odom(
+            node.get_clock().now(), dl=0.1, dr=0.1, d_center=0.1, d_theta=0.0, dt=0.1)
+
+        odom = mock_pub.call_args[0][0]
+        # d_center=0.1m, dt=0.1s → linear.x = 1.0 m/s
+        assert abs(odom.twist.twist.linear.x - 1.0) < 1e-6
+
+
+def test_publish_odom_rejects_zero_dt(node):
+    """Verify _publish_odom with zero dt uses 0 for twist instead of dividing by zero."""
+    node.x = node.y = node.theta = 0.0
+
+    with patch.object(node.pub, 'publish') as mock_pub:
+        node._publish_odom(
+            node.get_clock().now(), dl=0.1, dr=0.1, d_center=0.1, d_theta=0.0, dt=0.0)
+
+        odom = mock_pub.call_args[0][0]
+        assert odom.twist.twist.linear.x == 0.0
+
+
+def test_timeout_updates_last_time(node):
+    """Verify comm_timeout updates last_time to prevent dt explosion on recovery."""
+    t1 = rclpy.time.Time(seconds=1.0)
+    t2 = rclpy.time.Time(seconds=5.0)  # Simulates 4-second gap
+
+    with patch.object(node, 'get_clock') as mock_clock, \
+            patch.object(node.pub, 'publish') as mock_pub:
+        mock_clock.return_value.now.side_effect = [t1]
+
+        # Send initial valid frame to prime last_left/last_right/last_time
+        node.last_left = 100
+        node.last_right = 100
+        node.last_time = t1
+
+        # Send timeout frame at t2
+        mock_clock.return_value.now.side_effect = [t2]
+        node.on_chassis(_make_chassis_msg(100, 100, comm_timeout=True))
+
+        # After timeout, last_time should be t2 (not t1)
+        assert node.last_time == t2
