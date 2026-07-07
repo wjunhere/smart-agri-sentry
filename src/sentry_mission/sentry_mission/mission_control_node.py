@@ -17,7 +17,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist, Quaternion
 from nav_msgs.msg import Odometry
-from nav2_simple_commander.robot_navigator import BasicNavigator
+from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from sentry_interfaces.msg import PlantDetection, FusionResult, MissionStatus, Diagnosis
 from sentry_interfaces.srv import PipelineTrigger, SetCropType
 from std_msgs.msg import Bool
@@ -299,14 +299,21 @@ class MissionControlNode(Node):
             status.current_action = 'patrolling waypoints'
 
             if self.sending_goal and self.navigator.isTaskComplete():
-                self.current_wp_idx += 1
                 self.sending_goal = False
-                self.get_logger().info(
-                    f'Reached waypoint {self.current_wp_idx - 1}')
-                if self.current_wp_idx < len(self.waypoints):
-                    self._send_next_waypoint()
+                result = self.navigator.getResult()
+                if result == TaskResult.SUCCEEDED:
+                    self.current_wp_idx += 1
+                    self.get_logger().info(
+                        f'Reached waypoint {self.current_wp_idx - 1}')
+                    if self.current_wp_idx < len(self.waypoints):
+                        self._send_next_waypoint()
+                    else:
+                        self.get_logger().info('All waypoints completed')
                 else:
-                    self.get_logger().info('All waypoints completed')
+                    self.get_logger().warn(
+                        f'Nav2 task failed ({result}), '
+                        f'retrying waypoint {self.current_wp_idx}')
+                    self._send_next_waypoint()
 
             # Check for plant detection trigger (with de-duplication)
             if (self.last_plant is not None
