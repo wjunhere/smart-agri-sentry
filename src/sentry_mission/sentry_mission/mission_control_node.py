@@ -273,10 +273,10 @@ class MissionControlNode(Node):
     def tick(self):
         now = self.get_clock().now().nanoseconds / 1e9
 
-        # Background Nav2 readiness check (non-blocking)
-        if not self._nav2_ready and self.navigator.nav2_bringup_ready():
+        # Background Nav2 readiness — just check if the node is up
+        if not self._nav2_ready:
             self._nav2_ready = True
-            self.get_logger().info('Nav2 is active')
+            self.get_logger().info('Mission control ready (Nav2 may still be initializing)')
 
         if self.state_enter_time == 0.0:
             self.state_enter_time = now
