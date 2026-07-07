@@ -109,7 +109,7 @@ recoveries_server:
 map_server:
   ros__parameters:
     yaml_filename: ""
-    topic_name: ""
+    topic_name: "/map"
 
 waypoint_follower:
   ros__parameters:
