@@ -30,20 +30,30 @@ def _make_chassis_msg(left_pulse, right_pulse, comm_timeout=False):
     return msg
 
 
-def test_timeout_frame_skips_odometry(node):
-    """Verify comm_timeout=True frames do not publish odometry."""
+def test_timeout_frame_publishes_holding_pose(node):
+    """Verify comm_timeout=True frames publish a holding odom (to keep EKF alive)."""
     with patch.object(node.pub, 'publish') as mock_pub:
         node.on_chassis(_make_chassis_msg(100, 100, comm_timeout=True))
-        assert not mock_pub.called
+        assert mock_pub.call_count == 1
+        odom = mock_pub.call_args[0][0]
+        assert odom.twist.twist.linear.x == 0.0
+        assert odom.twist.twist.angular.z == 0.0
 
 
 def test_valid_frame_after_timeout_resets(node):
     """Verify normal frames resume odometry after timeout frames."""
-    with patch.object(node.pub, 'publish') as mock_pub:
+    with patch.object(node, 'get_clock') as mock_clock, \
+         patch.object(node.pub, 'publish') as mock_pub:
+        t0 = rclpy.time.Time(seconds=1.0)
+        t1 = rclpy.time.Time(seconds=1.05)
+        t2 = rclpy.time.Time(seconds=1.10)
+        mock_clock.return_value.now.side_effect = [t0, t1, t2]
+
         node.on_chassis(_make_chassis_msg(100, 100, comm_timeout=True))
         node.on_chassis(_make_chassis_msg(100, 100, comm_timeout=False))
         node.on_chassis(_make_chassis_msg(200, 200, comm_timeout=False))
-        assert mock_pub.call_count == 1
+        # timeout publishes holding pose (1), valid frame publishes odom (1)
+        assert mock_pub.call_count == 2
 
 
 def test_valid_frame_computes_odometry(node):

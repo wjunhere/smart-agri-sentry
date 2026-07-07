@@ -52,11 +52,9 @@ def test_nav2_task_failed_retries_same_waypoint(node):
         {'x': 2.0, 'y': 0.0, 'yaw': 0.0},
     ]
 
-    # Mock navigator: task complete but failed
-    node.navigator.isTaskComplete.return_value = True
-    node.navigator.getResult.return_value = 2  # TaskResult.FAILED
-
-    with patch.object(node, '_send_next_waypoint') as mock_send:
+    with patch.object(node.navigator, 'isTaskComplete', return_value=True), \
+         patch.object(node.navigator, 'getResult', return_value=2), \
+         patch.object(node, '_send_next_waypoint') as mock_send:
         node.tick()
 
         # Should NOT have incremented current_wp_idx
@@ -78,10 +76,9 @@ def test_nav2_task_succeeded_advances_waypoint(node):
         {'x': 2.0, 'y': 0.0, 'yaw': 0.0},
     ]
 
-    node.navigator.isTaskComplete.return_value = True
-    node.navigator.getResult.return_value = 0  # TaskResult.SUCCEEDED
-
-    node.tick()
+    with patch.object(node.navigator, 'isTaskComplete', return_value=True), \
+         patch.object(node.navigator, 'getResult', return_value=0):
+        node.tick()
 
     assert node.current_wp_idx == 2
     assert node.sending_goal == False
