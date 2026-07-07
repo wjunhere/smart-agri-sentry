@@ -4,6 +4,7 @@ import yaml
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from sentry_interfaces.msg import (
     Environment,
@@ -74,10 +75,11 @@ class ForecastNode(Node):
         self.last_env = None
         self.last_env_ts = 0.0
 
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.sub_fusion = self.create_subscription(
             FusionResult, '/fusion/diagnosis', self.on_fusion, 10)
         self.sub_env = self.create_subscription(
-            Environment, '/sensor/environment_mobile', self.on_env, 10)
+            Environment, '/sensor/environment_mobile', self.on_env, qos)
 
         period = self.params.get('timer_period_sec', 600)
         self.timer = self.create_timer(float(period), self.tick)
