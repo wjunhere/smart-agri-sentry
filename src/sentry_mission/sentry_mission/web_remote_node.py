@@ -137,9 +137,11 @@ def _get_app(node: WebRemoteNode):
         return _app
 
     from flask import Flask, request, jsonify, send_from_directory
+    from ament_index_python.packages import get_package_share_directory
     _app = Flask(__name__)
-    STATIC_DIR = Path(__file__).parent / 'static'
-    STATIC_V2_DIR = Path(__file__).parent / 'static_v2'
+    SHARE_DIR = Path(get_package_share_directory('sentry_mission'))
+    STATIC_DIR = SHARE_DIR / 'static'
+    STATIC_V2_DIR = SHARE_DIR / 'static_v2'
 
     @_app.route('/')
     def index():
