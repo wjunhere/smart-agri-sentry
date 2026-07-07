@@ -61,6 +61,20 @@ def generate_launch_description():
             }],
             output='screen',
         ),
+
+        # Camera compressed republish (for web frontend)
+        Node(
+            package='image_transport',
+            executable='republish',
+            name='image_republisher',
+            arguments=['raw'],
+            remappings=[
+                ('in', '/sentry/camera/image_raw'),
+                ('out', '/out'),
+            ],
+            output='screen',
+        ),
+
         Node(
             package='sentry_vision',
             executable='vision_diagnosis_node',
