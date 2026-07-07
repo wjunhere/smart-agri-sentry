@@ -145,16 +145,15 @@ def _get_app(node: WebRemoteNode):
 
     @_app.route('/')
     def index():
-        return send_from_directory(str(STATIC_DIR), 'index.html')
-
-    @_app.route('/v2')
-    def v2_index():
         return send_from_directory(str(STATIC_V2_DIR), 'index.html')
 
-    @_app.route('/v2/<path:filename>')
+    @_app.route('/old')
+    def old_index():
+        return send_from_directory(str(STATIC_DIR), 'index.html')
+
+    @_app.route('/<path:filename>')
     def v2_static(filename):
         return send_from_directory(str(STATIC_V2_DIR), filename)
-        return send_from_directory(str(STATIC_DIR), 'index.html')
 
     @_app.route('/mode', methods=['POST'])
     def set_mode():
