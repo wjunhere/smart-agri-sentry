@@ -47,6 +47,15 @@ def generate_launch_description():
             output='screen',
         ),
 
+        # Static TF: map -> odom (identity, required for mapless Nav2)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='map_to_odom',
+            arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
+            output='screen',
+        ),
+
         # Vision nodes
         Node(
             package='sentry_bringup',
