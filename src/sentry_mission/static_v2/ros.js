@@ -72,7 +72,7 @@ function rosConnect() {
 
 // Topic definitions: [topic_name, message_type, callback]
 const TOPICS = [
-  ['/sentry/camera/image_raw/compressed', 'sensor_msgs/CompressedImage',
+  ['/out/compressed', 'sensor_msgs/CompressedImage',
    (msg) => { store.cameraFrame = 'data:image/jpeg;base64,' + msg.data; }],
   ['/vision/plant_detected', 'sentry_interfaces/PlantDetection',
    (msg) => {
