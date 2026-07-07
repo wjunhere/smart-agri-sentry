@@ -86,9 +86,8 @@ class MissionControlNode(Node):
 
         # -- Nav2 --
         self.navigator = BasicNavigator()
-        self.get_logger().info('Waiting for Nav2 to become active...')
-        self.navigator.waitUntilNav2Active()
-        self.get_logger().info('Nav2 is active')
+        self._nav2_ready = False
+        # Don't block - Nav2 readiness checked in tick()
 
         # -- Subscribers --
         self.sub_plant = self.create_subscription(
@@ -156,8 +155,9 @@ class MissionControlNode(Node):
         return q
 
     def _send_next_waypoint(self):
-        if self.state == STATE_MANUAL:
+        if not self._nav2_ready:
             return
+        if self.state == STATE_MANUAL:
         if self.current_wp_idx >= len(self.waypoints):
             self.get_logger().info('All waypoints reached')
             self.sending_goal = False
@@ -271,6 +271,12 @@ class MissionControlNode(Node):
 
     def tick(self):
         now = self.get_clock().now().nanoseconds / 1e9
+
+        # Background Nav2 readiness check (non-blocking)
+        if not self._nav2_ready and self.navigator.nav2_bringup_ready():
+            self._nav2_ready = True
+            self.get_logger().info('Nav2 is active')
+
         if self.state_enter_time == 0.0:
             self.state_enter_time = now
 
