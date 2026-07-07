@@ -122,8 +122,8 @@ class MissionControlNode(Node):
         self.pause_detector_client = self.create_client(
             SetBool, '/vision/plant_detector/pause')
 
-        # -- State --
-        self.state = STATE_PATROL
+        # -- State -- start in MANUAL so car stays still until frontend triggers AUTO
+        self.state = STATE_MANUAL
         self.state_enter_time = 0.0
         self.plants_detected = 0
         self.plants_analyzed = 0
