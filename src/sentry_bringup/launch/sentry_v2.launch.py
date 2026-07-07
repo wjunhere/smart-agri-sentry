@@ -82,7 +82,7 @@ def generate_launch_description():
             package='image_transport',
             executable='republish',
             name='image_republisher',
-            arguments=['raw'],
+            arguments=['raw', 'compressed'],
             remappings=[
                 ('in', '/sentry/camera/image_raw'),
                 ('out', '/out'),
