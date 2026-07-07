@@ -1,7 +1,7 @@
 /wheel/odom:
   ros__parameters:
     frequency: 30.0
-    sensor_timeout: 0.1
+    sensor_timeout: 999.0
     two_d_mode: true
     publish_tf: true
     map_frame: map
