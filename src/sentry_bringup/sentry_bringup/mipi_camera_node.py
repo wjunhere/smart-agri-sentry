@@ -151,9 +151,10 @@ class MipiCameraNode(Node):
 
     def capture(self):
         try:
-            # type=2 corresponds to the FIRST output channel (index 0).
-            # With [512, 1920] this returns the 512x512 frame.
-            img_buf = self.cam.get_img(2, 512, 512)
+            # Fetch from the SECOND output channel (1920x1080) directly,
+            # avoiding the CPU upscale from 512x512.
+            # hobot_vio: module 0 for channel 1 (full res), module 2 for channel 0 (512)
+            img_buf = self.cam.get_img(0, self.width, self.height)
             if img_buf is None:
                 self.get_logger().warn('get_img returned None')
                 return
@@ -163,15 +164,10 @@ class MipiCameraNode(Node):
                 self.get_logger().warn('get_img returned empty buffer')
                 return
 
-            # Convert 512x512 NV12 -> BGR
-            frame_512 = self._nv12_to_bgr(img_buf, 512, 512, actual_size)
-            if frame_512 is None:
+            # Convert NV12 -> BGR at target resolution
+            frame = self._nv12_to_bgr(img_buf, self.width, self.height, actual_size)
+            if frame is None:
                 return
-
-            # Upscale to target publish resolution (1920x1080)
-            # TODO: experiment with get_img(0, 1920, 1080) to fetch directly
-            # from the second output channel and avoid this CPU resize.
-            frame = cv2.resize(frame_512, (self.width, self.height))
 
             msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
             msg.header.stamp = self.get_clock().now().to_msg()
