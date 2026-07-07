@@ -130,13 +130,20 @@ class MipiCameraNode(Node):
             stride = (width + 31) // 32 * 32
             y_aligned = stride * height
             uv_aligned = stride * height // 2
-            if actual_size != y_aligned + uv_aligned:
-                self.get_logger().warn(
-                    f'NV12 size mismatch: actual={actual_size}, '
-                    f'expected={expected_size}, stride64={stride} gives '
-                    f'{y_aligned + uv_aligned}. Skipping frame.'
-                )
-                return None
+            if actual_size == y_aligned + uv_aligned:
+                pass  # stride confirmed
+            else:
+                # Auto-detect stride from actual buffer size (NV12: Y + UV/2)
+                stride = int(actual_size / (height * 1.5))
+                y_aligned = stride * height
+                uv_aligned = stride * height // 2
+                if actual_size != y_aligned + uv_aligned:
+                    self.get_logger().warn(
+                        f'NV12 size mismatch: actual={actual_size}, '
+                        f'expected={expected_size}, auto-stride={stride} '
+                        f'gives {y_aligned + uv_aligned}. Skipping frame.'
+                    )
+                    return None
 
         raw = np.frombuffer(nv12_data, dtype=np.uint8)
         y_plane = raw[:y_aligned].reshape((height, stride))[:, :width]
