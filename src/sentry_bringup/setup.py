@@ -20,6 +20,9 @@ setup(
             '../../config/crop_profiles.yaml',
             '../../config/mission_params.yaml',
         ]),
+        ('share/' + package_name + '/urdf', [
+            'urdf/sentry.urdf',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
