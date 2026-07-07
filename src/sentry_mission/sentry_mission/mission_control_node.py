@@ -399,11 +399,10 @@ class MissionControlNode(Node):
         elif self.state == STATE_RESUME:
             status.state = STATE_RESUME
             status.current_action = 'resuming patrol'
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.0
             elapsed = now - self.state_enter_time
-            if elapsed < self.resume_delay:
-                cmd.linear.x = 0.0
-            else:
-                cmd.linear.x = self.cruise_speed
+            if elapsed >= self.resume_delay:
                 self._transition(STATE_PATROL, now)
                 self.current_wp_idx = self.saved_wp_idx
                 self._send_next_waypoint()
