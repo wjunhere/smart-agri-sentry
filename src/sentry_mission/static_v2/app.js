@@ -25,6 +25,7 @@ app.component('EnvDataBar', EnvDataBar);
 app.component('Dpad', Dpad);
 app.component('CropSelector', CropSelector);
 app.component('CruisePanel', CruisePanel);
+app.component('WaypointEditor', WaypointEditor);
 app.component('StatusBar', StatusBar);
 app.component('ControlPanel', ControlPanel);
 

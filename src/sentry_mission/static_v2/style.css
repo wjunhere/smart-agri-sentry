@@ -400,3 +400,32 @@ body {
 
 /* ============ ECHARTS OVERRIDES ============ */
 .forecast-chart { width: 100%; height: 160px; }
+
+/* ============ WAYPOINT EDITOR TABLE ============ */
+.wp-table-wrap { max-height: 360px; overflow-y: auto; margin-bottom: 14px; }
+.wp-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
+.wp-table th {
+  text-align: left; padding: 6px 8px; color: var(--text-dim);
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+}
+.wp-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.wp-table tr:hover td { background: var(--bg-hover); }
+.wp-table tr.active td { background: rgba(56,189,248,0.08); }
+.wp-table td.idx { color: var(--text-muted); text-align: center; }
+.wp-table input {
+  width: 72px; background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 6px; font-family: var(--font-mono); font-size: 12px;
+  text-align: right;
+}
+.wp-table input:focus { border-color: var(--blue); outline: none; }
+.wp-del {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 12px; padding: 2px 4px;
+}
+.wp-del:hover { color: var(--red); }
+.wp-editor-actions {
+  display: flex; gap: 8px; align-items: center; justify-content: flex-end;
+}
+.wp-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }

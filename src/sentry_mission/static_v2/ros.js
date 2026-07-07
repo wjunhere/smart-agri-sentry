@@ -47,6 +47,8 @@ window.store = Vue.reactive({
   mode: 'AUTO',
   cropType: 'tomato',
   selectedAlert: null,
+  showWpEditor: false,
+  _rawWaypoints: [],
 });
 const store = window.store;  // local alias for internal use in this file
 
@@ -314,6 +316,11 @@ function callSetCropType(cropType) {
   store.missionWaypointLabels = [
     'WP0: (0.0, 0.0)', 'WP1: (4.0, 0.0)',
     'WP2: (4.0, 1.2)', 'WP3: (0.0, 1.2)', 'WP4: (0.0, 2.4)'
+  ];
+  store._rawWaypoints = [
+    { x: 2.5, y: 0.0, yaw: 0.0 },
+    { x: 2.5, y: 0.6, yaw: 1.5708 },
+    { x: 0.0, y: 0.6, yaw: 3.1416 },
   ];
 
   // Forecast alerts — generate last 20 entries

@@ -11,6 +11,7 @@ const CruisePanel = {
       </div>
       <div v-if="store.missionWaypointLabels.length === 0" class="muted">无航点</div>
     </div>
+    <button class="btn btn-resume" @click="store.showWpEditor = true">编辑航点</button>
     <button v-if="store.mode !== 'AUTO'" class="btn btn-go" @click="startCruise">启动巡航</button>
     <button v-if="store.mode === 'AUTO'" class="btn btn-pause" @click="pauseCruise">暂停</button>
   </div>`,

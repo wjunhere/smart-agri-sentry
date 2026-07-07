@@ -31,6 +31,7 @@
     </div>
     <env-data-bar></env-data-bar>
     <alert-detail-modal></alert-detail-modal>
+    <waypoint-editor :visible="store.showWpEditor" @close="store.showWpEditor = false"></waypoint-editor>
   </div>
 
   <script src="ros.js"></script>
@@ -45,6 +46,7 @@
   <script src="components/dpad.js"></script>
   <script src="components/crop-selector.js"></script>
   <script src="components/cruise-panel.js"></script>
+  <script src="components/waypoint-editor.js"></script>
   <script src="components/status-bar.js"></script>
   <script src="components/control-panel.js"></script>
   <script src="app.js"></script>
