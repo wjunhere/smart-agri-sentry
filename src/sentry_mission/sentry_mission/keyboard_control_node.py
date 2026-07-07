@@ -80,6 +80,7 @@ class KeyboardControlNode(Node):
 
         self.linear = 0.0
         self.angular = 0.0
+        self.mode = 'MANUAL'  # start in MANUAL, publish directly
         self.lock = threading.Lock()
         self.last_cmd_time = time.time()
         self.TIMEOUT = 0.5
@@ -90,17 +91,17 @@ class KeyboardControlNode(Node):
     # -- timer ---------------------------------------------------------------
 
     def timer_cb(self):
-        """Always publish — uart_bridge_node is the sole /cmd_vel consumer
-        and doesn't know about AUTO/MANUAL."""
+        """Publish Twist only in MANUAL mode to avoid conflicting with Nav2."""
         with self.lock:
             now = time.time()
             if (now - self.last_cmd_time) > self.TIMEOUT:
                 self.linear = 0.0
                 self.angular = 0.0
-            twist = Twist()
-            twist.linear.x = self.linear
-            twist.angular.z = self.angular
-            self.cmd_pub.publish(twist)
+            if self.mode == 'MANUAL':
+                twist = Twist()
+                twist.linear.x = self.linear
+                twist.angular.z = self.angular
+                self.cmd_pub.publish(twist)
 
     # -- optional mode switching ---------------------------------------------
 
