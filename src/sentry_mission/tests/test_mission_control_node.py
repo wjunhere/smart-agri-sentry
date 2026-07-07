@@ -16,7 +16,7 @@ def ros_context():
 
 @pytest.fixture
 def node(ros_context):
-    with patch('nav2_simple_commander.robot_navigator.BasicNavigator'):
+    with patch('sentry_mission.mission_control_node.BasicNavigator'):
         n = MissionControlNode()
         yield n
         n.destroy_node()
