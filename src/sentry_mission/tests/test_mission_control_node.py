@@ -5,6 +5,7 @@ import rclpy
 from unittest.mock import patch, MagicMock
 
 from sentry_mission.mission_control_node import MissionControlNode
+from nav2_simple_commander.robot_navigator import TaskResult
 
 
 @pytest.fixture(scope='module')
@@ -33,7 +34,6 @@ def test_resume_does_not_publish_cruise_speed(node):
          patch.object(node, '_send_next_waypoint') as mock_send:
         node.tick()
 
-        # Should have published a zero Twist (not cruise_speed)
         assert mock_cmd.called
         cmd = mock_cmd.call_args[0][0]
         assert cmd.linear.x == 0.0
@@ -53,14 +53,12 @@ def test_nav2_task_failed_retries_same_waypoint(node):
     ]
 
     with patch.object(node.navigator, 'isTaskComplete', return_value=True), \
-         patch.object(node.navigator, 'getResult', return_value=2), \
+         patch.object(node.navigator, 'getResult', return_value=TaskResult.FAILED), \
          patch.object(node, '_send_next_waypoint') as mock_send:
         node.tick()
 
-        # Should NOT have incremented current_wp_idx
         assert node.current_wp_idx == 1
         assert node.sending_goal == False
-        # Should retry same waypoint
         mock_send.assert_called_once()
 
 
@@ -77,7 +75,7 @@ def test_nav2_task_succeeded_advances_waypoint(node):
     ]
 
     with patch.object(node.navigator, 'isTaskComplete', return_value=True), \
-         patch.object(node.navigator, 'getResult', return_value=0):
+         patch.object(node.navigator, 'getResult', return_value=TaskResult.SUCCEEDED):
         node.tick()
 
     assert node.current_wp_idx == 2
