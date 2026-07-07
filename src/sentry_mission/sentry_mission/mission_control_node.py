@@ -273,10 +273,14 @@ class MissionControlNode(Node):
     def tick(self):
         now = self.get_clock().now().nanoseconds / 1e9
 
-        # Background Nav2 readiness — just check if the node is up
+        # Background Nav2 readiness - wait a few ticks before marking ready
         if not self._nav2_ready:
-            self._nav2_ready = True
-            self.get_logger().info('Mission control ready (Nav2 may still be initializing)')
+            if not hasattr(self, '_nav2_tick_count'):
+                self._nav2_tick_count = 0
+            self._nav2_tick_count += 1
+            if self._nav2_tick_count >= 30:  # ~3 seconds at 10Hz
+                self._nav2_ready = True
+                self.get_logger().info('Nav2 ready (delayed init)')
 
         if self.state_enter_time == 0.0:
             self.state_enter_time = now
