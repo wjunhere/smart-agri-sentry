@@ -273,14 +273,24 @@ class MissionControlNode(Node):
     def tick(self):
         now = self.get_clock().now().nanoseconds / 1e9
 
-        # Background Nav2 readiness - wait a few ticks before marking ready
+        # Background Nav2 readiness — fast path via action server check,
+        # fallback to 30-tick (~3s) delayed activation
         if not self._nav2_ready:
             if not hasattr(self, '_nav2_tick_count'):
                 self._nav2_tick_count = 0
             self._nav2_tick_count += 1
-            if self._nav2_tick_count >= 30:  # ~3 seconds at 10Hz
+            ready = False
+            if hasattr(self.navigator, '_action_client'):
+                try:
+                    ready = self.navigator._action_client.wait_for_server(
+                        timeout_sec=0.0)
+                except Exception:
+                    pass
+            if ready or self._nav2_tick_count >= 30:
                 self._nav2_ready = True
-                self.get_logger().info('Nav2 ready (delayed init)')
+                self.get_logger().info(
+                    f'Nav2 ready (ticks={self._nav2_tick_count}, '
+                    f'server={ready})')
 
         if self.state_enter_time == 0.0:
             self.state_enter_time = now
