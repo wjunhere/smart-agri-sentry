@@ -82,12 +82,42 @@ class ImuNode(Node):
         try:
             self.robot = YbImuSerial(self.port)
             self.get_logger().info(f'Opened IMU serial port: {self.port}')
+            self._patch_ch340_read()
             self.robot.create_receive_threading()
         except Exception as e:
             self.get_logger().error(
                 f'Failed to open IMU serial port {self.port}: {e}'
             )
             self.robot = None
+
+    def _patch_ch340_read(self):
+        """Monkey-patch serial read to handle CH340 driver quirks on ARM.
+
+        The CH340 driver on RDK X5 (ARM Linux) sometimes reports data
+        available via in_waiting but returns 0 bytes on read().  Replace
+        read_all() with a version that catches this and retries with a
+        fixed-size read as fallback.
+        """
+        import serial as _serial
+        dev = self.robot._dev
+        _orig_read_all = dev.read_all
+
+        def _safe_read_all():
+            for _ in range(3):
+                try:
+                    return _orig_read_all()
+                except _serial.SerialException:
+                    # CH340 lied about in_waiting; try a small fixed read
+                    try:
+                        chunk = dev.read(64)
+                        if chunk:
+                            return chunk
+                    except _serial.SerialException:
+                        pass
+            return b''
+
+        dev.read_all = _safe_read_all
+        self.get_logger().info('CH340 read_all patch applied')
 
     def _init_publishers(self):
         self.imu_publisher = self.create_publisher(
