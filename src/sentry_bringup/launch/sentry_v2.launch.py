@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, Command
 from ament_index_python.packages import get_package_share_directory
@@ -37,6 +38,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
+        DeclareLaunchArgument('slam', default_value='false'),
 
         # ── Unified TF tree (URDF → robot_state_publisher) ──
         Node(
@@ -47,12 +49,14 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Static TF: map -> odom (identity, required for mapless Nav2)
+        # Static TF: map -> odom (identity, required for mapless Nav2;
+        # disabled when SLAM is active)
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='map_to_odom',
             arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
+            condition=UnlessCondition(LaunchConfiguration('slam')),
             output='screen',
         ),
 
