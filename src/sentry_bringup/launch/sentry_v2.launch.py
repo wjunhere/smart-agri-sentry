@@ -81,7 +81,7 @@ def generate_launch_description():
             name='vision_diagnosis_node',
             parameters=[{
                 'crop_type': LaunchConfiguration('crop_type'),
-                'model_path': '',
+                'model_path': '/home/sunrise/dev_ws/models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin',
                 'input_size': 224,
             }],
             output='screen',
@@ -94,7 +94,7 @@ def generate_launch_description():
                 'confidence_threshold': 0.5,
                 'min_area_ratio': 0.05,
                 'use_simulation': LaunchConfiguration('use_sim_plant'),
-                'model_path': '',
+                'model_path': '/home/sunrise/dev_ws/models/yolov8n_crop_weed_bayese_640x640_nv12.bin',
             }],
             output='screen',
         ),
