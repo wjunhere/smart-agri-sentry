@@ -161,6 +161,7 @@ def generate_launch_description():
             launch_arguments={
                 'params_file': nav2_config,
                 'use_sim_time': 'False',
+                'map': '',
             }.items(),
         ),
 
