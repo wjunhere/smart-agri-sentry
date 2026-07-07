@@ -38,7 +38,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
-        DeclareLaunchArgument('slam', default_value='false'),
+        DeclareLaunchArgument('slam', default_value='False'),
 
         # ── Unified TF tree (URDF → robot_state_publisher) ──
         Node(
