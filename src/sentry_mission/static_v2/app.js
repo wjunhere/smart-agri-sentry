@@ -18,6 +18,7 @@ app.component('TopBar', TopBar);
 app.component('CameraPanel', CameraPanel);
 app.component('DetectionCard', DetectionCard);
 app.component('DiagnosisCard', DiagnosisCard);
+app.component('DiagnosisToggle', DiagnosisToggle);
 app.component('AdvisoryCard', AdvisoryCard);
 app.component('ForecastPanel', ForecastPanel);
 app.component('AlertDetailModal', AlertDetailModal);

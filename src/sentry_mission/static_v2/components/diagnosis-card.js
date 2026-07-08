@@ -3,9 +3,13 @@ const DiagnosisCard = {
   <div class="card">
     <h3>
       病害分类 · {{ store.cropType.toUpperCase() }}
-      <span class="status-dot" :class="store.diagnosisDisease ? 'red' : 'grey'"></span>
+      <span class="status-dot" :class="store.plantDetected ? (store.diagnosisDisease === 'healthy' ? 'green' : 'red') : 'grey'"></span>
     </h3>
-    <div v-if="store.diagnosisDisease">
+    <div v-if="!store.plantDetected">
+      <span class="value" style="color:var(--text-muted)">无</span>
+      <div class="stat">未检测到植株，无法分类</div>
+    </div>
+    <div v-else-if="store.diagnosisDisease">
       <span class="value disease">{{ store.diagnosisDisease }}</span>
       <div class="stat">置信度 {{ (store.diagnosisConfidence * 100).toFixed(1) }}%</div>
       <div class="probabilities" v-if="store.diagnosisProbabilities.length">

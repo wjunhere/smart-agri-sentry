@@ -48,8 +48,9 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100vh;
 }
 
 /* ============ TOP BAR (48px fixed) ============ */
@@ -429,3 +430,60 @@ body {
   display: flex; gap: 8px; align-items: center; justify-content: flex-end;
 }
 .wp-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+
+/* ============ BELOW-FOLD: Diagnosis Toggle ============ */
+.below-fold-spacer {
+  height: 100vh;
+}
+
+.diag-toggle-section {
+  margin: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.diag-toggle-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.diag-toggle-pills {
+  display: flex;
+  gap: 2px;
+}
+
+.diag-pill {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  transition: all 150ms;
+  user-select: none;
+  font-family: var(--font);
+}
+
+.diag-pill:hover {
+  border-color: var(--border-hi);
+  color: var(--text);
+}
+
+.diag-pill.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #000;
+  font-weight: 600;
+}
+
+.diag-toggle-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}

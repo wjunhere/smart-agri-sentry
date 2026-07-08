@@ -427,5 +427,31 @@ function callSetCropType(cropType) {
   // === MOCK END (fusion history) ===
 })();
 
+// ── Diagnosis mock toggle: 'real' | 'healthy' | 'early_blight' ──
+store.mockDiagnosisMode = 'real';
+
+setInterval(() => {
+  if (store.mockDiagnosisMode === 'real') return;
+
+  // In mock mode, simulate plant detection so diagnosis is visible
+  store.plantDetected = true;
+  store.plantConfidence = 0.82 + Math.random() * 0.10;
+  store.plantBbox = [140, 100, 80, 60];
+  store.plantAreaRatio = 0.05 + Math.random() * 0.03;
+
+  const conf = 0.80 + Math.random() * 0.10;
+  store.diagnosisCropType = store.cropType;
+  store.diagnosisConfidence = conf;
+  store._diagBuf = [];
+
+  if (store.mockDiagnosisMode === 'healthy') {
+    store.diagnosisDisease = 'healthy';
+    store.diagnosisProbabilities = [conf, 0.06, 0.04, 0.02, 0.01, 0.01, Math.max(0, 1 - conf - 0.14)];
+  } else if (store.mockDiagnosisMode === 'early_blight') {
+    store.diagnosisDisease = 'early_blight';
+    store.diagnosisProbabilities = [0.06, conf, 0.04, 0.02, 0.01, 0.01, Math.max(0, 1 - conf - 0.14)];
+  }
+}, 1500);
+
 // Auto-connect on load (real ROS data will overwrite mock if connected)
 try { rosConnect(); } catch(e) { console.log('[ROS] Connection deferred'); }
