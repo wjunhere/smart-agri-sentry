@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v2.5 · 更新日期 2026-07-06  
+> 架构版本 v2.6 · 更新日期 2026-07-08  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -24,11 +24,11 @@
 | 运动控制 | STM32F407ZGT6（FreeRTOS） |
 | 雷达 | STL19P / LD19（UART 230400） |
 | 摄像头 | IMX219 MIPI-CSI |
-| IMU | YB-IMU（CH340 USB） |
+| IMU | YB-IMU（CH340 USB, /dev/ttyUSB0 → /dev/myimu, 115200） |
 | 云台 | 2-DOF 舵机，RDK X5 直接 PWM |
 | 环境传感 | 移动七合一空气/土壤 + 固定 LoRa 节点 |
 
-**注意**：GPS 模块已移除，不再使用。
+**注意**：GPS 模块已移除，不再使用。USB 串口设备识别：CH340=ttyUSB0=IMU，CP2102=ttyUSB2=LiDAR。LiDAR 波特率 230400。
 
 ---
 
@@ -68,6 +68,11 @@
 7. **植株检测 + 病害分类两阶段管线 ✅**：YOLOv8n BPU 接入 `plant_detector_node`，新建 `vision_pipeline_node` 云台多角度扫描编排，`mission_control_node` 重构（移除 APPROACHING，新增 SCANNING + 里程计去重）。板端相机驱动（IMX219 overlay）和 YOLO 推理已调通。舵机初始位置已校准（yaw=67.5°, pitch=45°）。待 MobileNet 联调和全链路实测。
 8. **键盘控制底盘 ✅**：新增 `keyboard_control_node`（`sentry_mission` 包），方向键控制线速度 ±0.05 m/s，角速度 ±0.05 rad/s，空格急停，Q 退出。复用 `web_remote_node` 的 MANUAL 模式 + `/cmd_vel` 发布机制，0.5s 无操作自动停车。注册为 `ros2 run sentry_mission keyboard_control` 入口点。
 9. **STM32 GCC 构建 ✅**：新增 `firmware/chassis/Makefile`，使用 `arm-none-eabi-gcc` 直接编译烧录，绕过 Keil AC5/AC6 兼容问题。`make` 编译，`make flash` 通过 STM32_Programmer_CLI(SWD) 烧录。
+10. **导航稳定性修复 ✅ (2026-07-08)**：修复 `wheel_odom_node` twist dt 硬编码、mission_control Nav2 任务失败重试、keyboard_control /cmd_vel 多发布者冲突、EKF 频率 30→10Hz、yaw_goal_tolerance 3.14→0.2、新增 transform_tolerance。详细见 commits `afe5f3e`~`95b75c4`。
+11. **IMU CH340 ARM 驱动适配 ✅ (2026-07-08)**：YB-IMU (CH340, ttyUSB0, 115200) 在 RDK X5 ARM Linux 上 `in_waiting` 报告有数据但 `read()` 返回 0，导致 YbImuSerial 读线程崩溃。`imu_node.py` 增加 `_patch_ch340_read()` monkey-patch `read_all` 加容错重试。板端验证 IMU 数据正常发布。
+12. **MIPI 相机 ISP 调通 ✅ (2026-07-08)**：IMX219 关键约束：`open_cam` 第一通道必须小分辨率 (512×512)，第二通道可设目标分辨率。`get_img(type=2, w, h)` 中 type=2 固定 NV12 格式，通道由传入的 w×h 匹配 `out_w/out_h` 列表决定。NV12 stride 因 ISP 硬件对齐可能 ≠ width，已改为根据 `actual_size / (height * 1.5)` 自动检测。前端 `image_transport republish raw compressed` 生成 `/out/compressed` 供 rosbridge 传输 JPEG。
+13. **USB 串口设备识别**：CH340 (ttyUSB0) = IMU，CP2102 (ttyUSB2) = LiDAR。udev 规则：`/dev/myimu → ttyUSB0`，`/dev/wheeltec_lidar → ttyUSB2`。
+14. **前端 mock 测试系统**：`static_v2/ros.js` 中 `injectMock()` + TOPICS 回调可硬编码各模块数据用于离线测试，修改处标注 `// === MOCK START/END ===` 便于恢复。
 
 ## 模型矩阵
 

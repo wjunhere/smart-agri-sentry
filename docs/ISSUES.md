@@ -1,6 +1,6 @@
 # 已知问题、硬件限制与规避方案
 
-> 更新日期：2026-06-25
+> 更新日期：2026-07-08
 
 ---
 
@@ -12,7 +12,8 @@
 | **原型机续航未优化** | 电池容量、功耗未达极限 | 比赛演示场景优先，续航优化后置 |
 | **无 RTK 定位** | 绝对定位精度受限 | 已移除 GPS；当前采用 odom + IMU 融合，目标迁移到 LiDAR SLAM |
 | **TB6612FNG 持续电流 1.2 A** | 可能无法驱动 24 V 减速电机 | 先用小功率测试，必要时更换 BTN7971B |
-| **MIPI 摄像头 ISP 限制** | 第一个输出通道分辨率不能等于 sensor 原始分辨率 | 512×512 作为第一通道，1920×1080 作为第二通道 |
+| **MIPI 摄像头 ISP 限制** | 第一个输出通道分辨率不能等于 sensor 原始分辨率 | ✅ 已解决：`out_w=[512, target]`, `out_h=[512, target]`；`get_img(type=2, w, h)` 中 type=2=NV12，w×h 匹配通道；NV12 stride 根据 `actual_size/(h*1.5)` 自动检测 |
+| **CH340 USB 串口 ARM 驱动** | RDK X5 上 `in_waiting` 报告有数据但 `read()` 返回 0，导致 YbImuSerial 读线程崩溃 | ✅ 已解决：`imu_node.py` monkey-patch `read_all` 加容错 + 固定大小读取 fallback |
 | **LoRa 野外丢包/延迟** | 固定环境节点数据可能不完整 | 协议层加 seq 序号和 ACK 重传，非关键数据允许丢包 |
 
 ---
@@ -24,9 +25,11 @@
 | **NPU 推理延迟 > 500 ms** | 影响巡检节拍 | 已量化 int8；必要时降低输入分辨率 |
 | **Madgwick/EKF TF 冲突** | TF 树异常 | Madgwick `publish_tf: false`，EKF 单独发布 `odom → base_link` |
 | **`rosbag2_py` 在 RDK X5 不可用** | `data_logger_node` 无法录制 | 已实现 JSON fallback |
-| **`YbImuLib` 依赖未验证** | IMU 节点无法启动 | 先板端验证依赖，必要时改用标准驱动 |
+| **`YbImuLib` CH340 ARM 驱动 bug** | IMU 读线程崩溃，无法发布 `/sensor/imu/data` | ✅ 已解决：`imu_node.py` `_patch_ch340_read()` monkey-patch 容错（2026-07-08） |
 | **mapless Nav2 里程计漂移** | 长距离航点偏离 | 已决策迁移到 LiDAR SLAM；当前用 odom 帧短距离航点 |
-| **多作物模型不完整** | 小麦/草莓无法识别 | 框架已通用化，模型后续补全；v2.0 优先番茄端到端跑通 |
+| **`/cmd_vel` 多发布者冲突** | Nav2、mission_control、keyboard_control 同时发 `/cmd_vel` | ✅ 已修复：keyboard_control 仅 MANUAL 模式发布；mission_control RESUME 不发 cruise_speed（2026-07-08） |
+| **EKF 频率过高** | RDK X5 跑不动 30Hz EKF | ✅ 已修复：降至 10Hz，偶发 1-2 次 / 30s（2026-07-08） |
+| **data_logger YAML 格式** | ROS2 参数不支持顶层列表 | ✅ 已修复：加 `ros__parameters` 包装层（2026-07-08） |
 
 ---
 
@@ -39,8 +42,11 @@
 | `vp_isp_init failed, ret(-10)` | `open_cam` 第一个通道分辨率太大 | 改为 `[512, 1920]` / `[512, 1080]` |
 | `hbn_vflow_stop failed, ret(-11)` | `close_cam()` 被重复调用 | `destroy_node()` 中加 `self.cam = None` 防重入 |
 | `RuntimeError: Context must be initialized...` | `rclpy.shutdown()` 重复执行 | 删除自定义 signal handler，`finally` 中加 `if rclpy.ok():` |
-| 画面条纹/花屏 | NV12 按错误分辨率解析 | 根据 `len(img_buf)` 实际大小判断真实分辨率 |
-| 节点启动失败，sensor 已识别 | 上次崩溃未释放 MIPI | `sudo reboot` 后再试 |
+| 画面条纹/花屏 | NV12 按错误分辨率解析 | 根据 `len(img_buf)` 实际大小判断真实 stride |
+| `get_img(3)` 报 "module not supported" | RDK API 中 type=3 不存在 | type=2 固定 NV12，通道由传入 w×h 匹配 `out_w/out_h` 列表决定 |
+| `get_img(0)` 返回全绿画面 | type=0 是 raw Bayer 非 NV12 | 改用 `get_img(2, target_w, target_h)` |
+| 前端视频黑屏 | `image_transport republish raw` 只发 `/out`，前端订阅 `/out/compressed` | 改为 `arguments=['raw', 'compressed']` |
+| NV12 size mismatch: actual=4147200 expected=3110400 | ISP stride=2560 ≠ width=1920 | `_nv12_to_bgr` 增加自动检测：`stride = actual_size / (height * 1.5)` |
 
 ### 3.2 PWM 舵机
 
