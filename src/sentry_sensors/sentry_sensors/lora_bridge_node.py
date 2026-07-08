@@ -122,7 +122,6 @@ class LoraBridgeNode(Node):
         self._use_mock = self.get_parameter('use_mock').value
 
         if self._use_mock:
-            self.get_logger().info('LoRa bridge in MOCK mode — generating synthetic sensor data')
             self.ser = None
         else:
             port = self.get_parameter('uart_port').value
