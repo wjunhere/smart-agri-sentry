@@ -5,10 +5,10 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    use_mock = LaunchConfiguration('use_mock', default='true')
+    use_mock = LaunchConfiguration('use_mock', default='false')
     return LaunchDescription([
         DeclareLaunchArgument(
-            'use_mock', default_value='true',
+            'use_mock', default_value='false',
             description='Use mock/synthetic sensor data instead of real LoRa UART'),
         Node(
             package='sentry_sensors',
