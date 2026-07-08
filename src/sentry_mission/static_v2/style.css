@@ -432,12 +432,9 @@ body {
 .wp-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
 
 /* ============ BELOW-FOLD: Diagnosis Toggle ============ */
-.below-fold-spacer {
-  height: calc(100vh + 40px);
-}
-
 .below-fold-area {
-  padding-bottom: calc(var(--bottombar-h) + 16px);
+  margin-top: calc(100vh + 24px);
+  padding-bottom: calc(var(--bottombar-h) + 24px);
 }
 
 .diag-toggle-section {
