@@ -213,6 +213,22 @@ def _get_app(node: WebRemoteNode):
             return jsonify({'status': 'ok', 'message': resp.message})
         return jsonify({'status': 'error', 'message': resp.message if resp else 'Unknown error'})
 
+    # Shared mock diagnosis mode (cross-client sync)
+    _app.config['mock_diagnosis_mode'] = 'real'
+
+    @_app.route('/mock-diagnosis-mode', methods=['GET'])
+    def get_mock_mode():
+        return jsonify({'mode': _app.config['mock_diagnosis_mode']})
+
+    @_app.route('/mock-diagnosis-mode', methods=['POST'])
+    def set_mock_mode():
+        data = request.get_json()
+        mode = data.get('mode', 'real')
+        if mode not in ('real', 'healthy', 'early_blight'):
+            return jsonify({'status': 'error', 'message': f'Invalid mode: {mode}'})
+        _app.config['mock_diagnosis_mode'] = mode
+        return jsonify({'status': 'ok', 'mode': mode})
+
     return _app
 
 

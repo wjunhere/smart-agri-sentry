@@ -429,7 +429,33 @@ function callSetCropType(cropType) {
 })();
 
 // ── Diagnosis mock toggle: 'real' | 'healthy' | 'early_blight' ──
+// Shared via Flask server so all clients see the same mode
+const MOCK_MODE_URL = 'http://' + window.location.hostname + ':5000/mock-diagnosis-mode';
+
 store.mockDiagnosisMode = 'real';
+
+async function fetchMockMode() {
+  try {
+    const resp = await fetch(MOCK_MODE_URL);
+    const data = await resp.json();
+    store.mockDiagnosisMode = data.mode;
+  } catch (e) { /* server not reachable, keep local mode */ }
+}
+
+store.setMockMode = async function(mode) {
+  store.mockDiagnosisMode = mode;
+  try {
+    await fetch(MOCK_MODE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+  } catch (e) { /* server not reachable, local-only */ }
+};
+
+// Sync from server on load, then poll every 1s
+fetchMockMode();
+setInterval(fetchMockMode, 1000);
 
 setInterval(() => {
   if (store.mockDiagnosisMode === 'real') return;
