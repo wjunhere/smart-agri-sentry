@@ -287,7 +287,7 @@ Alert levels:
 
 ## Contributing
 
-Issues and PRs welcome. Follow the development workflow in [CLAUDE.md](CLAUDE.md).
+Issues and PRs welcome.
 
 ## License
 

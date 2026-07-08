@@ -287,7 +287,7 @@ confidence      = base_confidence × (COLD_BOOT: 0.75, WARM_UP: 0.90, NORMAL: 1.
 
 ## 参与贡献
 
-欢迎提交 Issue 和 PR。开发规范见 [CLAUDE.md](CLAUDE.md)。
+欢迎提交 Issue 和 PR。
 
 ## 许可证
 

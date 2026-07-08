@@ -44,6 +44,9 @@ CLAUDE.md
 .agents/*
 AGENTS.md
 
+#codegraph
+.codegraph/
+
 # Project docs & examples
 docs/*
 !docs/ARCHITECTURE.md
@@ -79,7 +82,11 @@ models/quantization/calibration/
 
 # Test & reference code
 test/
+fix/
 
 #videos making
 videos/
 video/
+
+#the document
+report/
