@@ -49,5 +49,6 @@ const EnvDataBar = {
         <span class="value">{{ store.envSoilPH.toFixed(1) }}<span class="unit"></span></span>
       </div>
     </div>
+    <diagnosis-toggle></diagnosis-toggle>
   </div>`
 };

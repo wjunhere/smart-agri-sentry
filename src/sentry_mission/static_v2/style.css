@@ -48,9 +48,8 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
-  overflow-x: hidden;
-  overflow-y: auto;
-  min-height: 100vh;
+  overflow: hidden;
+  height: 100vh;
 }
 
 /* ============ TOP BAR (48px fixed) ============ */
@@ -297,11 +296,11 @@ body {
 .env-bar {
   position: fixed; bottom: 0; left: 0; right: 0; height: var(--bottombar-h);
   background: var(--bg-surface); border-top: 1px solid var(--border);
-  display: flex; gap: 4px; padding: 8px;
-  overflow-x: auto; z-index: 100;
+  display: flex; flex-direction: column; gap: 4px; padding: 8px;
+  overflow-y: auto; overflow-x: hidden; z-index: 100;
 }
 .env-bar h3 { display: none; }
-.env-grid { display: flex; gap: 4px; flex-wrap: nowrap; }
+.env-grid { display: flex; gap: 4px; flex-wrap: nowrap; flex-shrink: 0; overflow-x: auto; }
 .env-item {
   flex: 1; min-width: 90px; max-width: 140px;
   background: var(--bg-card); border: 1px solid var(--border);
@@ -431,18 +430,17 @@ body {
 }
 .wp-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
 
-/* ============ BELOW-FOLD: Diagnosis Toggle ============ */
-.below-fold-area {
-  margin-top: calc(100vh + 24px);
-  padding-bottom: calc(var(--bottombar-h) + 24px);
-}
-
+/* ============ DIAGNOSIS TOGGLE (inside env-bar, scroll down to reveal) ============ */
 .diag-toggle-section {
-  margin: 8px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .diag-toggle-label {
@@ -481,10 +479,4 @@ body {
   border-color: var(--blue);
   color: #000;
   font-weight: 600;
-}
-
-.diag-toggle-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-left: auto;
 }
