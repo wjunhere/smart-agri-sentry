@@ -29,7 +29,9 @@
       </div>
     </div>
     <div class="below-fold-spacer"></div>
-    <diagnosis-toggle></diagnosis-toggle>
+    <div class="below-fold-area">
+      <diagnosis-toggle></diagnosis-toggle>
+    </div>
     <env-data-bar></env-data-bar>
     <alert-detail-modal></alert-detail-modal>
     <waypoint-editor :visible="store.showWpEditor" @close="store.showWpEditor = false"></waypoint-editor>

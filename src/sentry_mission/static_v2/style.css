@@ -433,7 +433,11 @@ body {
 
 /* ============ BELOW-FOLD: Diagnosis Toggle ============ */
 .below-fold-spacer {
-  height: 100vh;
+  height: calc(100vh + 40px);
+}
+
+.below-fold-area {
+  padding-bottom: calc(var(--bottombar-h) + 16px);
 }
 
 .diag-toggle-section {
