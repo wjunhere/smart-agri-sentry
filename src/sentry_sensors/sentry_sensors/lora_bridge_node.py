@@ -1,3 +1,4 @@
+import random
 import struct
 
 import rclpy
@@ -81,28 +82,69 @@ def decode_cj702_frame(frame: bytes):
     }
 
 
+MOCK_BASELINE = {
+    'air_co2': 420.0,
+    'hcho': 0.03,
+    'tvoc': 120.0,
+    'pm25': 25.0,
+    'pm10': 45.0,
+    'air_temp': 28.5,
+    'air_humidity': 65.0,
+    'soil_temp': 24.0,
+    'soil_humidity': 55.0,
+    'ec': 200.0,
+    'leaf_wetness': 30.0,
+    'leaf_temp': 27.0,
+}
+
+MOCK_JITTER = {
+    'air_co2': 15.0,
+    'hcho': 0.01,
+    'tvoc': 30.0,
+    'pm25': 5.0,
+    'pm10': 8.0,
+    'air_temp': 0.8,
+    'air_humidity': 3.0,
+    'soil_temp': 0.3,
+    'soil_humidity': 2.0,
+    'ec': 10.0,
+    'leaf_wetness': 5.0,
+    'leaf_temp': 0.5,
+}
+
+
 class LoraBridgeNode(Node):
     def __init__(self, **kwargs):
         super().__init__('lora_bridge_node', **kwargs)
         self.declare_parameter('uart_port', '/dev/ttyACM0')
         self.declare_parameter('baudrate', 9600)
-        port = self.get_parameter('uart_port').value
-        baud = self.get_parameter('baudrate').value
+        self.declare_parameter('use_mock', True)
+        self._use_mock = self.get_parameter('use_mock').value
 
-        try:
-            self.ser = serial.Serial(port, baud, timeout=0.01)
-            self.get_logger().info(f'LoRa UART open: {port} @ {baud}')
-        except serial.SerialException as e:
-            self.get_logger().error(f'Failed to open LoRa UART: {e}')
+        if self._use_mock:
+            self.get_logger().info('LoRa bridge in MOCK mode — generating synthetic sensor data')
             self.ser = None
+        else:
+            port = self.get_parameter('uart_port').value
+            baud = self.get_parameter('baudrate').value
+            try:
+                self.ser = serial.Serial(port, baud, timeout=0.01)
+                self.get_logger().info(f'LoRa UART open: {port} @ {baud}')
+            except serial.SerialException as e:
+                self.get_logger().error(f'Failed to open LoRa UART: {e}')
+                self.ser = None
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.pub_env = self.create_publisher(
             Environment, '/sensor/environment_fixed', qos)
 
-        self.timer_rx = self.create_timer(0.01, self.rx_tick)
+        if self._use_mock:
+            self.timer_mock = self.create_timer(5.0, self._mock_tick)
+        else:
+            self.timer_rx = self.create_timer(0.01, self.rx_tick)
         self.rx_buf = bytearray()
         self._reconnect_tick = 0
+        self._mock_frame_count = 0
 
     def _try_reconnect(self):
         port = self.get_parameter('uart_port').value
@@ -113,6 +155,25 @@ class LoraBridgeNode(Node):
             return True
         except (serial.SerialException, OSError) as e:
             return False
+
+    def _generate_mock_data(self):
+        data = {}
+        for key, base in MOCK_BASELINE.items():
+            jitter = MOCK_JITTER[key] * (random.random() * 2 - 1)
+            data[key] = round(base + jitter, 2)
+        return data
+
+    def _mock_tick(self):
+        self._mock_frame_count += 1
+        data = self._generate_mock_data()
+        self._publish_environment(data)
+        self.get_logger().info(
+            f'[LORA RX #{self._mock_frame_count}] '
+            f'CO2={data["air_co2"]}ppm HCHO={data["hcho"]}mg/m³ TVOC={data["tvoc"]}ppb '
+            f'PM2.5={data["pm25"]}ug/m³ PM10={data["pm10"]}ug/m³ '
+            f'Air={data["air_temp"]}°C {data["air_humidity"]}%RH '
+            f'Soil={data["soil_temp"]}°C {data["soil_humidity"]}%RH EC={data["ec"]}uS/cm '
+            f'Leaf={data["leaf_temp"]}°C wet={data["leaf_wetness"]}%')
 
     def rx_tick(self):
         if self.ser is None:

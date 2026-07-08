@@ -9,6 +9,8 @@ from sentry_sensors.lora_bridge_node import (
     decode_environment_frame,
     decode_cj702_frame,
     LoraBridgeNode,
+    MOCK_BASELINE,
+    MOCK_JITTER,
 )
 
 
@@ -164,3 +166,26 @@ def test_handle_frame_unknown_msg_type(node):
     node.pub_env.publish = MagicMock()
     node._handle_frame(frame)
     node.pub_env.publish.assert_not_called()
+
+
+def test_mock_baseline_covers_all_fields():
+    """MOCK_BASELINE and MOCK_JITTER should have the same keys."""
+    assert set(MOCK_BASELINE.keys()) == set(MOCK_JITTER.keys())
+    required = {'air_co2', 'hcho', 'tvoc', 'pm25', 'pm10',
+                'air_temp', 'air_humidity', 'soil_temp', 'soil_humidity',
+                'ec', 'leaf_wetness', 'leaf_temp'}
+    assert set(MOCK_BASELINE.keys()) == required
+
+
+def test_generate_mock_data(node):
+    data = node._generate_mock_data()
+    for key, base in MOCK_BASELINE.items():
+        jitter = MOCK_JITTER[key]
+        assert base - jitter <= data[key] <= base + jitter
+
+
+def test_mock_tick_publishes(node):
+    node.pub_env.publish = MagicMock()
+    node._mock_tick()
+    node.pub_env.publish.assert_called_once()
+    assert node._mock_frame_count == 1
