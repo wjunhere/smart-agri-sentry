@@ -84,6 +84,14 @@ models/quantization/calibration/
 test/
 fix/
 
+#temp & one-off scripts
+camera_view*.jpg
+check_yolo_data.py
+yolo26n.pt
+yolov8n.pt
+*.pt
+智农哨兵_Grafana风格重构提示词.md
+
 #videos making
 videos/
 video/
