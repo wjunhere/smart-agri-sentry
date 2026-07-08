@@ -87,6 +87,7 @@ const TOPICS = [
    }],
   ['/vision/diagnosis', 'sentry_interfaces/Diagnosis',
    (msg) => {
+     if (store.mockDiagnosisMode !== 'real') return;
      // Temporal smoothing: buffer N recent predictions, show majority class
      store._diagBuf.push({ cls: msg.disease_class, conf: msg.confidence, probs: msg.probabilities });
      if (store._diagBuf.length > store._diagBufSize) store._diagBuf.shift();
