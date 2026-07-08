@@ -4,12 +4,6 @@ const AlertDetailModal = {
     <div class="modal">
       <h2>预警详情 — {{ formatTime(store.selectedAlert.time) }}</h2>
       <div class="snapshot-row">
-        <div class="snapshot-img">
-          <h4>现场快照</h4>
-          <img v-if="store.selectedAlert.snapshot?.frame"
-               :src="store.selectedAlert.snapshot.frame" alt="现场快照">
-          <div v-else class="muted">无图像快照</div>
-        </div>
         <div class="snapshot-env">
           <h4>环境快照</h4>
           <div class="stat">气温: {{ store.selectedAlert.snapshot?.envAirTemp?.toFixed(1) || '--' }}°C</div>
