@@ -1,0 +1,10 @@
+weather_node:
+  ros__parameters:
+    lat: 39.9
+    lon: 116.4
+    city: ""
+    fetch_interval_sec: 10800
+    cache_path: "/tmp/sentry_weather_cache.json"
+    api_key: ""
+    api_base_url: ""
+    mock_mode: true
