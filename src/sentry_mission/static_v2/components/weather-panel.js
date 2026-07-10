@@ -105,7 +105,10 @@ const WeatherPanel = {
     },
   },
   watch: {
-    'store.weatherDays.length'() { this.$nextTick(() => this.renderChart()); },
+    'store.weatherDays': {
+      deep: true,
+      handler() { this.$nextTick(() => this.renderChart()); },
+    },
   },
   mounted() { this.$nextTick(() => this.renderChart()); },
   beforeUnmount() { if (this._chart) this._chart.dispose(); },

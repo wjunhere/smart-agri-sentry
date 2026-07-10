@@ -34,7 +34,11 @@ class AdvisoryNode(Node):
         self.last_fusion_ts = 0.0
         self.last_forecast = None
         self.last_env = None
+        self.declare_parameter('weather_stale_sec', 21600)
+        self.weather_stale_sec = self.get_parameter('weather_stale_sec').value
+
         self.last_weather = None
+        self.last_weather_ts = 0.0
 
         self.sub_fusion = self.create_subscription(
             FusionResult, '/fusion/diagnosis', self.on_fusion, 10)
@@ -65,6 +69,7 @@ class AdvisoryNode(Node):
         self._maybe_publish()
 
     def on_weather(self, msg: WeatherForecast):
+        self.last_weather_ts = self.get_clock().now().nanoseconds / 1e9
         self.last_weather = {
             "hours": [{"hour_offset": h.hour_offset, "temp": h.temp,
                         "humidity": h.humidity, "precipitation": h.precipitation,
@@ -88,8 +93,17 @@ class AdvisoryNode(Node):
     def _evaluate(self, fusion, forecast, env):
         forecast = forecast or ForecastAlert()
         env = env or Environment()
-        weather_hours = self.last_weather["hours"] if self.last_weather else None
-        disaster_alerts = self.last_weather["disaster_alerts"] if self.last_weather else None
+        now = self.get_clock().now().nanoseconds / 1e9
+        weather_stale = (
+            self.last_weather is None
+            or (now - self.last_weather_ts) > self.weather_stale_sec
+        )
+        weather_hours = (
+            self.last_weather["hours"] if not weather_stale else None
+        )
+        disaster_alerts = (
+            self.last_weather["disaster_alerts"] if not weather_stale else None
+        )
         matched = self.engine.match(fusion, forecast, env, self.crop_type,
                                     weather_hours, disaster_alerts)
 

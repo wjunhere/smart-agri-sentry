@@ -68,10 +68,11 @@ def weather_risk_model(hours, prediction_hours):
     if rain_hours > 12:
         risk += min(0.3, 0.2 + 0.008 * (rain_hours - 12))
 
-    # Consecutive rain days > 2
+    # Consecutive rain days > 2 (within prediction window)
+    max_day = max(1, prediction_hours // 24 + 1)
     rain_days = 0
-    for day_offset in range(7):
-        day_hours = [h for h in hours if day_offset * 24 <= h["hour_offset"] < (day_offset + 1) * 24]
+    for day_offset in range(max_day):
+        day_hours = [h for h in window if day_offset * 24 <= h["hour_offset"] < (day_offset + 1) * 24]
         if day_hours and sum(h["precipitation"] for h in day_hours) > 1.0:
             rain_days += 1
         else:
