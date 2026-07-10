@@ -42,7 +42,7 @@ static PID_GainEntry gain_table[4] = {
 #define HYST_DOWN          0.70f
 
 /* Zone thresholds (pulses/10ms) */
-#define ZONE_THR_LOW        2.0f
+#define ZONE_THR_LOW        0.5f   /* lowered from 2.0: prevent dead-zone at low cmd_vel (~4.5 mm/s) */
 #define ZONE_THR_MED       15.0f
 #define ZONE_THR_HIGH      60.0f
 

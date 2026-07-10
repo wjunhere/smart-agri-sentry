@@ -133,6 +133,7 @@ class UartBridgeNode(Node):
         self.declare_parameter('wheel_base', 0.23)
         self.declare_parameter('chassis_timeout_sec', 1.0)
         self.declare_parameter('motion_mode', MODE_AUTO)
+        self.declare_parameter('min_effective_linear_speed', 0.08)  # m/s, boost floor
         port = self.get_parameter('uart_port').value
         baud = self.get_parameter('baudrate').value
         forward_servo = self.get_parameter('forward_servo_cmd').value
@@ -140,6 +141,8 @@ class UartBridgeNode(Node):
         self.chassis_timeout_sec = self.get_parameter(
             'chassis_timeout_sec').value
         self.motion_mode = int(self.get_parameter('motion_mode').value)
+        self.min_effective_v = self.get_parameter(
+            'min_effective_linear_speed').value
         self._last_sent_mode = None
 
         try:
@@ -293,6 +296,17 @@ class UartBridgeNode(Node):
             self.get_logger().warning(
                 f'Ignoring non-finite Twist: linear.x={v}, angular.z={w}')
             return
+
+        # Minimum effective speed boost: if |v| is non-zero but below
+        # min_effective_v, scale it up to overcome static friction dead-zone.
+        abs_v = abs(v)
+        if 0.0 < abs_v < self.min_effective_v:
+            scale = self.min_effective_v / abs_v
+            v = v * scale
+            w = w * scale  # scale angular proportionally to keep curvature
+            self.get_logger().debug(
+                f'Boosting cmd_vel: {msg.linear.x:.3f}→{v:.3f} m/s '
+                f'(min={self.min_effective_v:.3f})')
 
         self._send_mode_if_needed(self.motion_mode)
 
