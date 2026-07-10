@@ -8,6 +8,7 @@ from sentry_interfaces.msg import (
     Environment,
     ForecastAlert,
     FusionResult,
+    WeatherForecast,
 )
 from .rule_engine import RuleEngine
 
@@ -33,6 +34,7 @@ class AdvisoryNode(Node):
         self.last_fusion_ts = 0.0
         self.last_forecast = None
         self.last_env = None
+        self.last_weather = None
 
         self.sub_fusion = self.create_subscription(
             FusionResult, '/fusion/diagnosis', self.on_fusion, 10)
@@ -40,6 +42,8 @@ class AdvisoryNode(Node):
             ForecastAlert, '/forecast/alert', self.on_forecast, 10)
         self.sub_env = self.create_subscription(
             Environment, '/sensor/environment_mobile', self.on_env, 10)
+        self.sub_weather = self.create_subscription(
+            WeatherForecast, '/weather/forecast', self.on_weather, 10)
 
         self.pub = self.create_publisher(
             AdvisoryAction, '/advisory/action', 10)
@@ -60,6 +64,15 @@ class AdvisoryNode(Node):
         self.last_env = msg
         self._maybe_publish()
 
+    def on_weather(self, msg: WeatherForecast):
+        self.last_weather = {
+            "hours": [{"hour_offset": h.hour_offset, "temp": h.temp,
+                        "humidity": h.humidity, "precipitation": h.precipitation,
+                        "wind_speed": h.wind_speed} for h in msg.hours],
+            "disaster_alerts": list(msg.disaster_alerts),
+        }
+        self._maybe_publish()
+
     def _maybe_publish(self):
         if self.last_fusion is None:
             return
@@ -75,7 +88,10 @@ class AdvisoryNode(Node):
     def _evaluate(self, fusion, forecast, env):
         forecast = forecast or ForecastAlert()
         env = env or Environment()
-        matched = self.engine.match(fusion, forecast, env, self.crop_type)
+        weather_hours = self.last_weather["hours"] if self.last_weather else None
+        disaster_alerts = self.last_weather["disaster_alerts"] if self.last_weather else None
+        matched = self.engine.match(fusion, forecast, env, self.crop_type,
+                                    weather_hours, disaster_alerts)
 
         msg = AdvisoryAction()
         msg.header.stamp = self.get_clock().now().to_msg()
