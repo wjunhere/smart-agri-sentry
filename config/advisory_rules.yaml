@@ -1,4 +1,79 @@
 rules:
+  - name: pre_storm_spray
+    conditions:
+      alert_type: STORM_WARNING
+      disaster_alert_contains: "暴雨"
+    action:
+      action_type: SPRAY
+      priority: CRITICAL
+      description: "未来有暴雨，建议雨前完成喷药，避免冲刷药效。"
+      steps:
+        - "确认药剂库存"
+        - "优先喷洒高风险区"
+        - "暴雨前6h完成"
+
+  - name: storm_general
+    conditions:
+      alert_type: STORM_WARNING
+    action:
+      action_type: PROTECT
+      priority: HIGH
+      description: "灾害性天气预警，检查大棚与排水设施。"
+      steps:
+        - "检查大棚结构稳固性"
+        - "清理排水沟渠"
+        - "必要时加固"
+
+  - name: heat_irrigation
+    conditions:
+      alert_type: HEAT_STRESS
+      forecast_high_gt: 35
+      forecast_days: 3
+    action:
+      action_type: IRRIGATE
+      priority: HIGH
+      description: "未来3天持续高温超过35°C，建议增加早晚灌溉频次。"
+      steps:
+        - "清晨或傍晚灌溉"
+        - "检查土壤墒情"
+        - "叶片喷水降温"
+
+  - name: frost_protection
+    conditions:
+      crop_type: strawberry
+      alert_type: FROST_WARNING
+    action:
+      action_type: PROTECT
+      priority: CRITICAL
+      description: "霜冻预警，草莓需覆盖保温，必要时大棚加温。"
+      steps:
+        - "覆盖无纺布或草帘"
+        - "检查大棚密封"
+        - "准备加温设备"
+
+  - name: frost_general
+    conditions:
+      alert_type: FROST_WARNING
+    action:
+      action_type: PROTECT
+      priority: HIGH
+      description: "霜冻预警，注意作物保温防寒。"
+      steps:
+        - "检查覆盖物"
+        - "减少灌溉"
+
+  - name: continuous_rain_monitor
+    conditions:
+      forecast_rain_days: 3
+    action:
+      action_type: MONITOR
+      priority: MEDIUM
+      description: "未来连续3天以上降雨，注意病害监测，雨后检查。"
+      steps:
+        - "增加巡检频次"
+        - "关注叶面湿润情况"
+        - "雨后检查病害迹象"
+
   - name: critical_late_blight
     conditions:
       crop_type: tomato
