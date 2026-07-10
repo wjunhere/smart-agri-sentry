@@ -1,42 +1,121 @@
-"""China Meteorological Administration API client."""
-import random
-import urllib.request
-import urllib.error
+"""QWeather API client with JWT authentication."""
+import base64
 import json
+import random
+import time
+import urllib.error
+import urllib.request
+
+from cryptography.hazmat.primitives import serialization
+
+
+# QWeather free dev API base (switch to api.qweather.com for paid)
+QWEATHER_BASE = "https://devapi.qweather.com/v7"
+QWEATHER_PAID_BASE = "https://api.qweather.com/v7"
+
+
+def _make_jwt(project_id, credential_id, private_key_path):
+    """Generate a short-lived JWT for QWeather API auth."""
+    with open(private_key_path, "rb") as f:
+        private_key = serialization.load_pem_private_key(f.read(), password=None)
+    now = int(time.time())
+    header = base64.urlsafe_b64encode(
+        json.dumps({"alg": "EdDSA", "kid": credential_id}).encode()
+    ).rstrip(b"=").decode()
+    payload = base64.urlsafe_b64encode(
+        json.dumps({"sub": project_id, "iat": now, "exp": now + 3600}).encode()
+    ).rstrip(b"=").decode()
+    signing_input = f"{header}.{payload}".encode()
+    signature = base64.urlsafe_b64encode(
+        private_key.sign(signing_input)
+    ).rstrip(b"=").decode()
+    return f"{header}.{payload}.{signature}"
 
 
 class CMAClient:
-    def __init__(self, api_base_url="", api_key="", mock_mode=False):
-        self.api_base_url = api_base_url
-        self.api_key = api_key
+    def __init__(self, project_id="", credential_id="", private_key_path="",
+                 use_paid_api=False, mock_mode=False):
+        self.project_id = project_id
+        self.credential_id = credential_id
+        self.private_key_path = private_key_path
+        self.base_url = QWEATHER_PAID_BASE if use_paid_api else QWEATHER_BASE
         self.mock_mode = mock_mode
 
     def fetch_grid_forecast(self, lat, lon):
         if self.mock_mode:
             return self._mock_forecast(lat, lon)
-        return self._http_get(self._build_url(lat, lon))
+
+        daily = self._qweather_get(f"{self.base_url}/weather/7d",
+                                   f"{lon:.2f},{lat:.2f}")
+        if daily is None:
+            return None
+
+        hourly = self._qweather_get(f"{self.base_url}/weather/24h",
+                                    f"{lon:.2f},{lat:.2f}")
+        return self._parse_qweather(daily, hourly, lat, lon)
 
     def fetch_disaster_warning(self, lat, lon):
         if self.mock_mode:
             return []
-        data = self._http_get(self._build_warning_url(lat, lon))
+        data = self._qweather_get(f"{self.base_url}/warning/now",
+                                  f"{lon:.2f},{lat:.2f}")
         if data is None:
             return []
-        return data.get("alerts", [])
+        warnings = data.get("warning", [])
+        if warnings is None:
+            return []
+        alerts = []
+        for w in warnings:
+            title = w.get("title", "")
+            if title:
+                alerts.append(title)
+        return alerts
 
-    def _build_url(self, lat, lon):
-        return f"{self.api_base_url}?lat={lat}&lon={lon}&key={self.api_key}"
-
-    def _build_warning_url(self, lat, lon):
-        return f"{self.api_base_url}/warning?lat={lat}&lon={lon}&key={self.api_key}"
-
-    def _http_get(self, url):
+    def _qweather_get(self, url, location):
+        if not self.project_id or not self.credential_id or not self.private_key_path:
+            return None
         try:
-            req = urllib.request.Request(url)
+            token = _make_jwt(self.project_id, self.credential_id,
+                              self.private_key_path)
+        except Exception:
+            return None
+
+        full_url = f"{url}?location={location}"
+        req = urllib.request.Request(full_url)
+        req.add_header("Authorization", f"Bearer {token}")
+        try:
             with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode())
+                body = json.loads(resp.read().decode())
+                if body.get("code") != "200":
+                    return None
+                return body
         except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
             return None
+
+    def _parse_qweather(self, daily_data, hourly_data, lat, lon):
+        days = []
+        for d in daily_data.get("daily", [])[:7]:
+            days.append({
+                "day_offset": len(days),
+                "temp_high": float(d.get("tempMax", 0)),
+                "temp_low": float(d.get("tempMin", 0)),
+                "humidity": float(d.get("humidity", 50)),
+                "precipitation": float(d.get("precip", 0)),
+                "wind_speed": float(d.get("windSpeedDay", 0)),
+                "weather_desc": d.get("textDay", ""),
+            })
+
+        hours = []
+        for h in hourly_data.get("hourly", []):
+            hours.append({
+                "hour_offset": len(hours),
+                "temp": float(h.get("temp", 0)),
+                "humidity": float(h.get("humidity", 50)),
+                "precipitation": float(h.get("precip", 0)),
+                "wind_speed": float(h.get("windSpeed", 0)),
+            })
+
+        return {"city": "", "lat": lat, "lon": lon, "days": days, "hours": hours}
 
     def _mock_forecast(self, lat, lon):
         weather_descs = ["晴", "多云", "阴", "小雨", "中雨", "晴", "多云"]

@@ -80,6 +80,9 @@ models/quantization/calibration/
 #mcp
 .serial_mcp
 
+#secrets
+config/qweather_private.pem
+
 # Test & reference code
 test/
 fix/

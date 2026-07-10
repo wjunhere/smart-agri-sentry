@@ -25,7 +25,7 @@ def test_mock_mode_disaster_warnings():
     assert alerts == []
 
 
-def test_real_mode_returns_none_on_network_error():
-    client = CMAClient(api_base_url="http://localhost:99999/nonexistent", api_key="test")
+def test_real_mode_returns_none_without_credentials():
+    client = CMAClient(project_id="", credential_id="", private_key_path="", mock_mode=False)
     data = client.fetch_grid_forecast(39.9, 116.4)
     assert data is None
