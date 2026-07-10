@@ -485,3 +485,16 @@ body {
   color: #000;
   font-weight: 600;
 }
+
+/* ============ WEATHER PANEL ============ */
+.weather-days { margin-top: 8px; }
+.weather-day-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1F2937; font-size: 12px; }
+.weather-day-row:last-child { border-bottom: none; }
+.day-label { width: 40px; color: #64748B; }
+.day-icon { width: 24px; text-align: center; }
+.day-desc { flex: 1; color: #94A3B8; }
+.day-temp { color: #F8FAFC; min-width: 80px; text-align: right; }
+.day-rain { color: #6366F1; min-width: 40px; text-align: right; }
+.disaster-alerts { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.disaster-tag { background: #7F1D1D; color: #FCA5A5; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.stale-badge { background: #78350F; color: #FBBF24; padding: 1px 6px; border-radius: 4px; font-size: 11px; margin-left: 8px; }

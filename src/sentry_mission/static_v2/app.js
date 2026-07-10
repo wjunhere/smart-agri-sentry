@@ -21,6 +21,7 @@ app.component('DiagnosisCard', DiagnosisCard);
 app.component('DiagnosisToggle', DiagnosisToggle);
 app.component('AdvisoryCard', AdvisoryCard);
 app.component('ForecastPanel', ForecastPanel);
+app.component('WeatherPanel', WeatherPanel);
 app.component('AlertDetailModal', AlertDetailModal);
 app.component('EnvDataBar', EnvDataBar);
 app.component('Dpad', Dpad);
