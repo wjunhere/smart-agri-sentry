@@ -24,6 +24,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ServoCmd.msg"
   "msg/ChassisConfig.msg"
   "msg/ObstacleInfo.msg"
+  "msg/WeatherDay.msg"
+  "msg/WeatherHour.msg"
+  "msg/WeatherForecast.msg"
   "srv/PipelineTrigger.srv"
   "srv/SetCropType.srv"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
