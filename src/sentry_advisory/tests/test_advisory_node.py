@@ -138,3 +138,68 @@ def test_evaluate_uses_fallback(node):
 
     action = node._evaluate(fusion, forecast, env)
     assert action.action_type == 'NONE'
+
+
+def test_match_with_disaster_alert_contains():
+    engine = RuleEngine([{
+        'name': 'storm_test',
+        'conditions': {'alert_type': 'STORM_WARNING', 'disaster_alert_contains': '暴雨'},
+        'action': {'action_type': 'SPRAY', 'priority': 'CRITICAL',
+                   'description': '暴雨预警', 'steps': []},
+    }])
+    fusion = FusionResult()
+    fusion.risk_score = 0.2
+    fusion.alert_level = ALERT_LEVEL_MAP['NORMAL']
+    fusion.mode = 'BALANCED'
+    forecast = ForecastAlert()
+    forecast.active = True
+    forecast.alert_type = 'STORM_WARNING'
+    env = Environment()
+    weather_hours = [{"hour_offset": i, "temp": 22.0, "humidity": 60.0,
+                       "precipitation": 0.0, "wind_speed": 2.0} for i in range(24)]
+    action = engine.match(fusion, forecast, env, 'tomato', weather_hours, ["暴雨蓝色预警"])
+    assert action['action_type'] == 'SPRAY'
+
+
+def test_match_with_forecast_high_gt():
+    engine = RuleEngine([{
+        'name': 'heat_test',
+        'conditions': {'alert_type': 'HEAT_STRESS', 'forecast_high_gt': 35, 'forecast_days': 3},
+        'action': {'action_type': 'IRRIGATE', 'priority': 'HIGH',
+                   'description': '高温灌溉', 'steps': []},
+    }])
+    fusion = FusionResult()
+    fusion.risk_score = 0.2
+    fusion.alert_level = ALERT_LEVEL_MAP['NORMAL']
+    fusion.mode = 'BALANCED'
+    forecast = ForecastAlert()
+    forecast.active = True
+    forecast.alert_type = 'HEAT_STRESS'
+    env = Environment()
+    weather_hours = [{"hour_offset": i, "temp": 36.0, "humidity": 40.0,
+                       "precipitation": 0.0, "wind_speed": 2.0} for i in range(72)]
+    action = engine.match(fusion, forecast, env, 'tomato', weather_hours, [])
+    assert action['action_type'] == 'IRRIGATE'
+
+
+def test_match_rain_days_condition():
+    engine = RuleEngine([{
+        'name': 'rain_test',
+        'conditions': {'forecast_rain_days': 2},
+        'action': {'action_type': 'MONITOR', 'priority': 'MEDIUM',
+                   'description': '连续降雨', 'steps': []},
+    }])
+    fusion = FusionResult()
+    fusion.risk_score = 0.1
+    fusion.alert_level = ALERT_LEVEL_MAP['NORMAL']
+    fusion.mode = 'BALANCED'
+    forecast = ForecastAlert()
+    forecast.alert_type = 'NONE'
+    env = Environment()
+    weather_hours = []
+    for day in range(3):
+        for h in range(24):
+            weather_hours.append({"hour_offset": day * 24 + h, "temp": 20.0,
+                                  "humidity": 90.0, "precipitation": 2.0, "wind_speed": 2.0})
+    action = engine.match(fusion, forecast, env, 'tomato', weather_hours, [])
+    assert action['action_type'] == 'MONITOR'

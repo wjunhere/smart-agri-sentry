@@ -51,14 +51,16 @@ class RuleEngine:
             'steps': [],
         }
 
-    def match(self, fusion, forecast, env, crop_type):
+    def match(self, fusion, forecast, env, crop_type, weather_hours=None, disaster_alerts=None):
         for rule in self.rules:
             if self._match_conditions(
-                    rule.get('conditions', {}), fusion, forecast, env, crop_type):
+                    rule.get('conditions', {}), fusion, forecast, env, crop_type,
+                    weather_hours, disaster_alerts):
                 return rule.get('action', self.default_action())
         return self.default_action()
 
-    def _match_conditions(self, cond, fusion, forecast, env, crop_type):
+    def _match_conditions(self, cond, fusion, forecast, env, crop_type,
+                          weather_hours=None, disaster_alerts=None):
         if 'crop_type' in cond and cond['crop_type'] != crop_type:
             return False
         if 'alert_level' in cond:
@@ -83,6 +85,51 @@ class RuleEngine:
         else:
             if 'humidity_max' in cond or 'temperature_min' in cond:
                 return False
+
+        # Weather conditions
+        if 'disaster_alert_contains' in cond:
+            if not disaster_alerts:
+                return False
+            keyword = cond['disaster_alert_contains']
+            if not any(keyword in a for a in disaster_alerts):
+                return False
+
+        if 'forecast_high_gt' in cond:
+            if not weather_hours:
+                return False
+            days = cond.get('forecast_days', 3)
+            window = [h for h in weather_hours if h["hour_offset"] < days * 24]
+            if not window:
+                return False
+            if max(h["temp"] for h in window) <= cond['forecast_high_gt']:
+                return False
+
+        if 'forecast_low_lt' in cond:
+            if not weather_hours:
+                return False
+            days = cond.get('forecast_days', 3)
+            window = [h for h in weather_hours if h["hour_offset"] < days * 24]
+            if not window:
+                return False
+            if min(h["temp"] for h in window) >= cond['forecast_low_lt']:
+                return False
+
+        if 'forecast_rain_days' in cond:
+            if not weather_hours:
+                return False
+            consecutive = 0
+            max_consecutive = 0
+            for day_offset in range(7):
+                day_hours = [h for h in weather_hours
+                             if day_offset * 24 <= h["hour_offset"] < (day_offset + 1) * 24]
+                if day_hours and sum(h["precipitation"] for h in day_hours) > 1.0:
+                    consecutive += 1
+                    max_consecutive = max(max_consecutive, consecutive)
+                else:
+                    consecutive = 0
+            if max_consecutive < cond['forecast_rain_days']:
+                return False
+
         return True
 
     def highest_priority_action(self, actions):
