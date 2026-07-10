@@ -42,10 +42,69 @@ class TrendForecaster:
         return max(0.0, min(1.0, last + slope * prediction_hours))
 
 
+def weather_risk_model(hours, prediction_hours):
+    """Compute disease risk (0-1) from hourly weather forecast data."""
+    if not hours:
+        return 0.0
+    window = [h for h in hours if h["hour_offset"] <= prediction_hours]
+    if not window:
+        return 0.0
+
+    risk = 0.0
+    # Fungal window: RH > 85% and 15 < T < 25, sustained > 6h
+    fungal_hours = sum(1 for h in window
+                       if h["humidity"] > 85.0 and 15.0 < h["temp"] < 25.0)
+    if fungal_hours > 6:
+        risk += min(0.4, 0.2 + 0.033 * (fungal_hours - 6))
+
+    # Continuous rain > 1mm/h for > 12h
+    rain_hours = 0
+    for h in window:
+        if h["precipitation"] > 1.0:
+            rain_hours += 1
+        else:
+            rain_hours = 0
+    if rain_hours > 12:
+        risk += min(0.3, 0.2 + 0.008 * (rain_hours - 12))
+
+    # Consecutive rain days > 2
+    rain_days = 0
+    for day_offset in range(7):
+        day_hours = [h for h in hours if day_offset * 24 <= h["hour_offset"] < (day_offset + 1) * 24]
+        if day_hours and sum(h["precipitation"] for h in day_hours) > 1.0:
+            rain_days += 1
+        else:
+            rain_days = 0
+    if rain_days > 2:
+        risk += min(0.2, 0.1 * (rain_days - 2))
+
+    # Heat stress: T > 35 sustained > 6h
+    heat_hours = sum(1 for h in window if h["temp"] > 35.0)
+    if heat_hours > 6:
+        risk += min(0.3, 0.2 + 0.016 * (heat_hours - 6))
+
+    # Frost risk: T < 5 present
+    frost_hours = sum(1 for h in window if h["temp"] < 5.0)
+    if frost_hours > 0:
+        risk += min(0.4, 0.2 + 0.05 * frost_hours)
+
+    return min(1.0, risk)
+
+
+def disaster_factor(disaster_alerts):
+    """Boost risk based on disaster warnings (0 to 0.3)."""
+    if not disaster_alerts:
+        return 0.0
+    return 0.3
+
+
 ALERT_NONE = 'NONE'
 ALERT_RISING_RISK = 'RISING_RISK'
 ALERT_LATENT_OUTBREAK = 'LATENT_OUTBREAK'
 ALERT_DROUGHT_STRESS = 'DROUGHT_STRESS'
+ALERT_STORM_WARNING = 'STORM_WARNING'
+ALERT_FROST_WARNING = 'FROST_WARNING'
+ALERT_HEAT_STRESS = 'HEAT_STRESS'
 
 
 class ForecastNode(Node):

@@ -154,3 +154,35 @@ def test_drought_stress_detection(node):
     alert = node._predict_alert()
     assert alert.active is True
     assert alert.alert_type == 'DROUGHT_STRESS'
+
+
+def test_weather_risk_model_high_risk():
+    from sentry_forecast.forecast_node import weather_risk_model
+    hours = []
+    for i in range(12):
+        hours.append({"hour_offset": i, "temp": 20.0, "humidity": 90.0,
+                       "precipitation": 1.5, "wind_speed": 2.0})
+    risk = weather_risk_model(hours, 24)
+    assert risk > 0.3
+
+
+def test_weather_risk_model_low_risk():
+    from sentry_forecast.forecast_node import weather_risk_model
+    hours = []
+    for i in range(12):
+        hours.append({"hour_offset": i, "temp": 30.0, "humidity": 40.0,
+                       "precipitation": 0.0, "wind_speed": 5.0})
+    risk = weather_risk_model(hours, 24)
+    assert risk < 0.2
+
+
+def test_disaster_factor_with_matching_alerts():
+    from sentry_forecast.forecast_node import disaster_factor
+    alerts = ["暴雨蓝色预警", "大风黄色预警"]
+    factor = disaster_factor(alerts)
+    assert factor == 0.3
+
+
+def test_disaster_factor_empty():
+    from sentry_forecast.forecast_node import disaster_factor
+    assert disaster_factor([]) == 0.0
