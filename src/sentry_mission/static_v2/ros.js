@@ -22,6 +22,13 @@ window.store = Vue.reactive({
   advisoryFungicide: '',
   forecastAlerts: [],
   fusionResults: [],
+  weatherDays: [],
+  weatherHours: [],
+  weatherDisasterAlerts: [],
+  weatherStale: false,
+  weatherCity: '',
+  weatherLat: 39.9,
+  weatherLon: 116.4,
   envAirTemp: null,
   envAirHumidity: null,
   envCO2: null,
@@ -119,6 +126,14 @@ const TOPICS = [
   ['/forecast/alert', 'sentry_interfaces/ForecastAlert',
    (msg) => { /* real data ignored; injectMock handles forecast */ }],
   // === MOCK END ===
+  ['/weather/forecast', 'sentry_interfaces/WeatherForecast',
+   (msg) => {
+     store.weatherDays = msg.days || [];
+     store.weatherHours = msg.hours || [];
+     store.weatherDisasterAlerts = msg.disaster_alerts || [];
+     store.weatherStale = msg.stale;
+     store.weatherCity = msg.city;
+   }],
   ['/fusion/diagnosis', 'sentry_interfaces/FusionResult',
    (msg) => {
      store.fusionResults.push({
@@ -313,6 +328,20 @@ function callSetCropType(cropType) {
     { x: 2.5, y: 0.6, yaw: 1.5708 },
     { x: 0.0, y: 0.6, yaw: 3.1416 },
   ];
+
+  // Weather mock
+  store.weatherDays = [
+    { day_offset: 0, temp_high: 28, temp_low: 20, humidity: 75, precipitation: 0, wind_speed: 3, weather_desc: '晴' },
+    { day_offset: 1, temp_high: 30, temp_low: 22, humidity: 80, precipitation: 2, wind_speed: 5, weather_desc: '多云转小雨' },
+    { day_offset: 2, temp_high: 26, temp_low: 19, humidity: 92, precipitation: 25, wind_speed: 12, weather_desc: '暴雨' },
+    { day_offset: 3, temp_high: 24, temp_low: 17, humidity: 88, precipitation: 8, wind_speed: 8, weather_desc: '中雨转阴' },
+    { day_offset: 4, temp_high: 27, temp_low: 18, humidity: 70, precipitation: 1, wind_speed: 4, weather_desc: '多云' },
+    { day_offset: 5, temp_high: 29, temp_low: 20, humidity: 65, precipitation: 0, wind_speed: 3, weather_desc: '晴' },
+    { day_offset: 6, temp_high: 31, temp_low: 21, humidity: 60, precipitation: 0, wind_speed: 2, weather_desc: '晴' },
+  ];
+  store.weatherDisasterAlerts = ['暴雨蓝色预警'];
+  store.weatherStale = false;
+  store.weatherCity = '北京';
 
   // === MOCK START: forecast alerts (remove after test) ===
   const now = Date.now();
