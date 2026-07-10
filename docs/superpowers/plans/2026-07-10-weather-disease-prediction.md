@@ -390,7 +390,7 @@ class CMAClient:
             hour_temp = 22.0 + random.uniform(-8, 8)
             hours.append({
                 "hour_offset": offset,
-                "temperature": round(hour_temp, 1),
+                "temp": round(hour_temp, 1),
                 "humidity": round(random.uniform(40, 95), 1),
                 "precipitation": round(random.uniform(0, 3), 1),
                 "wind_speed": round(random.uniform(0, 8), 1),
@@ -502,7 +502,7 @@ def test_convert_raw_to_msg(node):
         "days": [{"day_offset": 0, "temp_high": 30.0, "temp_low": 20.0,
                   "humidity": 60.0, "precipitation": 0.0, "wind_speed": 5.0,
                   "weather_desc": "晴"}],
-        "hours": [{"hour_offset": 0, "temperature": 25.0, "humidity": 55.0,
+        "hours": [{"hour_offset": 0, "temp": 25.0, "humidity": 55.0,
                    "precipitation": 0.0, "wind_speed": 3.0}],
     }
     msg = node._raw_to_msg(raw, False)
@@ -625,7 +625,7 @@ class WeatherNode(Node):
         for h in raw.get("hours", []):
             hour = WeatherHour()
             hour.hour_offset = h["hour_offset"]
-            hour.temperature = h["temperature"]
+            hour.temp = h["temp"]
             hour.humidity = h["humidity"]
             hour.precipitation = h["precipitation"]
             hour.wind_speed = h["wind_speed"]
@@ -700,7 +700,7 @@ def test_weather_risk_model_high_risk():
     from sentry_forecast.forecast_node import weather_risk_model
     hours = []
     for i in range(12):
-        hours.append({"hour_offset": i, "temperature": 20.0, "humidity": 90.0,
+        hours.append({"hour_offset": i, "temp": 20.0, "humidity": 90.0,
                        "precipitation": 1.5, "wind_speed": 2.0})
     risk = weather_risk_model(hours, 24)
     assert risk > 0.3
@@ -710,7 +710,7 @@ def test_weather_risk_model_low_risk():
     from sentry_forecast.forecast_node import weather_risk_model
     hours = []
     for i in range(12):
-        hours.append({"hour_offset": i, "temperature": 30.0, "humidity": 40.0,
+        hours.append({"hour_offset": i, "temp": 30.0, "humidity": 40.0,
                        "precipitation": 0.0, "wind_speed": 5.0})
     risk = weather_risk_model(hours, 24)
     assert risk < 0.2
@@ -751,7 +751,7 @@ def weather_risk_model(hours, prediction_hours):
     risk = 0.0
     # Fungal window: RH > 85% and 15 < T < 25, sustained > 6h
     fungal_hours = sum(1 for h in window
-                       if h["humidity"] > 85.0 and 15.0 < h["temperature"] < 25.0)
+                       if h["humidity"] > 85.0 and 15.0 < h["temp"] < 25.0)
     if fungal_hours > 6:
         risk += min(0.4, 0.2 + 0.033 * (fungal_hours - 6))
 
@@ -777,12 +777,12 @@ def weather_risk_model(hours, prediction_hours):
         risk += min(0.2, 0.1 * (rain_days - 2))
 
     # Heat stress: T > 35 sustained > 6h
-    heat_hours = sum(1 for h in window if h["temperature"] > 35.0)
+    heat_hours = sum(1 for h in window if h["temp"] > 35.0)
     if heat_hours > 6:
         risk += min(0.3, 0.2 + 0.016 * (heat_hours - 6))
 
     # Frost risk: T < 5 present
-    frost_hours = sum(1 for h in window if h["temperature"] < 5.0)
+    frost_hours = sum(1 for h in window if h["temp"] < 5.0)
     if frost_hours > 0:
         risk += min(0.4, 0.2 + 0.05 * frost_hours)
 
@@ -831,7 +831,7 @@ def test_hybrid_blend_with_weather(node):
 
     # Set weather data on node
     node.last_weather = {
-        "hours": [{"hour_offset": i, "temperature": 20.0, "humidity": 90.0,
+        "hours": [{"hour_offset": i, "temp": 20.0, "humidity": 90.0,
                     "precipitation": 1.5, "wind_speed": 2.0} for i in range(24)],
         "disaster_alerts": [],
     }
@@ -858,7 +858,7 @@ def test_storm_warning_from_disaster_alerts(node):
     node.on_fusion(fusion)
 
     node.last_weather = {
-        "hours": [{"hour_offset": i, "temperature": 22.0, "humidity": 60.0,
+        "hours": [{"hour_offset": i, "temp": 22.0, "humidity": 60.0,
                     "precipitation": 0.0, "wind_speed": 2.0} for i in range(24)],
         "disaster_alerts": ["暴雨蓝色预警"],
     }
@@ -899,7 +899,7 @@ Add callback:
 def on_weather(self, msg: WeatherForecast):
     now = self.get_clock().now().nanoseconds / 1e9
     self.last_weather = {
-        "hours": [{"hour_offset": h.hour_offset, "temperature": h.temperature,
+        "hours": [{"hour_offset": h.hour_offset, "temp": h.temp,
                     "humidity": h.humidity, "precipitation": h.precipitation,
                     "wind_speed": h.wind_speed} for h in msg.hours],
         "disaster_alerts": list(msg.disaster_alerts),
@@ -982,7 +982,7 @@ def _predict_alert(self) -> ForecastAlert:
 
         if alert_type == ALERT_NONE:
             frost_hours = sum(1 for h in self.last_weather["hours"][:72]
-                              if h["temperature"] < 5.0)
+                              if h["temp"] < 5.0)
             if frost_hours > 0:
                 alert_type = ALERT_FROST_WARNING
                 description = f'未来3天有霜冻风险（{frost_hours}h < 5°C）'
@@ -990,7 +990,7 @@ def _predict_alert(self) -> ForecastAlert:
 
         if alert_type == ALERT_NONE:
             heat_hours = sum(1 for h in self.last_weather["hours"][:72]
-                             if h["temperature"] > 35.0)
+                             if h["temp"] > 35.0)
             if heat_hours > 6:
                 alert_type = ALERT_HEAT_STRESS
                 description = f'未来3天持续高温 {heat_hours}h > 35°C'
@@ -1064,7 +1064,7 @@ def test_match_with_disaster_alert_contains(engine):
 
     env = Environment()
 
-    weather_hours = [{"hour_offset": i, "temperature": 22.0, "humidity": 60.0,
+    weather_hours = [{"hour_offset": i, "temp": 22.0, "humidity": 60.0,
                        "precipitation": 0.0, "wind_speed": 2.0} for i in range(24)]
 
     engine_with_storm = RuleEngine([{
@@ -1089,7 +1089,7 @@ def test_match_with_forecast_high_gt(engine):
 
     env = Environment()
 
-    weather_hours = [{"hour_offset": i, "temperature": 36.0, "humidity": 40.0,
+    weather_hours = [{"hour_offset": i, "temp": 36.0, "humidity": 40.0,
                        "precipitation": 0.0, "wind_speed": 2.0} for i in range(72)]
 
     engine_with_heat = RuleEngine([{
@@ -1118,7 +1118,7 @@ def test_match_rain_days_condition(engine):
     weather_hours = []
     for day in range(3):
         for h in range(24):
-            weather_hours.append({"hour_offset": day * 24 + h, "temperature": 20.0,
+            weather_hours.append({"hour_offset": day * 24 + h, "temp": 20.0,
                                   "humidity": 90.0, "precipitation": 2.0, "wind_speed": 2.0})
 
     engine_with_rain = RuleEngine([{
@@ -1170,7 +1170,7 @@ def _match_conditions(self, cond, fusion, forecast, env, crop_type,
         window = [h for h in weather_hours if h["hour_offset"] < days * 24]
         if not window:
             return False
-        if max(h["temperature"] for h in window) <= cond['forecast_high_gt']:
+        if max(h["temp"] for h in window) <= cond['forecast_high_gt']:
             return False
 
     if 'forecast_low_lt' in cond:
@@ -1180,7 +1180,7 @@ def _match_conditions(self, cond, fusion, forecast, env, crop_type,
         window = [h for h in weather_hours if h["hour_offset"] < days * 24]
         if not window:
             return False
-        if min(h["temperature"] for h in window) >= cond['forecast_low_lt']:
+        if min(h["temp"] for h in window) >= cond['forecast_low_lt']:
             return False
 
     if 'forecast_rain_days' in cond:
@@ -1240,7 +1240,7 @@ Add callback:
 ```python
 def on_weather(self, msg: WeatherForecast):
     self.last_weather = {
-        "hours": [{"hour_offset": h.hour_offset, "temperature": h.temperature,
+        "hours": [{"hour_offset": h.hour_offset, "temp": h.temp,
                     "humidity": h.humidity, "precipitation": h.precipitation,
                     "wind_speed": h.wind_speed} for h in msg.hours],
         "disaster_alerts": list(msg.disaster_alerts),
