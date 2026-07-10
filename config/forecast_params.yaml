@@ -5,3 +5,7 @@ forecast_node:
   risk_threshold: 0.7
   lwd_margin_hours: 2.0
   humidity_trend_threshold: 0.3
+  blend_weight_local: 0.4
+  blend_weight_weather: 0.6
+  disaster_boost_cap: 0.3
+  weather_stale_sec: 21600
