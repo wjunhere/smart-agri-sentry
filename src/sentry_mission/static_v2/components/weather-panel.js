@@ -1,27 +1,43 @@
 const WeatherPanel = {
+  data() {
+    return { collapsed: true };
+  },
   template: `
-  <div class="card">
-    <h3>
+  <div class="card weather-card">
+    <h3 class="weather-header" @click="collapsed = !collapsed" style="cursor:pointer; user-select:none;">
+      <span class="collapse-arrow">{{ collapsed ? '▸' : '▾' }}</span>
       未来天气
       <span class="count-badge danger" v-if="store.weatherDisasterAlerts.length > 0">
         {{ store.weatherDisasterAlerts.length }}预警
       </span>
       <span class="stale-badge" v-if="store.weatherStale">缓存</span>
+      <span style="margin-left:auto; display:flex; gap:4px; align-items:center;">
+        <input type="number" :value="store.weatherLat" step="0.01"
+               @change="e => store.weatherLat = parseFloat(e.target.value)"
+               @click.stop
+               style="width:64px; background:#1E293B; border:1px solid #334155; color:#F8FAFC; padding:2px 6px; border-radius:3px; font-size:10px; font-family:JetBrains Mono;" placeholder="纬度">
+        <input type="number" :value="store.weatherLon" step="0.01"
+               @change="e => store.weatherLon = parseFloat(e.target.value)"
+               @click.stop
+               style="width:64px; background:#1E293B; border:1px solid #334155; color:#F8FAFC; padding:2px 6px; border-radius:3px; font-size:10px; font-family:JetBrains Mono;" placeholder="经度">
+      </span>
     </h3>
-    <div ref="chart" class="forecast-chart" style="height:180px"></div>
-    <div class="weather-days">
-      <div v-for="d in store.weatherDays" :key="d.day_offset"
-           class="weather-day-row">
-        <span class="day-label">{{ dayLabel(d.day_offset) }}</span>
-        <span class="day-icon">{{ weatherIcon(d.weather_desc) }}</span>
-        <span class="day-desc">{{ d.weather_desc }}</span>
-        <span class="day-temp">{{ (d.temp_low || 0).toFixed(0) }}° / {{ (d.temp_high || 0).toFixed(0) }}°</span>
-        <span class="day-rain" v-if="d.precipitation > 0">{{ (d.precipitation || 0).toFixed(0) }}mm</span>
+    <div v-show="!collapsed">
+      <div ref="chart" class="forecast-chart" style="height:140px"></div>
+      <div class="weather-days">
+        <div v-for="d in store.weatherDays" :key="d.day_offset"
+             class="weather-day-row">
+          <span class="day-label">{{ dayLabel(d.day_offset) }}</span>
+          <span class="day-icon">{{ weatherIcon(d.weather_desc) }}</span>
+          <span class="day-desc">{{ d.weather_desc }}</span>
+          <span class="day-temp">{{ (d.temp_low || 0).toFixed(0) }}° / {{ (d.temp_high || 0).toFixed(0) }}°</span>
+          <span class="day-rain" v-if="d.precipitation > 0">{{ (d.precipitation || 0).toFixed(0) }}mm</span>
+        </div>
       </div>
-    </div>
-    <div v-if="store.weatherDisasterAlerts.length > 0" class="disaster-alerts">
-      <div v-for="a in store.weatherDisasterAlerts" :key="a" class="disaster-tag">
-        {{ a }}
+      <div v-if="store.weatherDisasterAlerts.length > 0" class="disaster-alerts">
+        <div v-for="a in store.weatherDisasterAlerts" :key="a" class="disaster-tag">
+          {{ a }}
+        </div>
       </div>
     </div>
   </div>`,
@@ -56,7 +72,7 @@ const WeatherPanel = {
       const rain = days.map(d => d.precipitation);
 
       this._chart.setOption({
-        grid: { top: 20, right: 50, bottom: 30, left: 40 },
+        grid: { top: 10, right: 50, bottom: 24, left: 40 },
         xAxis: {
           type: 'category', data: labels,
           axisLabel: { color: '#64748B', fontSize: 10, fontFamily: 'JetBrains Mono' },
@@ -108,6 +124,9 @@ const WeatherPanel = {
     'store.weatherDays': {
       deep: true,
       handler() { this.$nextTick(() => this.renderChart()); },
+    },
+    collapsed(val) {
+      if (!val) this.$nextTick(() => this.renderChart());
     },
   },
   mounted() { this.$nextTick(() => this.renderChart()); },

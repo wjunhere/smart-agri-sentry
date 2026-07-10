@@ -26,18 +26,6 @@
         <diagnosis-card></diagnosis-card>
         <advisory-card></advisory-card>
         <forecast-panel></forecast-panel>
-          <div class="card" style="margin-bottom:8px">
-            <div style="display:flex; gap:8px; align-items:center;">
-              <span style="color:#64748B; font-size:12px;">农田位置</span>
-              <input type="number" :value="store.weatherLat" step="0.01"
-                     @change="e => store.weatherLat = parseFloat(e.target.value)"
-                     style="width:80px; background:#1E293B; border:1px solid #334155; color:#F8FAFC; padding:4px 8px; border-radius:4px; font-size:12px;" placeholder="纬度">
-              <input type="number" :value="store.weatherLon" step="0.01"
-                     @change="e => store.weatherLon = parseFloat(e.target.value)"
-                     style="width:80px; background:#1E293B; border:1px solid #334155; color:#F8FAFC; padding:4px 8px; border-radius:4px; font-size:12px;" placeholder="经度">
-              <span style="color:#64748B; font-size:11px;">{{ store.weatherCity }}</span>
-            </div>
-          </div>
         <weather-panel></weather-panel>
       </div>
     </div>

@@ -487,6 +487,8 @@ body {
 }
 
 /* ============ WEATHER PANEL ============ */
+.weather-card h3.weather-header { display: flex; align-items: center; gap: 6px; }
+.weather-card .collapse-arrow { font-size: 12px; color: #64748B; transition: transform 0.15s; }
 .weather-days { margin-top: 8px; }
 .weather-day-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1F2937; font-size: 12px; }
 .weather-day-row:last-child { border-bottom: none; }
