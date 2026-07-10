@@ -186,3 +186,29 @@ def test_disaster_factor_with_matching_alerts():
 def test_disaster_factor_empty():
     from sentry_forecast.forecast_node import disaster_factor
     assert disaster_factor([]) == 0.0
+
+
+def test_storm_warning_from_disaster_alerts(node):
+    now = node.get_clock().now().nanoseconds / 1e9
+
+    fusion = FusionResult()
+    fusion.header.stamp = node.get_clock().now().to_msg()
+    fusion.risk_score = 0.2
+    node.on_fusion(fusion)
+
+    node.last_weather = {
+        "hours": [{"hour_offset": i, "temp": 22.0, "humidity": 60.0,
+                    "precipitation": 0.0, "wind_speed": 2.0} for i in range(24)],
+        "disaster_alerts": ["暴雨蓝色预警"],
+    }
+    node.last_weather_ts = now
+
+    node.history.append({
+        'timestamp': now, 'risk_score': 0.2,
+        'humidity': 60.0, 'lwd_hours': 1.0, 'temperature': 22.0,
+    })
+
+    alert = node._predict_alert()
+    assert alert.active is True
+    assert alert.alert_type == 'STORM_WARNING'
+    assert alert.alert_source == 'WEATHER'

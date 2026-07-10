@@ -10,6 +10,7 @@ from sentry_interfaces.msg import (
     Environment,
     ForecastAlert,
     FusionResult,
+    WeatherForecast,
 )
 
 
@@ -140,6 +141,13 @@ class ForecastNode(Node):
         self.sub_env = self.create_subscription(
             Environment, '/sensor/environment_mobile', self.on_env, qos)
 
+        self.sub_weather = self.create_subscription(
+            WeatherForecast, '/weather/forecast', self.on_weather, 10)
+
+        self.last_weather = None
+        self.last_weather_ts = 0.0
+        self.weather_stale_sec = self.params.get('weather_stale_sec', 21600)
+
         period = self.params.get('timer_period_sec', 600)
         self.timer = self.create_timer(float(period), self.tick)
         self.pub = self.create_publisher(
@@ -206,6 +214,16 @@ class ForecastNode(Node):
         }
         self.history.append(sample)
 
+    def on_weather(self, msg: WeatherForecast):
+        now = self.get_clock().now().nanoseconds / 1e9
+        self.last_weather = {
+            "hours": [{"hour_offset": h.hour_offset, "temp": h.temp,
+                        "humidity": h.humidity, "precipitation": h.precipitation,
+                        "wind_speed": h.wind_speed} for h in msg.hours],
+            "disaster_alerts": list(msg.disaster_alerts),
+        }
+        self.last_weather_ts = now
+
     def tick(self):
         alert = self._predict_alert()
         self.pub.publish(alert)
@@ -229,6 +247,7 @@ class ForecastNode(Node):
             msg.alert_type = ALERT_NONE
             msg.probability = 0.0
             msg.description = 'No fusion data yet'
+            msg.alert_source = 'LOCAL'
             return msg
 
         if (now - self.last_fusion_ts) > self.fusion_stale_sec:
@@ -236,6 +255,7 @@ class ForecastNode(Node):
             msg.alert_type = ALERT_NONE
             msg.probability = 0.0
             msg.description = 'Fusion data stale'
+            msg.alert_source = 'LOCAL'
             return msg
 
         prediction_hours = self.params.get('prediction_hours', 24)
@@ -243,37 +263,90 @@ class ForecastNode(Node):
         lwd_margin = self.params.get('lwd_margin_hours', 2.0)
         hum_trend_th = self.params.get('humidity_trend_threshold', 0.3)
         lwd_threshold = self.profile.get('lwd_threshold_hours', 6.0)
+        w_local = self.params.get('blend_weight_local', 0.4)
+        w_weather = self.params.get('blend_weight_weather', 0.6)
+        boost_cap = self.params.get('disaster_boost_cap', 0.3)
 
-        predicted_risk = TrendForecaster.predict(
-            self.history, prediction_hours, 'risk_score')
+        # Local trend
+        local_risk = TrendForecaster.predict(self.history, prediction_hours, 'risk_score')
         humidity_slope = TrendForecaster.linear_trend(self.history, 'humidity')
+
+        # Weather risk
+        weather_risk = 0.0
+        d_factor = 0.0
+        weather_available = (self.last_weather is not None
+                             and (now - self.last_weather_ts) <= self.weather_stale_sec)
+
+        if weather_available:
+            weather_risk = weather_risk_model(
+                self.last_weather["hours"], prediction_hours)
+            d_factor = disaster_factor(self.last_weather["disaster_alerts"])
+
+        # Hybrid blend
+        blended = w_local * local_risk + w_weather * weather_risk
+        blended = max(0.0, min(1.0, blended + d_factor))
 
         alert_type = ALERT_NONE
         description = '风险平稳，无需预警'
+        alert_source = 'LOCAL'
 
         risk_slope = TrendForecaster.linear_trend(self.history, 'risk_score')
-        if predicted_risk >= risk_threshold and risk_slope > 0:
-            alert_type = ALERT_RISING_RISK
-            description = f'预测 24h 风险 {predicted_risk:.2f}，呈上升趋势'
-        elif (self.last_fusion.lwd_hours >= (lwd_threshold - lwd_margin)
-              and humidity_slope >= hum_trend_th):
-            alert_type = ALERT_LATENT_OUTBREAK
-            description = (
-                f'LWD 接近阈值 ({self.last_fusion.lwd_hours:.1f}h / '
-                f'{lwd_threshold:.1f}h)，湿度持续上升')
-        elif (self.last_env is not None
-              and (now - self.last_env_ts) <= self.mobile_stale_sec
-              and self.last_env.air_humidity <= 40.0
-              and self.last_env.air_temp >= 30.0):
-            alert_type = ALERT_DROUGHT_STRESS
-            description = (
-                f'干旱胁迫：温度 {self.last_env.air_temp:.1f}C，'
-                f'湿度 {self.last_env.air_humidity:.1f}%')
+
+        # Weather-driven alerts first (higher priority)
+        if weather_available:
+            if d_factor > 0:
+                keywords = ["暴雨", "台风", "大风"]
+                for kw in keywords:
+                    if any(kw in a for a in self.last_weather["disaster_alerts"]):
+                        alert_type = ALERT_STORM_WARNING
+                        description = f'灾害预警: {self.last_weather["disaster_alerts"][0]}'
+                        alert_source = 'WEATHER'
+                        break
+
+            if alert_type == ALERT_NONE:
+                frost_hours = sum(1 for h in self.last_weather["hours"][:72]
+                                  if h["temp"] < 5.0)
+                if frost_hours > 0:
+                    alert_type = ALERT_FROST_WARNING
+                    description = f'未来3天有霜冻风险（{frost_hours}h < 5°C）'
+                    alert_source = 'WEATHER'
+
+            if alert_type == ALERT_NONE:
+                heat_hours = sum(1 for h in self.last_weather["hours"][:72]
+                                 if h["temp"] > 35.0)
+                if heat_hours > 6:
+                    alert_type = ALERT_HEAT_STRESS
+                    description = f'未来3天持续高温 {heat_hours}h > 35°C'
+                    alert_source = 'WEATHER'
+
+        # Local-driven alerts (fallback)
+        if alert_type == ALERT_NONE:
+            if blended >= risk_threshold and risk_slope > 0:
+                alert_type = ALERT_RISING_RISK
+                description = f'预测 24h 风险 {blended:.2f}，呈上升趋势'
+                alert_source = 'HYBRID' if weather_available else 'LOCAL'
+            elif (self.last_fusion.lwd_hours >= (lwd_threshold - lwd_margin)
+                  and humidity_slope >= hum_trend_th):
+                alert_type = ALERT_LATENT_OUTBREAK
+                description = (
+                    f'LWD 接近阈值 ({self.last_fusion.lwd_hours:.1f}h / '
+                    f'{lwd_threshold:.1f}h)，湿度持续上升')
+                alert_source = 'LOCAL'
+            elif (self.last_env is not None
+                  and (now - self.last_env_ts) <= self.mobile_stale_sec
+                  and self.last_env.air_humidity <= 40.0
+                  and self.last_env.air_temp >= 30.0):
+                alert_type = ALERT_DROUGHT_STRESS
+                description = (
+                    f'干旱胁迫：温度 {self.last_env.air_temp:.1f}C，'
+                    f'湿度 {self.last_env.air_humidity:.1f}%')
+                alert_source = 'LOCAL'
 
         msg.active = alert_type != ALERT_NONE
         msg.alert_type = alert_type
-        msg.probability = float(predicted_risk)
+        msg.probability = float(blended)
         msg.description = description
+        msg.alert_source = alert_source
         return msg
 
 
