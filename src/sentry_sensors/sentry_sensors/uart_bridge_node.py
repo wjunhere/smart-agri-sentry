@@ -20,6 +20,10 @@ TYPE_SERVO_CMD = 0x82
 TYPE_MODE_CMD = 0x83
 TYPE_CONFIG_CMD = 0x84
 
+MODE_STANDBY = 0x00
+MODE_REMOTE = 0x01
+MODE_AUTO = 0x02
+
 
 # ---- CRC16-CCITT (0x1021, init 0xFFFF) ----
 def crc16_ccitt(data: bytes) -> int:
@@ -128,12 +132,15 @@ class UartBridgeNode(Node):
         self.declare_parameter('forward_servo_cmd', False)
         self.declare_parameter('wheel_base', 0.23)
         self.declare_parameter('chassis_timeout_sec', 1.0)
+        self.declare_parameter('motion_mode', MODE_AUTO)
         port = self.get_parameter('uart_port').value
         baud = self.get_parameter('baudrate').value
         forward_servo = self.get_parameter('forward_servo_cmd').value
         self.wheel_base = self.get_parameter('wheel_base').value
         self.chassis_timeout_sec = self.get_parameter(
             'chassis_timeout_sec').value
+        self.motion_mode = int(self.get_parameter('motion_mode').value)
+        self._last_sent_mode = None
 
         try:
             self.ser = serial.Serial(port, baud, timeout=0)
@@ -287,6 +294,8 @@ class UartBridgeNode(Node):
                 f'Ignoring non-finite Twist: linear.x={v}, angular.z={w}')
             return
 
+        self._send_mode_if_needed(self.motion_mode)
+
         left_m_s = v - w * self.wheel_base / 2.0
         right_m_s = v + w * self.wheel_base / 2.0
 
@@ -297,6 +306,18 @@ class UartBridgeNode(Node):
         frame = encode_frame(TYPE_MOTION_CMD, payload)
         try:
             self.ser.write(frame)
+        except serial.SerialException as e:
+            self.get_logger().error(f'UART write error: {e}')
+
+    def _send_mode_if_needed(self, mode: int):
+        if self._last_sent_mode == mode:
+            return
+        payload = bytes([mode & 0xFF])
+        frame = encode_frame(TYPE_MODE_CMD, payload)
+        try:
+            self.ser.write(frame)
+            self._last_sent_mode = mode
+            self.get_logger().info(f'Sent chassis mode: {mode}')
         except serial.SerialException as e:
             self.get_logger().error(f'UART write error: {e}')
 

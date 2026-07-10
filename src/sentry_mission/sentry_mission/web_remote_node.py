@@ -30,8 +30,8 @@ class WebRemoteNode(Node):
         self.max_linear = self.get_parameter('max_linear').value
         self.max_angular = self.get_parameter('max_angular').value
 
-        # Default to AUTO to match mission_control_node
-        self.mode = 'AUTO'
+        # Mission control starts in MANUAL; keep the web state aligned.
+        self.mode = 'MANUAL'
         self.linear = 0.0
         self.angular = 0.0
         self.lock = threading.Lock()

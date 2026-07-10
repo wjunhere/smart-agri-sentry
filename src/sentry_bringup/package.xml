@@ -13,6 +13,21 @@
   <depend>std_msgs</depend>
   <depend>sentry_interfaces</depend>
   <depend>cv_bridge</depend>
+  <depend>ament_index_python</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>nav2_bringup</depend>
+  <depend>robot_localization</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>tf2_ros</depend>
+  <depend>sentry_advisory</depend>
+  <depend>sentry_data_logger</depend>
+  <depend>sentry_fusion</depend>
+  <depend>sentry_lidar</depend>
+  <depend>sentry_mission</depend>
+  <depend>sentry_sensors</depend>
+  <depend>sentry_servo</depend>
+  <depend>sentry_vision</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

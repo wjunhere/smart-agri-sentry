@@ -44,13 +44,17 @@ window.store = Vue.reactive({
   batteryVoltage: null,
   leftSpeed: 0,
   rightSpeed: 0,
-  mode: 'AUTO',
+  mode: 'MANUAL',
   cropType: 'tomato',
   selectedAlert: null,
   showWpEditor: false,
   _rawWaypoints: [],
 });
 const store = window.store;  // local alias for internal use in this file
+
+function missionStateToMode(state) {
+  return state === 'MANUAL' ? 'MANUAL' : 'AUTO';
+}
 
 let ros = null;
 
@@ -157,6 +161,7 @@ const TOPICS = [
   ['/mission/status', 'sentry_interfaces/MissionStatus',
    (msg) => {
      store.missionState = msg.state;
+     store.mode = missionStateToMode(msg.state);
      store.missionProgress = msg.progress;
      store.missionCurrentAction = msg.current_action;
      store.missionPlantsDetected = msg.plants_detected;
@@ -298,6 +303,7 @@ function callSetCropType(cropType) {
 
   // Mission
   store.missionState = 'PATROL';
+  store.mode = missionStateToMode(store.missionState);
   store.missionCurrentAction = '巡航空点 2/5';
   store.missionPlantsDetected = 23;
   store.missionPlantsAnalyzed = 18;

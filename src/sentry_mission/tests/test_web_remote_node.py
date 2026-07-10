@@ -18,6 +18,8 @@ def mock_ros2():
         'geometry_msgs.msg': types.ModuleType('geometry_msgs.msg'),
         'std_srvs': types.ModuleType('std_srvs'),
         'std_srvs.srv': types.ModuleType('std_srvs.srv'),
+        'sentry_interfaces': types.ModuleType('sentry_interfaces'),
+        'sentry_interfaces.srv': types.ModuleType('sentry_interfaces.srv'),
     }
 
     modules['rclpy'].init = mock.MagicMock()
@@ -32,6 +34,9 @@ def mock_ros2():
     SetBool = type('SetBool', (), {})
     SetBool.Request = type('Request', (), {})
     modules['std_srvs.srv'].SetBool = SetBool
+
+    SetCropType = type('SetCropType', (), {})
+    modules['sentry_interfaces.srv'].SetCropType = SetCropType
 
     for name, mod in modules.items():
         sys.modules[name] = mod

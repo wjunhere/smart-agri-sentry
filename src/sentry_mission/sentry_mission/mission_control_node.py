@@ -20,6 +20,7 @@ from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from sentry_interfaces.msg import PlantDetection, FusionResult, MissionStatus, Diagnosis
 from sentry_interfaces.srv import PipelineTrigger, SetCropType
+from sentry_mission.autonomous_cruise import should_send_patrol_goal
 from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 import yaml
@@ -291,6 +292,13 @@ class MissionControlNode(Node):
                 self.get_logger().info(
                     f'Nav2 ready (ticks={self._nav2_tick_count}, '
                     f'server={ready})')
+                if should_send_patrol_goal(
+                        self.state,
+                        self._nav2_ready,
+                        self.sending_goal,
+                        self.current_wp_idx,
+                        len(self.waypoints)):
+                    self._send_next_waypoint()
 
         if self.state_enter_time == 0.0:
             self.state_enter_time = now
@@ -307,6 +315,14 @@ class MissionControlNode(Node):
         if self.state == STATE_PATROL:
             status.state = STATE_PATROL
             status.current_action = 'patrolling waypoints'
+
+            if should_send_patrol_goal(
+                    self.state,
+                    self._nav2_ready,
+                    self.sending_goal,
+                    self.current_wp_idx,
+                    len(self.waypoints)):
+                self._send_next_waypoint()
 
             if self.sending_goal and self.navigator.isTaskComplete():
                 self.sending_goal = False

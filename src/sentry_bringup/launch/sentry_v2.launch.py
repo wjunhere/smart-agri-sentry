@@ -19,8 +19,6 @@ def generate_launch_description():
         robot_description = f.read()
 
     crop_profiles_path = os.path.join(config_dir, 'crop_profiles.yaml')
-    mission_params_path = os.path.join(config_dir, 'mission_params.yaml')
-
     lidar_launch_path = os.path.join(
         get_package_share_directory('sentry_lidar'), 'launch', 'stl19p.launch.py')
 
@@ -180,17 +178,16 @@ def generate_launch_description():
             parameters=[ekf_config],
         ),
 
-        # Nav2 bringup (mapless mode)
+        # Nav2 navigation stack (mapless mode; no map_server/localization)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(
                     get_package_share_directory('nav2_bringup'),
-                    'launch', 'bringup_launch.py')
+                    'launch', 'navigation_launch.py')
             ),
             launch_arguments={
                 'params_file': nav2_config,
                 'use_sim_time': 'False',
-                'map': '',
             }.items(),
         ),
 
@@ -213,13 +210,16 @@ def generate_launch_description():
             package='sentry_mission',
             executable='mission_control_node',
             name='mission_control_node',
-            parameters=[mission_params_path, {
+            parameters=[{
                 'waypoints_file': waypoints_config,
+                'cruise_speed': 0.3,
                 'wheel_base': 0.23,
                 'pulses_per_meter': 11035,
                 'crop_type': LaunchConfiguration('crop_type'),
-                'detection_confidence_threshold': 0.5,
-                'min_area_ratio': 0.05,
+                'detection_confidence_threshold': 0.6,
+                'min_area_ratio': 0.1,
+                'analyze_timeout_sec': 5.0,
+                'resume_delay_sec': 2.0,
                 'min_resume_distance': 0.5,
                 'max_scan_shots': 3,
             }],
