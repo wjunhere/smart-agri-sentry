@@ -77,30 +77,35 @@ class CMAClient:
     def _qweather_get(self, url, location):
         full_url = f"{url}?location={location}"
 
-        # API Key auth (simpler, preferred)
+        # JWT auth (preferred - no rate limit)
+        if self.project_id and self.credential_id and self.private_key_path:
+            try:
+                token = _make_jwt(self.project_id, self.credential_id,
+                                  self.private_key_path)
+            except Exception:
+                token = None
+            if token:
+                req = urllib.request.Request(full_url)
+                req.add_header("Authorization", f"Bearer {token}")
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        body = resp.read()
+                        if body[:2] == b'\x1f\x8b':
+                            import gzip
+                            body = gzip.decompress(body)
+                        data = json.loads(body.decode())
+                        if data.get("code") == "200":
+                            return data
+                except (urllib.error.URLError, OSError,
+                        json.JSONDecodeError, ValueError):
+                    pass
+
+        # API Key auth fallback
         if self.api_key:
             full_url += f"&key={self.api_key}"
             return self._http_get(full_url)
 
-        # JWT auth fallback
-        if not self.project_id or not self.credential_id or not self.private_key_path:
-            return None
-        try:
-            token = _make_jwt(self.project_id, self.credential_id,
-                              self.private_key_path)
-        except Exception:
-            return None
-
-        req = urllib.request.Request(full_url)
-        req.add_header("Authorization", f"Bearer {token}")
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                body = json.loads(resp.read().decode())
-                if body.get("code") != "200":
-                    return None
-                return body
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
-            return None
+        return None
 
     def _http_get(self, url):
         try:
