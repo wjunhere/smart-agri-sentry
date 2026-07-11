@@ -27,8 +27,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/WeatherDay.msg"
   "msg/WeatherHour.msg"
   "msg/WeatherForecast.msg"
+  "msg/LLMAnalysis.msg"
   "srv/PipelineTrigger.srv"
   "srv/SetCropType.srv"
+  "srv/LLMAnalyze.srv"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
 
