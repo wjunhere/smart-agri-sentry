@@ -99,7 +99,7 @@ class WeatherNode(Node):
         msg.lon = float(raw.get("lon", self.lon))
         msg.stale = stale
 
-        for d in raw.get("days", []):
+        for i, d in enumerate(raw.get("days", [])[:7]):
             day = WeatherDay()
             day.day_offset = d["day_offset"]
             day.temp_high = d["temp_high"]
@@ -108,7 +108,7 @@ class WeatherNode(Node):
             day.precipitation = d["precipitation"]
             day.wind_speed = d["wind_speed"]
             day.weather_desc = d.get("weather_desc", "")
-            msg.days.append(day)
+            msg.days[i] = day
 
         for h in raw.get("hours", []):
             hour = WeatherHour()
