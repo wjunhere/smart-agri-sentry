@@ -1,0 +1,43 @@
+<view class="page">
+  <view class="card dg-card">
+    <text class="card-header">病害诊断 · {{cropType}}</text>
+    <text class="dg-name amber">{{disease}}</text>
+    <text class="muted" style="font-size:22rpx">置信度 <text class="mono amber">{{confidence}}%</text></text>
+  </view>
+
+  <view class="card">
+    <text class="card-header">分类概率</text>
+    <view class="prob-row" wx:for="{{probs}}" wx:key="name">
+      <view class="prob-label">
+        <text class="mono dim" style="font-size:20rpx">{{item.name}}</text>
+        <text class="mono">{{item.pct}}%</text>
+      </view>
+      <view class="prob-bar">
+        <view class="prob-fill" style="width:{{item.width}}%;background:{{item.color}}"></view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card adv-card" wx:if="{{advisoryText}}">
+    <text class="card-header">💡 农艺建议</text>
+    <text style="font-size:26rpx;color:var(--text)">{{advisoryText}}</text>
+    <view class="muted" style="font-size:20rpx;margin-top:8rpx" wx:if="{{advisoryPriority}}">
+      紧急度: <text class="amber">{{advisoryPriority}}</text>
+    </view>
+    <view wx:if="{{advisorySteps.length}}" style="margin-top:8rpx">
+      <text class="dim" wx:for="{{advisorySteps}}" wx:key="*this" style="font-size:20rpx;display:block">{{index+1}}. {{item}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <text class="card-header">📈 风险趋势 (3日)</text>
+    <view class="trend-placeholder mono muted">数据收集中...</view>
+  </view>
+
+  <alert-bar
+    wx:if="{{forecastActive}}"
+    level="danger"
+    title="⚠ 病害预警"
+    message="未来{{forecastHoursAhead}}h内: {{forecastDescription}}"
+  />
+</view>

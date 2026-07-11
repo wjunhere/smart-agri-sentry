@@ -1,0 +1,55 @@
+<view class="page">
+  <view class="card row-between">
+    <text class="label">当前模式</text>
+    <status-badge text="{{mode}}" type="{{mode === 'AUTO' ? 'green' : 'blue'}}" />
+  </view>
+
+  <view class="card" style="text-align:center">
+    <view class="dpad">
+      <view class="dpad-btn btn-up"    bindtouchstart="onBtnUp">▲</view>
+      <view class="dpad-btn btn-left"  bindtouchstart="onBtnLeft">◀</view>
+      <view class="dpad-btn btn-center">●</view>
+      <view class="dpad-btn btn-right" bindtouchstart="onBtnRight">▶</view>
+      <view class="dpad-btn btn-down"  bindtouchstart="onBtnDown">▼</view>
+    </view>
+    <view style="margin-top:12rpx">
+      <text class="mono dim">v: {{linear}}  ω: {{angular}}</text>
+    </view>
+  </view>
+
+  <view style="display:flex;gap:12rpx">
+    <view class="card" style="flex:1;text-align:center">
+      <text class="card-header">作物</text>
+      <view class="pills">
+        <text class="pill {{cropType === 'tomato' ? 'active' : ''}}" data-crop="tomato" bindtap="onSelectCrop">番茄</text>
+        <text class="pill {{cropType === 'wheat' ? 'active' : ''}}" data-crop="wheat" bindtap="onSelectCrop">小麦</text>
+        <text class="pill {{cropType === 'strawberry' ? 'active' : ''}}" data-crop="strawberry" bindtap="onSelectCrop">草莓</text>
+      </view>
+    </view>
+    <view class="card" style="text-align:center">
+      <view class="estop-btn" bindtap="onBtnStop">STOP</view>
+      <text class="muted" style="font-size:18rpx">急停</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <text class="card-header">自动巡航</text>
+    <view class="row-between" style="font-size:22rpx">
+      <text>状态 <text class="green">● {{missionState}}</text></text>
+      <text>点位 <text class="mono">{{missionCurrentWpIdx}}/{{missionTotalWps}}</text></text>
+      <text>检测 <text class="mono">{{missionPlantsDetected}}株</text></text>
+    </view>
+    <view class="tags" style="margin-top:12rpx">
+      <text class="tag" wx:for="{{missionWaypointLabels}}" wx:key="index">{{item}}</text>
+    </view>
+  </view>
+
+  <view style="display:flex;gap:12rpx">
+    <view class="card" style="flex:1;text-align:center" bindtap="onToggleMode">
+      <text style="font-weight:600;color:#10B981">{{mode === 'AUTO' ? '切换 MANUAL' : '切换 AUTO'}}</text>
+    </view>
+    <view class="card" style="flex:1;text-align:center">
+      <text style="font-weight:600;color:#F59E0B">📍 航点</text>
+    </view>
+  </view>
+</view>

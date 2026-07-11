@@ -1,0 +1,26 @@
+.page { padding: 16rpx; display: flex; flex-direction: column; gap: 12rpx; }
+
+.camera-wrap {
+  position: relative; background: #000; border-radius: var(--radius);
+  overflow: hidden; height: 400rpx;
+}
+.camera { width: 100%; height: 100%; }
+.camera-hud {
+  position: absolute; top: 12rpx; left: 16rpx;
+  display: flex; gap: 24rpx; font-size: 20rpx;
+  background: rgba(0,0,0,0.55); padding: 6rpx 16rpx; border-radius: var(--radius);
+}
+
+.sensor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8rpx; }
+.sensor-grid-3col { grid-template-columns: 1fr 1fr 1fr; }
+
+.sensor-item {
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12rpx 16rpx;
+}
+.s-label { font-size: 18rpx; color: var(--text-muted); display: block; }
+.s-val {
+  font-size: 36rpx; font-weight: 700;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  color: var(--text); display: block; margin-top: 4rpx;
+}

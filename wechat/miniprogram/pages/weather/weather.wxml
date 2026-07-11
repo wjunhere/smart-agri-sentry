@@ -1,0 +1,60 @@
+<view class="page">
+  <view class="wx-now">
+    <text class="card-header">当前 · {{city}}</text>
+    <text class="wx-temp">{{currentTemp}}</text>
+    <text style="font-size:28rpx;color:var(--text)">{{currentDesc}}</text>
+    <view class="muted" style="font-size:20rpx;margin-top:8rpx">
+      湿度 {{humidity}} · 东风 3级
+    </view>
+  </view>
+
+  <view class="card">
+    <text class="card-header">📅 7日预报</text>
+    <scroll-view class="fc-scroll" scroll-x>
+      <view class="fc-item" wx:for="{{days}}" wx:key="*this">
+        <text class="dim" style="font-size:18rpx">周{{index+1}}</text>
+        <text style="font-size:28rpx">{{item.icon}}</text>
+        <text class="mono" style="font-weight:600">{{item.high}}°</text>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view class="card">
+    <text class="card-header">🕐 逐时预报</text>
+    <scroll-view class="fc-scroll" scroll-x>
+      <view class="fc-item" wx:for="{{hours}}" wx:key="time">
+        <text class="dim" style="font-size:18rpx">{{item.time}}</text>
+        <text style="font-size:28rpx">{{item.icon}}</text>
+        <text class="mono" style="font-weight:600">{{item.temp}}°</text>
+      </view>
+    </scroll-view>
+  </view>
+
+  <alert-bar
+    wx:for="{{disasterAlerts}}"
+    wx:key="*this"
+    level="danger"
+    title="⚠ 气象灾害预警"
+    message="{{item}}"
+  />
+
+  <view class="card">
+    <text class="card-header">农业气象指标</text>
+    <view class="ag-grid">
+      <view class="ag-item">
+        <text class="dim" style="font-size:18rpx">🌡 积温</text>
+        <text class="mono" style="font-weight:600">320°D</text>
+      </view>
+      <view class="ag-item">
+        <text class="dim" style="font-size:18rpx">💧 降雨</text>
+        <text class="mono" style="font-weight:600">12mm</text>
+      </view>
+      <view class="ag-item">
+        <text class="dim" style="font-size:18rpx">💨 风速</text>
+        <text class="mono" style="font-weight:600">3级</text>
+      </view>
+    </view>
+  </view>
+
+  <text wx:if="{{stale}}" class="amber" style="font-size:20rpx;text-align:right">⚠ 天气数据可能过期</text>
+</view>
