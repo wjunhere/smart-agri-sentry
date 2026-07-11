@@ -3,7 +3,7 @@
 
 import { updateStore } from './store';
 
-const WS_URL = 'ws://192.168.1.100:8765/ws';
+const WS_URL = 'ws://10.101.47.106:8765/ws';
 const RETRY_DELAYS = [3000, 15000, 30000];
 
 let ws: WechatMiniprogram.SocketTask | null = null;

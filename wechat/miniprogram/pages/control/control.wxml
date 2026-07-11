@@ -6,11 +6,11 @@
 
   <view class="card" style="text-align:center">
     <view class="dpad">
-      <view class="dpad-btn btn-up"    bindtouchstart="onBtnUp">▲</view>
-      <view class="dpad-btn btn-left"  bindtouchstart="onBtnLeft">◀</view>
+      <view class="dpad-btn btn-up"    bindtap="onBtnUp">▲</view>
+      <view class="dpad-btn btn-left"  bindtap="onBtnLeft">◀</view>
       <view class="dpad-btn btn-center">●</view>
-      <view class="dpad-btn btn-right" bindtouchstart="onBtnRight">▶</view>
-      <view class="dpad-btn btn-down"  bindtouchstart="onBtnDown">▼</view>
+      <view class="dpad-btn btn-right" bindtap="onBtnRight">▶</view>
+      <view class="dpad-btn btn-down"  bindtap="onBtnDown">▼</view>
     </view>
     <view style="margin-top:12rpx">
       <text class="mono dim">v: {{linear}}  ω: {{angular}}</text>
@@ -40,7 +40,7 @@
       <text>检测 <text class="mono">{{missionPlantsDetected}}株</text></text>
     </view>
     <view class="tags" style="margin-top:12rpx">
-      <text class="tag" wx:for="{{missionWaypointLabels}}" wx:key="index">{{item}}</text>
+      <text class="tag" wx:for="{{missionWaypointLabels}}" wx:key="*this">{{item}}</text>
     </view>
   </view>
 
@@ -48,7 +48,7 @@
     <view class="card" style="flex:1;text-align:center" bindtap="onToggleMode">
       <text style="font-weight:600;color:#10B981">{{mode === 'AUTO' ? '切换 MANUAL' : '切换 AUTO'}}</text>
     </view>
-    <view class="card" style="flex:1;text-align:center">
+    <view class="card" style="flex:1;text-align:center" bindtap="onOpenWaypoints">
       <text style="font-weight:600;color:#F59E0B">📍 航点</text>
     </view>
   </view>

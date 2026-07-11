@@ -3,7 +3,8 @@
     "pages/control/control",
     "pages/monitor/monitor",
     "pages/analysis/analysis",
-    "pages/weather/weather"
+    "pages/weather/weather",
+    "pages/waypoint-editor/waypoint-editor"
   ],
   "tabBar": {
     "color": "#64748B",
@@ -32,8 +33,7 @@
   "window": {
     "navigationBarTextStyle": "white",
     "navigationBarBackgroundColor": "#0F172A",
-    "backgroundColor": "#0B1120",
-    "navigationStyle": "custom"
+    "backgroundColor": "#0B1120"
   },
   "style": "v2",
   "rendererOptions": {

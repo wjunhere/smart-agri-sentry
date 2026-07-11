@@ -1,7 +1,7 @@
 // services/api.ts
 // HTTP request wrapper for low-frequency data + control commands
 
-const BASE_URL = 'http://192.168.1.100:8765';
+const BASE_URL = 'http://10.101.47.106:8765';
 
 async function request<T>(method: 'GET' | 'POST', path: string, body?: any): Promise<T> {
   return new Promise((resolve, reject) => {

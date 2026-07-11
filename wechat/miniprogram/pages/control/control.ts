@@ -64,5 +64,9 @@ Component({
       apiSetCropType(crop);
       updateStore({ cropType: crop });
     },
+
+    onOpenWaypoints() {
+      wx.navigateTo({ url: '/pages/waypoint-editor/waypoint-editor' });
+    },
   },
 })

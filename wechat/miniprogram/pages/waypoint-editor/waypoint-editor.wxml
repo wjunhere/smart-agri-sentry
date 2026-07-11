@@ -1,0 +1,37 @@
+<view class="page">
+  <view class="card" style="display:flex;justify-content:space-between;align-items:center">
+    <text style="font-size:32rpx;font-weight:700">📍 航点编辑器</text>
+    <text class="muted" style="font-size:22rpx">{{waypoints.length}} 个航点</text>
+  </view>
+
+  <scroll-view scroll-y style="flex:1">
+    <view class="wp-table">
+      <view class="wp-row wp-header">
+        <text class="wp-col wp-col-idx">#</text>
+        <text class="wp-col">X (m)</text>
+        <text class="wp-col">Y (m)</text>
+        <text class="wp-col">Yaw (°)</text>
+        <text class="wp-col wp-col-del"></text>
+      </view>
+      <view class="wp-row {{currentWpIdx === index ? 'wp-active' : ''}}" wx:for="{{waypoints}}" wx:key="index">
+        <text class="wp-col wp-col-idx mono dim">{{index}}</text>
+        <input class="wp-col wp-input mono" type="digit" value="{{item.x}}" data-index="{{index}}" bindinput="onXChange" />
+        <input class="wp-col wp-input mono" type="digit" value="{{item.y}}" data-index="{{index}}" bindinput="onYChange" />
+        <input class="wp-col wp-input mono" type="number" value="{{item.deg}}" data-index="{{index}}" bindinput="onDegChange" />
+        <view class="wp-col wp-col-del" data-index="{{index}}" bindtap="onRemove">
+          <text class="red">✕</text>
+        </view>
+      </view>
+    </view>
+    <view wx:if="{{waypoints.length === 0}}" class="muted" style="text-align:center;padding:40rpx">
+      暂无航点，点击下方按钮添加
+    </view>
+  </scroll-view>
+
+  <view class="card" style="display:flex;gap:12rpx">
+    <view class="btn btn-add" bindtap="onAdd">+ 添加</view>
+    <view style="flex:1"></view>
+    <view class="btn btn-save" bindtap="onSave">保存</view>
+    <view class="btn btn-cancel" bindtap="onCancel">取消</view>
+  </view>
+</view>

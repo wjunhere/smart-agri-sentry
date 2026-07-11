@@ -11,7 +11,7 @@
   <view class="card">
     <text class="card-header">📅 7日预报</text>
     <scroll-view class="fc-scroll" scroll-x>
-      <view class="fc-item" wx:for="{{days}}" wx:key="*this">
+      <view class="fc-item" wx:for="{{days}}" wx:key="index">
         <text class="dim" style="font-size:18rpx">周{{index+1}}</text>
         <text style="font-size:28rpx">{{item.icon}}</text>
         <text class="mono" style="font-weight:600">{{item.high}}°</text>
