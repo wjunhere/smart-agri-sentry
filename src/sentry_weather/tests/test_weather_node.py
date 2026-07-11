@@ -52,6 +52,8 @@ def test_convert_raw_to_msg(node):
     }
     msg = node._raw_to_msg(raw, False)
     assert msg.city == "TestCity"
-    assert len(msg.days) == 1
+    assert len(msg.days) == 7  # fixed-size array
+    assert msg.days[0].temp_high == 30.0
+    assert msg.days[0].weather_desc == "晴"
     assert len(msg.hours) == 1
     assert msg.stale is False
