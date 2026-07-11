@@ -3,8 +3,7 @@
     "pages/control/control",
     "pages/monitor/monitor",
     "pages/analysis/analysis",
-    "pages/weather/weather",
-    "pages/waypoint-editor/waypoint-editor"
+    "pages/weather/weather"
   ],
   "tabBar": {
     "color": "#64748B",

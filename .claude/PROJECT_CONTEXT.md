@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v2.6 · 更新日期 2026-07-08  
+> 架构版本 v2.7 · 更新日期 2026-07-11  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -13,6 +13,8 @@
 - 植株检测触发停车 → 端侧 AI 病害识别（RDK X5 BPU，`pyeasy_dnn` 推理）
 - 移动/固定环境数据融合决策 → 农艺建议
 - 本地 ros2 bag 数据记录
+- 微信小程序远程控制（原生 TS + Less + Skyline，4 Tab 布局）
+- FastAPI 桥接节点 `miniprogram_bridge_node :8765`（WebSocket 实时 + HTTP 控制）
 
 ---
 
@@ -73,6 +75,8 @@
 12. **MIPI 相机 ISP 调通 ✅ (2026-07-08)**：IMX219 关键约束：`open_cam` 第一通道必须小分辨率 (512×512)，第二通道可设目标分辨率。`get_img(type=2, w, h)` 中 type=2 固定 NV12 格式，通道由传入的 w×h 匹配 `out_w/out_h` 列表决定。NV12 stride 因 ISP 硬件对齐可能 ≠ width，已改为根据 `actual_size / (height * 1.5)` 自动检测。前端 `image_transport republish raw compressed` 生成 `/out/compressed` 供 rosbridge 传输 JPEG。
 13. **USB 串口设备识别**：CH340 (ttyUSB0) = IMU，CP2102 (ttyUSB2) = LiDAR。udev 规则：`/dev/myimu → ttyUSB0`，`/dev/wheeltec_lidar → ttyUSB2`。
 14. **前端 mock 测试系统**：`static_v2/ros.js` 中 `injectMock()` + TOPICS 回调可硬编码各模块数据用于离线测试，修改处标注 `// === MOCK START/END ===` 便于恢复。
+15. **微信小程序 ✅ (2026-07-11)**：新增 `/wechat` 目录，原生 TS + Less + Skyline 渲染引擎，4 个底部 Tab（控制/监测/分析/天气）。Grafana 深色工业风与 `static_v2` Web 前端一致。支持 D-Pad 遥控、作物切换、巡航状态展示、实时视频流、环境传感器数据、病害诊断+概率柱状图、农艺建议、天气预报、航点编辑器（浮层组件）。通过 `miniprogram_bridge_node` 与 ROS2 通信。
+16. **miniprogram_bridge_node ✅ (2026-07-11)**：新增 `sentry_miniprogram` ROS2 包，FastAPI + WebSocket 桥接节点监听 `:8765`。WebSocket `/ws` 推送传感器、状态、诊断、巡航、植株检测、预警等实时数据；REST API 提供天气/预测/模式切换/速度控制/急停/作物切换/MJPEG 视频流。与现有 `web_remote_node` (Flask :5000) 和 `rosbridge` (:9090) 独立运行，互不影响。
 
 ## 模型矩阵
 

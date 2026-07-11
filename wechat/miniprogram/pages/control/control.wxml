@@ -53,3 +53,5 @@
     </view>
   </view>
 </view>
+
+<waypoint-editor visible="{{showWaypointEditor}}" bind:close="onCloseWaypoints" />

@@ -1,6 +1,27 @@
-.page { padding: 16rpx; display: flex; flex-direction: column; gap: 12rpx; height: 100%; }
+.we-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000;
+  background: rgba(0,0,0,0.7);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.we-panel {
+  background: var(--bg-surface);
+  border-radius: 16rpx 16rpx 0 0;
+  width: 100%; max-height: 85vh;
+  display: flex; flex-direction: column;
+}
+.we-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 24rpx 24rpx 12rpx;
+  border-bottom: 1px solid var(--border);
+}
+.we-body {
+  flex: 1; padding: 0 24rpx; max-height: 55vh;
+}
+.we-footer {
+  display: flex; gap: 12rpx; padding: 16rpx 24rpx 32rpx;
+  border-top: 1px solid var(--border);
+}
 
-.wp-table { display: flex; flex-direction: column; }
 .wp-row { display: flex; align-items: center; gap: 4rpx; padding: 8rpx 0; border-bottom: 1px solid var(--border); }
 .wp-header { border-bottom: 2px solid var(--border-hi); padding: 12rpx 0; }
 .wp-active { background: rgba(56,189,248,0.06); }

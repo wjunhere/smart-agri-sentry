@@ -13,6 +13,7 @@ Component({
     missionCurrentWpIdx: 0,
     missionTotalWps: 0,
     missionWaypointLabels: [] as string[],
+    showWaypointEditor: false,
   },
   lifetimes: {
     attached() {
@@ -66,7 +67,10 @@ Component({
     },
 
     onOpenWaypoints() {
-      wx.navigateTo({ url: '/pages/waypoint-editor/waypoint-editor' });
+      this.setData({ showWaypointEditor: true });
+    },
+    onCloseWaypoints() {
+      this.setData({ showWaypointEditor: false });
     },
   },
 })

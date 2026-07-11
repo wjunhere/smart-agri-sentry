@@ -1,11 +1,11 @@
-<view class="page">
-  <view class="card" style="display:flex;justify-content:space-between;align-items:center">
-    <text style="font-size:32rpx;font-weight:700">📍 航点编辑器</text>
-    <text class="muted" style="font-size:22rpx">{{waypoints.length}} 个航点</text>
-  </view>
+<view class="we-overlay" wx:if="{{visible}}" bindtap="onCancel">
+  <view class="we-panel" catchtap="">
+    <view class="we-header">
+      <text style="font-size:32rpx;font-weight:700">📍 航点编辑器</text>
+      <text class="muted" style="font-size:22rpx">{{waypoints.length}} 个航点</text>
+    </view>
 
-  <scroll-view scroll-y style="flex:1">
-    <view class="wp-table">
+    <scroll-view class="we-body" scroll-y>
       <view class="wp-row wp-header">
         <text class="wp-col wp-col-idx">#</text>
         <text class="wp-col">X (m)</text>
@@ -22,16 +22,16 @@
           <text class="red">✕</text>
         </view>
       </view>
-    </view>
-    <view wx:if="{{waypoints.length === 0}}" class="muted" style="text-align:center;padding:40rpx">
-      暂无航点，点击下方按钮添加
-    </view>
-  </scroll-view>
+      <view wx:if="{{waypoints.length === 0}}" class="muted" style="text-align:center;padding:40rpx">
+        暂无航点，点击下方按钮添加
+      </view>
+    </scroll-view>
 
-  <view class="card" style="display:flex;gap:12rpx">
-    <view class="btn btn-add" bindtap="onAdd">+ 添加</view>
-    <view style="flex:1"></view>
-    <view class="btn btn-save" bindtap="onSave">保存</view>
-    <view class="btn btn-cancel" bindtap="onCancel">取消</view>
+    <view class="we-footer">
+      <view class="btn btn-add" bindtap="onAdd">+ 添加</view>
+      <view style="flex:1"></view>
+      <view class="btn btn-save" bindtap="onSave">保存</view>
+      <view class="btn btn-cancel" bindtap="onCancel">取消</view>
+    </view>
   </view>
 </view>

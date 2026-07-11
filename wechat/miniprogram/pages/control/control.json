@@ -1,1 +1,1 @@
-{ "usingComponents": { "status-badge": "/components/status-badge/status-badge" } }
+{ "usingComponents": { "status-badge": "/components/status-badge/status-badge", "waypoint-editor": "/components/waypoint-editor/waypoint-editor" } }
