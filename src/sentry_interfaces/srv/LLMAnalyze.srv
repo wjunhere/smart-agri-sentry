@@ -1,0 +1,9 @@
+---
+string status
+string summary
+string[] suggestions
+string risk_level
+string[] focus_areas
+string next_check
+string raw_text
+string trigger
