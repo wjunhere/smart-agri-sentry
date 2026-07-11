@@ -7,6 +7,7 @@ Triggers:
 """
 
 import json
+import os
 import threading
 import time
 
@@ -113,7 +114,9 @@ class LLMAdvisorNode(Node):
 
         self.api_key = self.get_parameter('api_key').value
         if not self.api_key:
-            self.get_logger().warn('No DeepSeek API key configured. Set api_key parameter.')
+            self.api_key = os.environ.get('DEEPSEEK_API_KEY', '')
+        if not self.api_key:
+            self.get_logger().warn('No DeepSeek API key configured. Set DEEPSEEK_API_KEY env var or api_key parameter.')
 
         self._diagnosis = None
         self._env = None
