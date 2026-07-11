@@ -331,7 +331,7 @@ function callSetCropType(cropType) {
 
   // Weather — fetch from local proxy, fallback to static mock
   (function initWeather() {
-    const WEATHER_PROXY = 'http://localhost:8090/weather.json';
+    const WEATHER_PROXY = `http://${window.location.hostname}:8090/weather.json`;
     const REFRESH_MS = 3600000; // 1 hour
 
     function applyWeather(data) {
