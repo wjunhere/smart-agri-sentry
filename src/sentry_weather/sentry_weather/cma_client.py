@@ -34,11 +34,14 @@ def _make_jwt(project_id, credential_id, private_key_path):
 
 class CMAClient:
     def __init__(self, project_id="", credential_id="", private_key_path="",
-                 use_paid_api=False, mock_mode=False):
+                 api_key="", api_host="devapi.qweather.com",
+                 mock_mode=False):
         self.project_id = project_id
         self.credential_id = credential_id
         self.private_key_path = private_key_path
-        self.base_url = QWEATHER_PAID_BASE if use_paid_api else QWEATHER_BASE
+        self.api_key = api_key
+        self.api_host = api_host
+        self.base_url = f"https://{api_host}/v7"
         self.mock_mode = mock_mode
 
     def fetch_grid_forecast(self, lat, lon):
@@ -72,6 +75,14 @@ class CMAClient:
         return alerts
 
     def _qweather_get(self, url, location):
+        full_url = f"{url}?location={location}"
+
+        # API Key auth (simpler, preferred)
+        if self.api_key:
+            full_url += f"&key={self.api_key}"
+            return self._http_get(full_url)
+
+        # JWT auth fallback
         if not self.project_id or not self.credential_id or not self.private_key_path:
             return None
         try:
@@ -80,7 +91,6 @@ class CMAClient:
         except Exception:
             return None
 
-        full_url = f"{url}?location={location}"
         req = urllib.request.Request(full_url)
         req.add_header("Authorization", f"Bearer {token}")
         try:
@@ -89,6 +99,22 @@ class CMAClient:
                 if body.get("code") != "200":
                     return None
                 return body
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
+            return None
+
+    def _http_get(self, url):
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read()
+                # QWeather responses are gzip-compressed
+                if body[:2] == b'\x1f\x8b':
+                    import gzip
+                    body = gzip.decompress(body)
+                data = json.loads(body.decode())
+                if data.get("code") != "200":
+                    return None
+                return data
         except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
             return None
 

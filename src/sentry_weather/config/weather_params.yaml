@@ -5,8 +5,9 @@ weather_node:
     city: ""
     fetch_interval_sec: 10800
     cache_path: "/tmp/sentry_weather_cache.json"
+    qweather_api_key: "cf5e0b86d583444da091171178019532"
+    qweather_api_host: "mv4ewv56hj.re.qweatherapi.com"
     qweather_project_id: "3MTGWPJB8K"
     qweather_credential_id: "C4B99K2NAQ"
     qweather_private_key_path: "config/qweather_private.pem"
-    use_paid_api: false
     mock_mode: false

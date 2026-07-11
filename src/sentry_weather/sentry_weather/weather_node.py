@@ -14,10 +14,11 @@ class WeatherNode(Node):
         self.declare_parameter('city', '')
         self.declare_parameter('fetch_interval_sec', 10800)
         self.declare_parameter('cache_path', '/tmp/sentry_weather_cache.json')
+        self.declare_parameter('qweather_api_key', '')
+        self.declare_parameter('qweather_api_host', 'devapi.qweather.com')
         self.declare_parameter('qweather_project_id', '')
         self.declare_parameter('qweather_credential_id', '')
         self.declare_parameter('qweather_private_key_path', '')
-        self.declare_parameter('use_paid_api', False)
         self.declare_parameter('mock_mode', True)
 
         self.lat = self.get_parameter('lat').value
@@ -27,16 +28,18 @@ class WeatherNode(Node):
         self.mock_mode = self.get_parameter('mock_mode').value
 
         cache_path = self.get_parameter('cache_path').value
+        api_key = self.get_parameter('qweather_api_key').value
+        api_host = self.get_parameter('qweather_api_host').value
         project_id = self.get_parameter('qweather_project_id').value
         credential_id = self.get_parameter('qweather_credential_id').value
         private_key_path = self.get_parameter('qweather_private_key_path').value
-        use_paid_api = self.get_parameter('use_paid_api').value
 
         self.cache = CacheManager(cache_path)
         self.client = CMAClient(project_id=project_id,
                                 credential_id=credential_id,
                                 private_key_path=private_key_path,
-                                use_paid_api=use_paid_api,
+                                api_key=api_key,
+                                api_host=api_host,
                                 mock_mode=self.mock_mode)
         self.last_published = None
 
