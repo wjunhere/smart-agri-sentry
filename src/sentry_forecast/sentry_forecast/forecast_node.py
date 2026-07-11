@@ -93,11 +93,11 @@ def weather_risk_model(hours, prediction_hours):
     return min(1.0, risk)
 
 
-def disaster_factor(disaster_alerts):
-    """Boost risk based on disaster warnings (0 to 0.3)."""
+def disaster_factor(disaster_alerts, cap=0.3):
+    """Boost risk based on disaster warnings (0 to cap)."""
     if not disaster_alerts:
         return 0.0
-    return 0.3
+    return cap
 
 
 ALERT_NONE = 'NONE'
@@ -281,7 +281,7 @@ class ForecastNode(Node):
         if weather_available:
             weather_risk = weather_risk_model(
                 self.last_weather["hours"], prediction_hours)
-            d_factor = disaster_factor(self.last_weather["disaster_alerts"])
+            d_factor = disaster_factor(self.last_weather["disaster_alerts"], boost_cap)
 
         # Hybrid blend
         blended = w_local * local_risk + w_weather * weather_risk

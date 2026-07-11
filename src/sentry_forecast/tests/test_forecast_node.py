@@ -179,13 +179,14 @@ def test_weather_risk_model_low_risk():
 def test_disaster_factor_with_matching_alerts():
     from sentry_forecast.forecast_node import disaster_factor
     alerts = ["暴雨蓝色预警", "大风黄色预警"]
-    factor = disaster_factor(alerts)
-    assert factor == 0.3
+    assert disaster_factor(alerts) == 0.3
+    assert disaster_factor(alerts, 0.5) == 0.5
 
 
 def test_disaster_factor_empty():
     from sentry_forecast.forecast_node import disaster_factor
     assert disaster_factor([]) == 0.0
+    assert disaster_factor([], 0.5) == 0.0
 
 
 def test_storm_warning_from_disaster_alerts(node):
