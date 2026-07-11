@@ -55,3 +55,7 @@ export function apiGetForecast() {
 export function getCameraUrl(): string {
   return BASE_URL + '/api/camera';
 }
+
+export function apiLLMAnalyze() {
+  return request<any>('POST', '/api/llm/analyze');
+}

@@ -56,6 +56,16 @@ const store = {
   missionWaypointLabels: [] as string[],
 
   cropType: 'tomato',
+
+  // LLM analysis
+  llmStatus: '',
+  llmSummary: '',
+  llmSuggestions: [] as string[],
+  llmRiskLevel: 'low',
+  llmFocusAreas: [] as string[],
+  llmNextCheck: '',
+  llmTrigger: '',
+  llmLoading: false,
 };
 
 type Store = typeof store;

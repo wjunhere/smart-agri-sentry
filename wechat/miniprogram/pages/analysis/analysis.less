@@ -14,3 +14,48 @@
   height: 100rpx; background: var(--bg-input); border: 1px solid var(--border);
   border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
 }
+
+.llm-card { border-left: 3px solid #A78BFA; }
+.llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12rpx; }
+.llm-status { display: flex; align-items: center; gap: 8rpx; font-size: 20rpx; }
+.llm-dot { width: 12rpx; height: 12rpx; border-radius: 50%; }
+.llm-dot-ok { background: var(--green); }
+.llm-dot-err { background: var(--red); }
+.llm-dot-loading { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
+
+.llm-loading {
+  display: flex; align-items: center; justify-content: center;
+  padding: 40rpx; font-size: 24rpx;
+}
+
+.llm-summary {
+  font-size: 26rpx; line-height: 1.7; color: var(--text);
+  display: block; margin-bottom: 16rpx;
+}
+
+.llm-suggestions { margin-bottom: 16rpx; }
+.llm-step {
+  font-size: 24rpx; color: var(--text-dim); line-height: 1.8;
+  display: block; padding-left: 8rpx;
+}
+
+.llm-tags { display: flex; flex-wrap: wrap; gap: 8rpx; margin-bottom: 12rpx; }
+.llm-tag {
+  font-size: 18rpx; padding: 4rpx 12rpx; border-radius: var(--radius-pill);
+  background: rgba(167,139,250,0.1); color: var(--purple);
+}
+
+.llm-footer { margin-bottom: 8rpx; }
+.llm-retry { padding: 16rpx; text-align: center; }
+
+.llm-action { text-align: center; margin-top: 16rpx; }
+.btn-deep {
+  display: inline-block; padding: 16rpx 48rpx;
+  background: rgba(167,139,250,0.1); border: 1px solid var(--purple);
+  border-radius: var(--radius); color: var(--purple);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}

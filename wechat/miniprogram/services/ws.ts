@@ -108,6 +108,19 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
     case 'alert':
       console.log('[WS] Alert:', data.title, data.message);
       break;
+
+    case 'llm':
+      updateStore({
+        llmStatus: data.status,
+        llmSummary: data.summary,
+        llmSuggestions: data.suggestions || [],
+        llmRiskLevel: data.risk_level,
+        llmFocusAreas: data.focus_areas || [],
+        llmNextCheck: data.next_check,
+        llmTrigger: data.trigger,
+        llmLoading: false,
+      });
+      break;
   }
 }
 

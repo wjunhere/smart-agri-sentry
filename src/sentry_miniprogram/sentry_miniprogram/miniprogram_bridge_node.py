@@ -102,6 +102,10 @@ class MiniProgramBridgeNode(Node):
         self.create_subscription(
             CompressedImage, '/out/compressed',
             self._on_camera_frame, 10)
+        from sentry_interfaces.msg import LLMAnalysis as LLMAnalysisMsg
+        self.create_subscription(
+            LLMAnalysisMsg, '/llm/analysis',
+            self._on_llm_analysis, 10)
 
     # --- Subscription callbacks ---
 
@@ -265,6 +269,21 @@ class MiniProgramBridgeNode(Node):
         self.get_logger().info(f"Crop type set to {crop}")
         return True
 
+    def _on_llm_analysis(self, msg):
+        self._push_ws({
+            'type': 'llm',
+            'ts': self._now_ms(),
+            'data': {
+                'status': msg.status,
+                'summary': msg.summary,
+                'suggestions': list(msg.suggestions),
+                'risk_level': msg.risk_level,
+                'focus_areas': list(msg.focus_areas),
+                'next_check': msg.next_check,
+                'trigger': msg.trigger,
+            }
+        })
+
     def get_status(self) -> dict:
         return {
             'mode': self.mode,
@@ -345,6 +364,38 @@ def get_app() -> FastAPI:
         crop = data.get('crop_type', '')
         ok = _node.set_crop_type(crop) if _node else False
         return {'status': 'ok' if ok else 'error'}
+
+    @_app.post('/api/llm/analyze')
+    async def api_llm_analyze():
+        if _node is None:
+            return {'status': 'error', 'summary': 'Bridge node not ready'}
+        from sentry_interfaces.srv import LLMAnalyze
+        srv = _node.create_client(LLMAnalyze, '/llm/analyze')
+        if not srv.wait_for_service(timeout_sec=5.0):
+            return {'status': 'error', 'summary': 'LLM service not available'}
+        req = LLMAnalyze.Request()
+        future = srv.call_async(req)
+        event = threading.Event()
+        result = {}
+        def done_cb(fut):
+            try:
+                resp = fut.result()
+                result['status'] = resp.status
+                result['summary'] = resp.summary
+                result['suggestions'] = list(resp.suggestions)
+                result['risk_level'] = resp.risk_level
+                result['focus_areas'] = list(resp.focus_areas)
+                result['next_check'] = resp.next_check
+                result['trigger'] = resp.trigger
+            except Exception as e:
+                result['status'] = 'error'
+                result['summary'] = str(e)
+            finally:
+                event.set()
+        future.add_done_callback(done_cb)
+        if not event.wait(timeout=65.0):
+            return {'status': 'timeout', 'summary': 'LLM request timed out'}
+        return result
 
     @_app.get('/api/camera')
     async def api_camera():

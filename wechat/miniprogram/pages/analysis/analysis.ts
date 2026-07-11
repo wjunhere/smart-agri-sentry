@@ -1,5 +1,5 @@
 import { getStore, onStoreChange } from '../../services/store';
-import { apiGetForecast } from '../../services/api';
+import { apiGetForecast, apiLLMAnalyze } from '../../services/api';
 
 const DISEASE_NAMES: Record<string, string[]> = {
   tomato: ['早疫病', '晚疫病', '白粉病', '灰霉病', '叶霉病', '斑枯病', '健康'],
@@ -19,6 +19,14 @@ Component({
     forecastActive: false,
     forecastDescription: '',
     forecastHoursAhead: 0,
+    llmStatus: '',
+    llmSummary: '',
+    llmSuggestions: [] as string[],
+    llmRiskLevel: 'low',
+    llmFocusAreas: [] as string[],
+    llmNextCheck: '',
+    llmTrigger: '',
+    llmLoading: false,
   },
   lifetimes: {
     attached() {
@@ -55,6 +63,14 @@ Component({
         advisorySteps: s.advisorySteps,
         forecastActive: s.forecastActive,
         forecastDescription: s.forecastDescription,
+        llmStatus: s.llmStatus,
+        llmSummary: s.llmSummary,
+        llmSuggestions: s.llmSuggestions || [],
+        llmRiskLevel: s.llmRiskLevel,
+        llmFocusAreas: s.llmFocusAreas || [],
+        llmNextCheck: s.llmNextCheck,
+        llmTrigger: s.llmTrigger,
+        llmLoading: s.llmLoading,
       });
     },
 
@@ -62,6 +78,25 @@ Component({
       try {
         await apiGetForecast();
       } catch (_) {}
+    },
+
+    onDeepAnalysis() {
+      if (this.data.llmLoading) return;
+      this.setData({ llmLoading: true });
+      apiLLMAnalyze().then((res: any) => {
+        this.setData({
+          llmLoading: false,
+          llmStatus: res.status || 'error',
+          llmSummary: res.summary || '',
+          llmSuggestions: res.suggestions || [],
+          llmRiskLevel: res.risk_level || 'low',
+          llmFocusAreas: res.focus_areas || [],
+          llmNextCheck: res.next_check || '',
+          llmTrigger: 'manual',
+        });
+      }).catch(() => {
+        this.setData({ llmLoading: false, llmStatus: 'error', llmSummary: '请求失败，请重试' });
+      });
     },
   },
 })
