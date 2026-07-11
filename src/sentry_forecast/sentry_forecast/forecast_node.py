@@ -273,19 +273,18 @@ class ForecastNode(Node):
         humidity_slope = TrendForecaster.linear_trend(self.history, 'humidity')
 
         # Weather risk
-        weather_risk = 0.0
-        d_factor = 0.0
         weather_available = (self.last_weather is not None
                              and (now - self.last_weather_ts) <= self.weather_stale_sec)
 
+        # Hybrid blend
         if weather_available:
             weather_risk = weather_risk_model(
                 self.last_weather["hours"], prediction_hours)
             d_factor = disaster_factor(self.last_weather["disaster_alerts"], boost_cap)
-
-        # Hybrid blend
-        blended = w_local * local_risk + w_weather * weather_risk
-        blended = max(0.0, min(1.0, blended + d_factor))
+            blended = w_local * local_risk + w_weather * weather_risk
+            blended = max(0.0, min(1.0, blended + d_factor))
+        else:
+            blended = local_risk
 
         alert_type = ALERT_NONE
         description = '风险平稳，无需预警'

@@ -56,7 +56,7 @@ class WeatherNode(Node):
         self._fetch_and_publish()
 
         self.timer = self.create_timer(float(self.fetch_interval_sec), self._on_timer)
-        self.get_logger().info('Weather node ready (mock=%s)', str(self.mock_mode))
+        self.get_logger().info(f'Weather node ready (mock={self.mock_mode})')
 
     def _on_timer(self):
         self._fetch_and_publish()
