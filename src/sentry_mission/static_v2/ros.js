@@ -329,19 +329,35 @@ function callSetCropType(cropType) {
     { x: 0.0, y: 0.6, yaw: 3.1416 },
   ];
 
-  // Weather mock
-  store.weatherDays = [
-    { day_offset: 0, temp_high: 28, temp_low: 20, humidity: 75, precipitation: 0, wind_speed: 3, weather_desc: '晴' },
-    { day_offset: 1, temp_high: 30, temp_low: 22, humidity: 80, precipitation: 2, wind_speed: 5, weather_desc: '多云转小雨' },
-    { day_offset: 2, temp_high: 26, temp_low: 19, humidity: 92, precipitation: 25, wind_speed: 12, weather_desc: '暴雨' },
-    { day_offset: 3, temp_high: 24, temp_low: 17, humidity: 88, precipitation: 8, wind_speed: 8, weather_desc: '中雨转阴' },
-    { day_offset: 4, temp_high: 27, temp_low: 18, humidity: 70, precipitation: 1, wind_speed: 4, weather_desc: '多云' },
-    { day_offset: 5, temp_high: 29, temp_low: 20, humidity: 65, precipitation: 0, wind_speed: 3, weather_desc: '晴' },
-    { day_offset: 6, temp_high: 31, temp_low: 21, humidity: 60, precipitation: 0, wind_speed: 2, weather_desc: '晴' },
-  ];
-  store.weatherDisasterAlerts = ['暴雨蓝色预警'];
-  store.weatherStale = false;
-  store.weatherCity = '北京';
+  // Weather — fetch from local proxy, fallback to static mock
+  (function initWeather() {
+    const WEATHER_PROXY = 'http://localhost:8090/weather.json';
+    const REFRESH_MS = 3600000; // 1 hour
+
+    function applyWeather(data) {
+      store.weatherDays = (data.days || []).map(d => ({
+        day_offset: d.day_offset, temp_high: d.temp_high, temp_low: d.temp_low,
+        humidity: d.humidity, precipitation: d.precipitation,
+        wind_speed: d.wind_speed, weather_desc: d.weather_desc,
+      }));
+      store.weatherDisasterAlerts = data.disaster_alerts || [];
+      store.weatherCity = data.city || '';
+      store.weatherLat = data.lat || 32.06;
+      store.weatherLon = data.lon || 118.79;
+      store.weatherStale = false;
+    }
+
+    function fetchWeather() {
+      fetch(WEATHER_PROXY)
+        .then(r => r.json())
+        .then(data => { if (data && data.days) applyWeather(data); })
+        .catch(() => {}); // silent fallback to existing data
+    }
+
+    // Try immediately, then every hour
+    fetchWeather();
+    setInterval(fetchWeather, REFRESH_MS);
+  })();
 
   // === MOCK START: forecast alerts (remove after test) ===
   const now = Date.now();
