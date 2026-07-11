@@ -1,0 +1,5 @@
+<view class="dv-wrap {{color ? 'dv-' + color : ''}}">
+  <text class="dv-label">{{label}}</text>
+  <text class="dv-val">{{value}}</text>
+  <text class="dv-unit" wx:if="{{unit}}">{{unit}}</text>
+</view>

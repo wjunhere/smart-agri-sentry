@@ -1,0 +1,5 @@
+<view class="alert alert-{{level}}" wx:if="{{title}}">
+  <text class="alert-title">{{title}}</text>
+  <text class="alert-msg" wx:if="{{message}}">{{message}}</text>
+  <slot />
+</view>

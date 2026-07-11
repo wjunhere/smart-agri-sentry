@@ -1,0 +1,28 @@
+.dv-wrap {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12rpx 16rpx;
+  display: flex;
+  flex-direction: column;
+}
+.dv-label {
+  font-size: 18rpx;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.dv-val {
+  font-size: 36rpx;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  color: var(--text);
+}
+.dv-unit {
+  font-size: 20rpx;
+  color: var(--text-dim);
+}
+.dv-green  .dv-val { color: var(--green); }
+.dv-amber  .dv-val { color: var(--amber); }
+.dv-red    .dv-val { color: var(--red); }
+.dv-blue   .dv-val { color: var(--blue); }
