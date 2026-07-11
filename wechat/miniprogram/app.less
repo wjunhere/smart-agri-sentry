@@ -1,0 +1,60 @@
+/* Grafana Dark Theme — matches static_v2/style.css */
+
+page {
+  --bg-deep:    #0B1120;
+  --bg-surface: #0F172A;
+  --bg-card:    #111827;
+  --bg-hover:   #1E293B;
+  --bg-input:   #0F172A;
+  --border:     #1F2937;
+  --border-hi:  #374151;
+  --text:       #F8FAFC;
+  --text-dim:   #94A3B8;
+  --text-muted: #64748B;
+  --green:      #10B981;
+  --amber:      #F59E0B;
+  --red:        #EF4444;
+  --blue:       #38BDF8;
+  --purple:     #A78BFA;
+  --grey:       #6B7280;
+  --radius:     4px;
+  --radius-pill: 6px;
+
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  font-size: 28rpx;
+  line-height: 1.5;
+  height: 100%;
+}
+
+/* Shared card style */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16rpx 20rpx;
+}
+
+.card-header {
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12rpx;
+}
+
+/* Monospace for data values */
+.mono {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* Status colors */
+.green  { color: var(--green); }
+.amber  { color: var(--amber); }
+.red    { color: var(--red); }
+.blue   { color: var(--blue); }
+.purple { color: var(--purple); }
+.dim    { color: var(--text-dim); }
+.muted  { color: var(--text-muted); }

@@ -1,0 +1,50 @@
+{
+  "pages": [
+    "pages/control/control",
+    "pages/monitor/monitor",
+    "pages/analysis/analysis",
+    "pages/weather/weather"
+  ],
+  "tabBar": {
+    "color": "#64748B",
+    "selectedColor": "#38BDF8",
+    "backgroundColor": "#111827",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/control/control",
+        "text": "控制"
+      },
+      {
+        "pagePath": "pages/monitor/monitor",
+        "text": "监测"
+      },
+      {
+        "pagePath": "pages/analysis/analysis",
+        "text": "分析"
+      },
+      {
+        "pagePath": "pages/weather/weather",
+        "text": "天气"
+      }
+    ]
+  },
+  "window": {
+    "navigationBarTextStyle": "white",
+    "navigationBarBackgroundColor": "#0F172A",
+    "backgroundColor": "#0B1120",
+    "navigationStyle": "custom"
+  },
+  "style": "v2",
+  "rendererOptions": {
+    "skyline": {
+      "defaultDisplayBlock": true,
+      "disableABTest": true,
+      "sdkVersionBegin": "3.0.0",
+      "sdkVersionEnd": "15.255.255"
+    }
+  },
+  "componentFramework": "glass-easel",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}
