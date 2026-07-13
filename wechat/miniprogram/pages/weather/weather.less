@@ -39,10 +39,23 @@
 .sparkline-wrap { margin: 8rpx 0; }
 .spark-track {
   display: flex; align-items: flex-end; gap: 2rpx;
-  height: 120rpx; padding: 0 4rpx;
+  height: 120rpx; padding: 0 4rpx; position: relative;
 }
 .spark-col {
-  border-radius: 2rpx 2rpx 0 0; min-width: 4rpx;
+  border-radius: 2rpx 2rpx 0 0; min-width: 4rpx; position: relative;
+}
+.spark-dot {
+  position: absolute; top: -5rpx; left: 50%; transform: translateX(-50%);
+  width: 10rpx; height: 10rpx; border-radius: 50%;
+  border: 2rpx solid var(--bg-card);
+}
+.spark-bridge {
+  position: absolute; height: 2rpx; opacity: 0.5;
+  background: rgba(148,163,184,0.6);
+}
+.spark-riser {
+  position: absolute; width: 2rpx; opacity: 0.5;
+  background: rgba(148,163,184,0.6);
 }
 .spark-xlabels {
   display: flex; justify-content: space-between;

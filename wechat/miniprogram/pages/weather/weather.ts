@@ -48,7 +48,27 @@ function buildChart(days: any[], hours: any[]) {
     color: tempColor(h.temp, hMin, hMax),
   }));
 
-  return { dayBars, hPoints, hMax, hMin };
+  // Stepped connectors: horizontal bridges between adjacent bars
+  const N = hPoints.length;
+  const stepPct = 100 / N;
+  const hBridges: any[] = [];
+  for (let i = 0; i < N - 1; i++) {
+    const y1 = parseFloat(hPoints[i].y);
+    const y2 = parseFloat(hPoints[i + 1].y);
+    const bridgeY = Math.min(y1, y2);
+    const leftPct = (i + 1) * stepPct;
+    hBridges.push({
+      bottom: bridgeY.toFixed(1),
+      left: leftPct.toFixed(1),
+      width: stepPct.toFixed(1),
+      // Vertical riser from bridge to taller bar
+      riserH: Math.abs(y2 - y1).toFixed(1),
+      riserLeft: ((i + 1) * stepPct).toFixed(1),
+      riserBottom: bridgeY.toFixed(1),
+    });
+  }
+
+  return { dayBars, hPoints, hBridges, hMax, hMin };
 }
 
 Component({
@@ -63,6 +83,7 @@ Component({
     stale: false,
     dayBars: [] as any[],
     hPoints: [] as Array<{y: string, temp: number, color: string, hour_offset: number}>,
+    hBridges: [] as any[],
     hMax: 40, hMin: 0,
   },
   lifetimes: {
@@ -95,6 +116,7 @@ Component({
         stale: s.weatherStale,
         dayBars: chart.dayBars,
         hPoints: chart.hPoints,
+        hBridges: chart.hBridges,
         hMax: chart.hMax,
         hMin: chart.hMin,
       });
