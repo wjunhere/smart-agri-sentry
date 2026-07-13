@@ -2,7 +2,7 @@ import { getStore, onStoreChange } from '../../services/store';
 import { getCameraSnapshotUrl } from '../../services/api';
 import { formatTemp, formatHumidity, formatCO2, formatNPK } from '../../utils/format';
 
-const REFRESH_MS = 200;
+const REFRESH_MS = 150;
 
 Component({
   data: {
@@ -46,6 +46,8 @@ Component({
   methods: {
     _camTimer: null as any,
     _errCount: 0,
+    _pendingA: false,
+    _pendingB: false,
 
     sync(s: any) {
       this.setData({
@@ -68,6 +70,8 @@ Component({
     startCamera() {
       this.stopCamera();
       this._errCount = 0;
+      this._pendingA = true;
+      this._pendingB = false;
       this.setData({ cameraLoading: true });
       this.setData({ active: 'A', urlA: getCameraSnapshotUrl() + '?t=' + Date.now() });
       this._camTimer = setInterval(() => this._tick(), REFRESH_MS);
@@ -83,10 +87,13 @@ Component({
     _tick() {
       const next = getCameraSnapshotUrl() + '?t=' + Date.now();
       const { active } = this.data;
-      // Preload the next frame on the hidden image
-      if (active === 'A') {
+      // Preload the next frame on the hidden image, but don't overwrite one
+      // that is still loading to avoid cancelling in-flight requests.
+      if (active === 'A' && !this._pendingB) {
+        this._pendingB = true;
         this.setData({ urlB: next });
-      } else {
+      } else if (active === 'B' && !this._pendingA) {
+        this._pendingA = true;
         this.setData({ urlA: next });
       }
     },
@@ -94,6 +101,8 @@ Component({
     onImgLoad(e: any) {
       const key = (e.currentTarget.dataset?.key as string) || '';
       const { active } = this.data;
+      if (key === 'A') this._pendingA = false;
+      if (key === 'B') this._pendingB = false;
       // Only swap when the hidden image finishes loading
       if (key && key !== active) {
         this.setData({ active: key, cameraLoading: false });
@@ -104,13 +113,17 @@ Component({
 
     onImgError(e: any) {
       const key = (e.currentTarget.dataset?.key as string) || '';
+      if (key === 'A') this._pendingA = false;
+      if (key === 'B') this._pendingB = false;
       this._errCount += 1;
       if (this._errCount > 3) return;
       setTimeout(() => {
         const next = getCameraSnapshotUrl() + '?t=' + Date.now();
         if (key === 'A') {
+          this._pendingA = true;
           this.setData({ urlA: next });
         } else if (key === 'B') {
+          this._pendingB = true;
           this.setData({ urlB: next });
         }
       }, 500);

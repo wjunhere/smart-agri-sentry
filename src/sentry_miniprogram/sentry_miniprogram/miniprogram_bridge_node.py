@@ -54,6 +54,7 @@ class MiniProgramBridgeNode(Node):
 
         # Camera frame
         self._latest_frame = None
+        self._latest_jpeg = None
 
         # Subscriptions
         self._setup_subscriptions()
@@ -221,8 +222,11 @@ class MiniProgramBridgeNode(Node):
         import numpy as np
         np_arr = np.frombuffer(msg.data, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if frame is not None:
-            self._latest_frame = frame
+        if frame is None:
+            return
+        self._latest_frame = frame
+        _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        self._latest_jpeg = jpeg.tobytes()
 
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
@@ -406,14 +410,12 @@ def get_app() -> FastAPI:
     @_app.get('/api/camera')
     async def api_camera():
         async def generate():
-            import cv2
             while True:
                 try:
-                    if _node is not None and _node._latest_frame is not None:
-                        img = _node._latest_frame
-                        _, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    if _node is not None and _node._latest_jpeg is not None:
                         yield (b'--frame\r\n'
-                               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                               b'Content-Type: image/jpeg\r\n\r\n'
+                               + _node._latest_jpeg + b'\r\n')
                 except Exception:
                     pass
                 await asyncio.sleep(0.1)
@@ -425,14 +427,11 @@ def get_app() -> FastAPI:
 
     @_app.get('/api/camera/snapshot')
     async def api_camera_snapshot():
-        import cv2
         import io
-        if _node is None or _node._latest_frame is None:
+        if _node is None or _node._latest_jpeg is None:
             return {'status': 'error', 'message': 'No camera frame available'}
-        img = _node._latest_frame
-        _, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 70])
         return StreamingResponse(
-            io.BytesIO(jpeg.tobytes()),
+            io.BytesIO(_node._latest_jpeg),
             media_type='image/jpeg',
             headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
         )
