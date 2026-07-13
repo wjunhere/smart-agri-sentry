@@ -254,3 +254,27 @@ Madgwick 滤波器和 `robot_localization` EKF 都可能发布 `odom → base_li
 - CRC-8/MAXIM 无输入输出反射，与 MCU 端 `lora_frame.c` 保持一致
 - E22 模块必须处于透传模式（Mode 0），接收端固件已修复默认 work_mode 从 2→0
 - 集成测试记录见 `test/stm32_cj702_lora_hal/TESTS.md`
+
+---
+
+## ADR-010：病害分类 healthy 阈值策略
+
+**状态**：已实施  
+**日期**：2026-07-13
+
+### 背景
+
+MobileNetV3 7 类番茄病害模型在板端测试中 healthy 类别召回率仅 69.6%，大量健康植株被误判为病害。需要一种机制降低误报率。
+
+### 决策
+
+在 `vision_diagnosis_node` 中新增 `healthy_threshold` 参数（默认 0.15）：
+
+- 若 softmax 后 `healthy` 类概率 ≥ 阈值 → 强制预测为 healthy
+- 否则 → argmax 所有 7 类
+
+### 后果
+
+- 板端 1995 张测试集验证：总体准确率 89.62% → 91.58%，healthy 召回率 69.6% → 84.5%
+- 阈值可通过 ROS2 参数动态调整（`--ros-args -p healthy_threshold:=0.2`）
+- 实现见 `src/sentry_vision/sentry_vision/vision_diagnosis_node.py:72-77`

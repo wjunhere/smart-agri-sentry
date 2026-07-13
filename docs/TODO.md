@@ -1,6 +1,6 @@
 # 当前任务与阻塞项
 
-> 更新日期：2026-07-05
+> 更新日期：2026-07-13
 
 ---
 
@@ -43,6 +43,8 @@
 - [x] **训练小麦病害模型**：MobileNetV3-Small 5 类已量化部署
 - [x] **训练草莓病害模型**：MobileNetV3-Small 8 类已量化部署
 - [x] **建立 ONNX → .bin 转换流程**：`hb_mapper` 量化管线已建立
+- [x] **番茄病害模型板端测试 (2026-07-13)**：MobilenetV3-Large 准确率 91.58%（healthy_threshold=0.15），7 类 1995 张测试集
+- [x] **病害分类 healthy 阈值 (2026-07-13)**：`vision_diagnosis_node` 新增 `healthy_threshold` 参数（默认 0.15），healthy 召回率 69.6%→84.5%
 
 ### 固定环境节点
 
@@ -58,8 +60,9 @@
 - [ ] **验证 `YbImuLib` 在 RDK X5 可用**
 - [ ] **验证 `rosbag2_py` 在 RDK X5 可用**（如不可用，启用 JSON fallback）
 - [ ] **验证 `nav2_bringup`、`robot_localization`、`imu_filter_madgwick` 已安装**
-- [ ] **板端 `colcon build` 全包通过**
-- [ ] **板端 `colcon test` 通过**
+- [x] **LLM + 小程序板端部署验证 (2026-07-13)**：`sentry_interfaces`/`sentry_llm`/`sentry_miniprogram` colcon build 通过，`llm_advisor_node` + `miniprogram_bridge_node` 启动正常
+- [x] **天气数据链路验证 (2026-07-13)**：`sentry_weather` mock 60s 周期，`/api/weather` 端到端通过，字段名对齐+浮点精度修复
+- [ ] **板端 `colcon test` 全通过**（bridge mock 测试因 Python 版本差异跳过）
 
 ---
 
@@ -78,6 +81,12 @@
 
 ## 近期已完成
 
+- [x] **番茄病害模型板端测试 (2026-07-13)**：MobilenetV3-Large 准确率 91.58%（healthy_threshold=0.15）
+- [x] **病害分类 healthy 阈值**：`vision_diagnosis_node` 新增参数，healthy 召回率 69.6%→84.5%
+- [x] **LLM 农情分析板端部署**：`sentry_llm` 构建通过，API key 加载问题修复（`.bashrc` 守卫）
+- [x] **天气数据链路修复**：字段名对齐、浮点精度、mock 周期 60s
+- [x] **微信小程序天气页增强**：emoji 图标、7 日温度柱状图、逐时 CSS 柱状图（蓝紫渐变）
+- [x] **`sentry_bringup` launch 安装修复**：`setup.py` 改用 glob 匹配所有 launch 文件
 - [x] **固定环境节点三传感器驱动**：CJ702 空气 + 叶面 RS485 ModBus + 土壤 TTL ModBus（NPK/EC/pH），含地址自动探针与 OpenOCD 调试支持
 - [x] **底盘运动控制工具**：`chassis_cmd` 编码器闭环运动测试 + `imu_turn_controller` IMU 陀螺仪闭环原地转弯（精度 ~4%）
 - [x] Phase 2 节点：`forecast_node`、`advisory_node`、`data_logger_node` 落地
