@@ -41,28 +41,7 @@ function buildChart(days: any[], hours: any[]) {
     label: `+${h.hour_offset}h`,
   }));
 
-  // Line segments connecting consecutive points
-  const N = hPoints.length;
-  const stepPct = 100 / (N - 1 || 1);
-  const hSegments: any[] = [];
-  for (let i = 0; i < N - 1; i++) {
-    const x1 = i * stepPct;
-    const y1 = parseFloat(hPoints[i].y);
-    const x2 = (i + 1) * stepPct;
-    const y2 = parseFloat(hPoints[i + 1].y);
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-    hSegments.push({
-      left: x1.toFixed(1),
-      bottom: y1.toFixed(1),
-      width: len.toFixed(1),
-      angle: angle.toFixed(1),
-    });
-  }
-
-  return { dayBars, hPoints, hSegments, dayMax, dayMin, hMax, hMin };
+  return { dayBars, hPoints, dayMax, dayMin, hMax, hMin };
 }
 
 Component({
@@ -77,7 +56,6 @@ Component({
     stale: false,
     dayBars: [] as any[],
     hPoints: [] as any[],
-    hSegments: [] as any[],
     dayMax: 40, dayMin: 0,
     hMax: 40, hMin: 0,
   },
@@ -111,7 +89,6 @@ Component({
         stale: s.weatherStale,
         dayBars: chart.dayBars,
         hPoints: chart.hPoints,
-        hSegments: chart.hSegments,
         dayMax: chart.dayMax,
         dayMin: chart.dayMin,
         hMax: chart.hMax,

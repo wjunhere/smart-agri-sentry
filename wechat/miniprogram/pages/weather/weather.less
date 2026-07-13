@@ -39,20 +39,12 @@
 .sparkline {
   position: relative; height: 100rpx; margin: 0 16rpx;
   border-bottom: 1rpx solid var(--border);
+  display: flex; align-items: flex-end;
 }
-.spark-seg {
-  position: absolute; height: 2rpx;
-  background: var(--blue); opacity: 0.5;
-  transform-origin: left center;
-}
-.spark-dot {
-  position: absolute; width: 0; height: 0;
-  transform: translate(-50%, 50%);
-}
-.spark-dot-inner {
-  width: 8rpx; height: 8rpx; border-radius: 50%;
-  background: var(--blue);
-  border: 1px solid var(--bg-card);
+.spark-bar {
+  position: absolute; bottom: 0;
+  background: var(--blue); opacity: 0.7;
+  border-radius: 1rpx 1rpx 0 0; min-width: 4rpx;
 }
 .spark-labels {
   display: flex; justify-content: space-between;
