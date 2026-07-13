@@ -27,8 +27,15 @@
     <text class="card-header">🕐 逐时预报</text>
     <view class="sparkline-wrap">
       <view class="spark-track">
+        <!-- horizontal bridges -->
+        <view class="spark-bridge" wx:for="{{hBridges}}" wx:key="index"
+              style="left:{{item.l1}}%;bottom:{{item.b1}}%;width:{{item.w}}%"></view>
+        <!-- vertical risers -->
+        <view class="spark-riser" wx:for="{{hRisers}}" wx:key="index"
+              style="left:{{item.l}}%;bottom:{{item.b}}%;height:{{item.h}}%"></view>
+        <!-- bars + dots -->
         <view class="spark-col" wx:for="{{hPoints}}" wx:key="index"
-              style="height:{{item.y}}%;background:{{item.color}};flex:1">
+              style="left:{{item.l}}%;height:{{item.y}}%;width:{{barW}}%;background:{{item.color}}">
           <view class="spark-dot"></view>
         </view>
       </view>
