@@ -25,18 +25,10 @@
 
   <view class="card">
     <text class="card-header">🕐 逐时预报</text>
-    <view class="sparkline">
-      <view class="spark-bar" wx:for="{{hPoints}}" wx:key="index"
-            style="left:{{index * (100 / hPoints.length)}}%;height:{{item.y}}%;width:{{100 / hPoints.length}}%"></view>
+    <view class="sparkline-wrap">
+      <canvas type="2d" id="sparkline-canvas" class="sparkline-canvas"></canvas>
     </view>
-    <view class="spark-labels">
-      <text class="dim" style="font-size:16rpx">+0h</text>
-      <text class="dim" style="font-size:16rpx">+6h</text>
-      <text class="dim" style="font-size:16rpx">+12h</text>
-      <text class="dim" style="font-size:16rpx">+18h</text>
-      <text class="dim" style="font-size:16rpx">+24h</text>
-    </view>
-    <scroll-view class="fc-scroll" scroll-x style="margin-top:16rpx">
+    <scroll-view class="fc-scroll" scroll-x style="margin-top:8rpx">
       <view class="fc-item" wx:for="{{hours}}" wx:key="index">
         <text class="dim" style="font-size:18rpx">+{{item.hour_offset}}h</text>
         <text class="mono" style="font-weight:600">{{item.temp}}°</text>
