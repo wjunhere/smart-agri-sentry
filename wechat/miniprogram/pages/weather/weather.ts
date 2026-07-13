@@ -30,8 +30,8 @@ Component({
       const day0 = s.weatherDays && s.weatherDays[0];
       this.setData({
         city: s.weatherCity || '--',
-        currentTemp: day0 ? day0.high + '°' : '--',
-        currentDesc: day0 ? day0.desc : '--',
+        currentTemp: day0 ? day0.temp_high + '°' : '--',
+        currentDesc: day0 ? day0.weather_desc : '--',
         humidity: '--',
         days: s.weatherDays || [],
         hours: s.weatherHours || [],

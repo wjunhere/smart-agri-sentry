@@ -30,8 +30,8 @@ const store = {
   forecastHoursAhead: 0,
 
   weatherCity: '',
-  weatherDays: [] as Array<{high: number, low: number, icon: string, desc: string}>,
-  weatherHours: [] as Array<{time: string, temp: number, icon: string, desc: string}>,
+  weatherDays: [] as Array<{day_offset: number, temp_high: number, temp_low: number, humidity: number, precipitation: number, wind_speed: number, weather_desc: string}>,
+  weatherHours: [] as Array<{hour_offset: number, temp: number, humidity: number, precipitation: number, wind_speed: number}>,
   weatherDisasterAlerts: [] as string[],
   weatherStale: false,
 

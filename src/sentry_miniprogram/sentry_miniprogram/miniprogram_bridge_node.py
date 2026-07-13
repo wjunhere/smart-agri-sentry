@@ -175,9 +175,14 @@ class MiniProgramBridgeNode(Node):
             'city': msg.city,
             'lat': msg.lat,
             'lon': msg.lon,
-            'days': [{'high': d.high, 'low': d.low, 'icon': d.icon, 'desc': d.desc}
+            'days': [{'day_offset': d.day_offset, 'temp_high': d.temp_high,
+                      'temp_low': d.temp_low, 'humidity': d.humidity,
+                      'precipitation': d.precipitation, 'wind_speed': d.wind_speed,
+                      'weather_desc': d.weather_desc}
                      for d in msg.days],
-            'hours': [{'time': h.time, 'temp': h.temp, 'icon': h.icon, 'desc': h.desc}
+            'hours': [{'hour_offset': h.hour_offset, 'temp': h.temp,
+                       'humidity': h.humidity, 'precipitation': h.precipitation,
+                       'wind_speed': h.wind_speed}
                       for h in msg.hours],
             'disaster_alerts': list(msg.disaster_alerts),
             'stale': msg.stale,
