@@ -29,10 +29,17 @@ Component({
       const s = getStore();
       this.sync(s);
       this._unsub = onStoreChange((s) => this.sync(s));
-      this.startCamera();
     },
     detached() {
       if (this._unsub) this._unsub();
+      this.stopCamera();
+    },
+  },
+  pageLifetimes: {
+    show() {
+      this.startCamera();
+    },
+    hide() {
       this.stopCamera();
     },
   },
@@ -58,6 +65,7 @@ Component({
     },
 
     startCamera() {
+      this.stopCamera();
       this.setData({ cameraLoading: true });
       this.setData({ active: 'A', urlA: getCameraUrl() + '?t=' + Date.now() });
       this._camTimer = setInterval(() => this._tick(), REFRESH_MS);
