@@ -28,7 +28,7 @@
     <view class="sparkline-wrap">
       <view class="spark-track">
         <view class="spark-col" wx:for="{{hBars}}" wx:key="index"
-              style="height:{{item.hPct}}%;flex:1"></view>
+              style="height:{{item.hPct}}%;flex:1;background:{{item.color}}"></view>
       </view>
       <view class="spark-xlabels">
         <text class="dim" style="font-size:16rpx">+0h</text>

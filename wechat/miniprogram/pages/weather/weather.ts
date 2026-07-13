@@ -16,6 +16,15 @@ function weatherIcon(desc: string): string {
   return '🌤️';
 }
 
+function blueShade(t: number, tMin: number, tMax: number): string {
+  const ratio = tMax > tMin ? (t - tMin) / (tMax - tMin) : 0.5;
+  // Dark cool blue → bright warm blue
+  const r = Math.round(30 + ratio * 86);   // 30 → 116
+  const g = Math.round(64 + ratio * 152);  // 64 → 216
+  const b = Math.round(150 + ratio * 105); // 150 → 255
+  return `rgb(${r},${g},${b})`;
+}
+
 function buildChart(days: any[], hours: any[]) {
   const dayTemps = days.flatMap(d => [d.temp_high, d.temp_low]);
   const dayMax = Math.max(...dayTemps, 10);
@@ -36,6 +45,7 @@ function buildChart(days: any[], hours: any[]) {
   const hBars = h24.map(h => ({
     ...h,
     hPct: ((h.temp - hMin) / hRange * 100).toFixed(1),
+    color: blueShade(h.temp, hMin, hMax),
   }));
 
   return { dayBars, hBars, h24, hMax, hMin };
