@@ -4,7 +4,26 @@
   position: relative; background: #000; border-radius: var(--radius);
   overflow: hidden; height: 400rpx;
 }
-.camera { width: 100%; height: 100%; }
+.camera {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  transition: opacity 0.15s ease;
+}
+.camera.hidden { opacity: 0; }
+.camera-loading {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12rpx;
+  background: rgba(0,0,0,0.45);
+}
+.spinner {
+  width: 40rpx; height: 40rpx;
+  border: 4rpx solid rgba(255,255,255,0.2);
+  border-top-color: #38BDF8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .camera-hud {
   position: absolute; top: 12rpx; left: 16rpx;
   display: flex; gap: 24rpx; font-size: 20rpx;
