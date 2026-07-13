@@ -16,15 +16,6 @@ function weatherIcon(desc: string): string {
   return '🌤️';
 }
 
-function tempColor(t: number, tMin: number, tMax: number): string {
-  const ratio = tMax > tMin ? (t - tMin) / (tMax - tMin) : 0.5;
-  // Cool blue (#38BDF8) → warm amber (#F59E0B)
-  const r = Math.round(56 + ratio * (245 - 56));
-  const g = Math.round(189 + ratio * (158 - 189));
-  const b = Math.round(248 + ratio * (11 - 248));
-  return `rgb(${r},${g},${b})`;
-}
-
 function buildChart(days: any[], hours: any[]) {
   const dayTemps = days.flatMap(d => [d.temp_high, d.temp_low]);
   const dayMax = Math.max(...dayTemps, 10);
@@ -41,14 +32,8 @@ function buildChart(days: any[], hours: any[]) {
   const hTemps = h24.map(h => h.temp);
   const hMax = Math.max(...hTemps, 10);
   const hMin = Math.min(...hTemps, 0);
-  const hRange = hMax - hMin || 1;
-  const hPoints = h24.map(h => ({
-    ...h,
-    y: ((h.temp - hMin) / hRange * 100).toFixed(1),
-    color: tempColor(h.temp, hMin, hMax),
-  }));
 
-  return { dayBars, hPoints, hMax, hMin };
+  return { dayBars, h24, hMax, hMin };
 }
 
 Component({
@@ -62,7 +47,7 @@ Component({
     disasterAlerts: [] as string[],
     stale: false,
     dayBars: [] as any[],
-    hPoints: [] as Array<{y: string, temp: number, color: string, hour_offset: number}>,
+    h24: [] as any[],
     hMax: 40, hMin: 0,
   },
   lifetimes: {
@@ -94,7 +79,7 @@ Component({
         disasterAlerts: s.weatherDisasterAlerts || [],
         stale: s.weatherStale,
         dayBars: chart.dayBars,
-        hPoints: chart.hPoints,
+        h24: chart.h24,
         hMax: chart.hMax,
         hMin: chart.hMin,
       }, () => {
@@ -104,53 +89,84 @@ Component({
 
     _drawSparkline() {
       const query = wx.createSelectorQuery().in(this);
-      query.select('.spark-track').boundingClientRect((rect: any) => {
+      query.select('.spark-canvas').boundingClientRect((rect: any) => {
         if (!rect) return;
-        const w = rect.width;
-        const h = rect.height;
-        const pts = this.data.hPoints;
+        const W = rect.width;
+        const H = rect.height;
+        const pts = this.data.h24;
         if (!pts || pts.length < 2) return;
 
         const ctx = wx.createCanvasContext('sparklineCanvas', this);
         const N = pts.length;
-        const stepX = w / N;
+        const hMax = this.data.hMax;
+        const hMin = this.data.hMin;
+        const range = hMax - hMin || 1;
+        const pad = { top: 14, bottom: 18, left: 2, right: 2 };
+        const pw = W - pad.left - pad.right;
+        const ph = H - pad.top - pad.bottom;
+        const stepX = pw / (N - 1);
+        const toX = (i: number) => pad.left + i * stepX;
+        const toY = (t: number) => pad.top + ph * (1 - (t - hMin) / range);
 
-        const getX = (i: number) => stepX * i + stepX / 2;
-        const getY = (i: number) => h * (1 - parseFloat(pts[i].y) / 100);
+        // Gradient area fill under the curve
+        const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+        grad.addColorStop(0, 'rgba(56,189,248,0.25)');
+        grad.addColorStop(0.6, 'rgba(56,189,248,0.06)');
+        grad.addColorStop(1, 'rgba(56,189,248,0.0)');
 
-        // Shadow/glow pass - wider semi-transparent line for glow
         ctx.beginPath();
-        ctx.moveTo(getX(0), getY(0));
-        for (let i = 1; i < N; i++) ctx.lineTo(getX(i), getY(i));
+        ctx.moveTo(toX(0), H - pad.bottom);
+        for (let i = 0; i < N; i++) ctx.lineTo(toX(i), toY(pts[i].temp));
+        ctx.lineTo(toX(N - 1), H - pad.bottom);
+        ctx.closePath();
+        ctx.setFillStyle(grad);
+        ctx.fill();
+
+        // Glow line
+        ctx.beginPath();
+        ctx.moveTo(toX(0), toY(pts[0].temp));
+        for (let i = 1; i < N; i++) ctx.lineTo(toX(i), toY(pts[i].temp));
         ctx.setStrokeStyle('rgba(56,189,248,0.5)');
-        ctx.setLineWidth(5);
+        ctx.setLineWidth(4);
         ctx.setLineCap('round');
         ctx.setLineJoin('round');
         ctx.stroke();
 
-        // Main line - bright white
+        // Main line
         ctx.beginPath();
-        ctx.moveTo(getX(0), getY(0));
-        for (let i = 1; i < N; i++) ctx.lineTo(getX(i), getY(i));
-        ctx.setStrokeStyle('rgba(255,255,255,0.95)');
-        ctx.setLineWidth(2.5);
+        ctx.moveTo(toX(0), toY(pts[0].temp));
+        for (let i = 1; i < N; i++) ctx.lineTo(toX(i), toY(pts[i].temp));
+        ctx.setStrokeStyle('#38BDF8');
+        ctx.setLineWidth(2);
         ctx.stroke();
 
-        // Dots with glow
+        // Dots
         for (let i = 0; i < N; i++) {
-          const x = getX(i);
-          const y = getY(i);
-          // glow
+          const x = toX(i);
+          const y = toY(pts[i].temp);
           ctx.beginPath();
-          ctx.arc(x, y, 6, 0, Math.PI * 2);
-          ctx.setFillStyle('rgba(56,189,248,0.3)');
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.setFillStyle('#0F172A');
           ctx.fill();
-          // solid dot
-          ctx.beginPath();
-          ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-          ctx.setFillStyle('#fff');
-          ctx.fill();
+          ctx.setStrokeStyle('#38BDF8');
+          ctx.setLineWidth(2);
+          ctx.stroke();
         }
+
+        // Temp labels
+        ctx.setFillStyle('rgba(148,163,184,0.7)');
+        ctx.setFontSize(10);
+        ctx.setTextAlign('left');
+        ctx.fillText(`${hMax.toFixed(0)}°`, 2, pad.top + 10);
+        ctx.fillText(`${hMin.toFixed(0)}°`, 2, H - pad.bottom - 2);
+
+        // Time labels
+        ctx.setTextAlign('center');
+        for (const lh of [0, 6, 12, 18, 24]) {
+          const idx = Math.min(lh, N - 1);
+          ctx.fillText(`+${lh}h`, toX(idx), H - 2);
+        }
+
         ctx.draw();
       }).exec();
     },
