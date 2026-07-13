@@ -19,7 +19,7 @@ from geometry_msgs.msg import Twist
 from std_srvs.srv import SetBool
 from sentry_interfaces.srv import SetCropType
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
 from fastapi.responses import StreamingResponse
 import uvicorn
 
@@ -427,11 +427,10 @@ def get_app() -> FastAPI:
 
     @_app.get('/api/camera/snapshot')
     async def api_camera_snapshot():
-        import io
         if _node is None or _node._latest_jpeg is None:
             return {'status': 'error', 'message': 'No camera frame available'}
-        return StreamingResponse(
-            io.BytesIO(_node._latest_jpeg),
+        return Response(
+            content=_node._latest_jpeg,
             media_type='image/jpeg',
             headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
         )
