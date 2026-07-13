@@ -55,7 +55,8 @@ class WeatherNode(Node):
         # Initial fetch
         self._fetch_and_publish()
 
-        self.timer = self.create_timer(float(self.fetch_interval_sec), self._on_timer)
+        interval = 60.0 if self.mock_mode else float(self.fetch_interval_sec)
+        self.timer = self.create_timer(interval, self._on_timer)
         self.get_logger().info(f'Weather node ready (mock={self.mock_mode})')
 
     def _on_timer(self):
