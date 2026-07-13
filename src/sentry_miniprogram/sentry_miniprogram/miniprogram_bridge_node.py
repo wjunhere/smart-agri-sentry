@@ -171,18 +171,19 @@ class MiniProgramBridgeNode(Node):
         self._push_ws({'type': 'plant_detect', 'ts': self._now_ms(), 'data': self.plant_detect})
 
     def _on_weather(self, msg):
+        r1 = lambda x: round(x, 1)
         self.weather = {
             'city': msg.city,
-            'lat': msg.lat,
-            'lon': msg.lon,
-            'days': [{'day_offset': d.day_offset, 'temp_high': d.temp_high,
-                      'temp_low': d.temp_low, 'humidity': d.humidity,
-                      'precipitation': d.precipitation, 'wind_speed': d.wind_speed,
+            'lat': r1(msg.lat),
+            'lon': r1(msg.lon),
+            'days': [{'day_offset': d.day_offset, 'temp_high': r1(d.temp_high),
+                      'temp_low': r1(d.temp_low), 'humidity': r1(d.humidity),
+                      'precipitation': r1(d.precipitation), 'wind_speed': r1(d.wind_speed),
                       'weather_desc': d.weather_desc}
                      for d in msg.days],
-            'hours': [{'hour_offset': h.hour_offset, 'temp': h.temp,
-                       'humidity': h.humidity, 'precipitation': h.precipitation,
-                       'wind_speed': h.wind_speed}
+            'hours': [{'hour_offset': h.hour_offset, 'temp': r1(h.temp),
+                       'humidity': r1(h.humidity), 'precipitation': r1(h.precipitation),
+                       'wind_speed': r1(h.wind_speed)}
                       for h in msg.hours],
             'disaster_alerts': list(msg.disaster_alerts),
             'stale': msg.stale,
