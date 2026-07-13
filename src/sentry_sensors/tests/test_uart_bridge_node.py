@@ -67,6 +67,47 @@ def test_cmd_vel_mode_frame_not_repeated(node):
     assert frame_types == [0x83, TYPE_MOTION_CMD, TYPE_MOTION_CMD]
 
 
+def test_cmd_vel_applies_track_speed_scale(node):
+    """Verify per-track trim can compensate mechanical speed mismatch."""
+    import struct
+    from geometry_msgs.msg import Twist
+
+    node.left_speed_scale = 1.0
+    node.right_speed_scale = 0.95
+
+    msg = Twist()
+    msg.linear.x = 0.5
+
+    with patch.object(node.ser, 'write') as mock_write:
+        node.on_cmd_vel(msg)
+        frame = mock_write.call_args[0][0]
+        left, right = struct.unpack('<hh', frame[4:8])
+
+    assert left == 500
+    assert right == 475
+
+
+def test_cmd_vel_can_swap_wheel_commands(node):
+    """Verify hardware deployments can swap left/right command channels."""
+    import struct
+    from geometry_msgs.msg import Twist
+
+    node.left_speed_scale = 1.0
+    node.right_speed_scale = 0.9
+    node.swap_wheel_commands = True
+
+    msg = Twist()
+    msg.linear.x = 0.5
+
+    with patch.object(node.ser, 'write') as mock_write:
+        node.on_cmd_vel(msg)
+        frame = mock_write.call_args[0][0]
+        left, right = struct.unpack('<hh', frame[4:8])
+
+    assert left == 450
+    assert right == 500
+
+
 def test_cmd_vel_turn_in_place(node):
     """Verify pure rotation produces opposite wheel speeds."""
     import struct

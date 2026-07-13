@@ -12,6 +12,7 @@ extern DMA_HandleTypeDef hdma_usart2_tx;
 #define TYPE_CHASSIS    0x03
 #define TYPE_MOTION_CMD   0x81
 #define TYPE_AUTOTUNE_CMD 0x82
+#define TYPE_RESET_ENCODER 0x85
 
 #define RX_BUFF_SIZE 64
 extern uint8_t rx_buff[RX_BUFF_SIZE];

@@ -1,7 +1,7 @@
-from launch import LaunchDescription
+﻿from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.conditions import UnlessCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, Command
 from ament_index_python.packages import get_package_share_directory
@@ -37,8 +37,11 @@ def generate_launch_description():
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
         DeclareLaunchArgument('slam', default_value='False'),
+        DeclareLaunchArgument('enable_vision', default_value='true'),
+        DeclareLaunchArgument('enable_advisory', default_value='true'),
+        DeclareLaunchArgument('enable_web', default_value='true'),
 
-        # ── Unified TF tree (URDF → robot_state_publisher) ──
+                # Unified TF tree (URDF -> robot_state_publisher)
         Node(
             package='robot_state_publisher',
             executable='robot_state_publisher',
@@ -72,6 +75,7 @@ def generate_launch_description():
                 'sensor_width': 1920,
                 'sensor_height': 1080,
             }],
+            condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
         ),
 
@@ -85,6 +89,7 @@ def generate_launch_description():
                 ('in', '/sentry/camera/image_raw'),
                 ('out', '/out'),
             ],
+            condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
         ),
 
@@ -97,6 +102,7 @@ def generate_launch_description():
                 'model_path': '/home/sunrise/dev_ws/models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin',
                 'input_size': 224,
             }],
+            condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
         ),
         Node(
@@ -109,6 +115,7 @@ def generate_launch_description():
                 'use_simulation': LaunchConfiguration('use_sim_plant'),
                 'model_path': '/home/sunrise/dev_ws/models/yolov8n_crop_weed_bayese_640x640_nv12.bin',
             }],
+            condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
         ),
         Node(
@@ -122,6 +129,7 @@ def generate_launch_description():
                 'step_yaw': 20,
                 'step_pitch': 15,
             }],
+            condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
         ),
 
@@ -134,6 +142,9 @@ def generate_launch_description():
                 'uart_port': '/dev/ttyS1',
                 'baudrate': 115200,
                 'forward_servo_cmd': False,
+                'left_speed_scale': 1.0,
+                'right_speed_scale': 1.00,
+                'swap_wheel_commands': True,
             }],
             output='screen',
         ),
@@ -164,7 +175,7 @@ def generate_launch_description():
             name='wheel_odom_node',
             parameters=[{
                 'wheel_base': 0.23,
-                'pulses_per_meter': 11035,
+                'pulses_per_meter': 11552,
             }],
             output='screen',
         ),
@@ -202,6 +213,7 @@ def generate_launch_description():
                 'mobile_stale_sec': 2.0,
                 'fixed_env_window_sec': 10.0,
             }],
+            condition=IfCondition(LaunchConfiguration('enable_advisory')),
             output='screen',
         ),
 
@@ -212,9 +224,9 @@ def generate_launch_description():
             name='mission_control_node',
             parameters=[{
                 'waypoints_file': waypoints_config,
-                'cruise_speed': 0.3,
+                'cruise_speed': 0.18,
                 'wheel_base': 0.23,
-                'pulses_per_meter': 11035,
+                'pulses_per_meter': 11552,
                 'crop_type': LaunchConfiguration('crop_type'),
                 'detection_confidence_threshold': 0.6,
                 'min_area_ratio': 0.1,
@@ -235,6 +247,7 @@ def generate_launch_description():
                 'max_linear': 0.5,
                 'max_angular': 1.0,
             }],
+            condition=IfCondition(LaunchConfiguration('enable_web')),
             output='screen',
         ),
 
@@ -250,6 +263,7 @@ def generate_launch_description():
                 'mobile_stale_sec': 2.0,
                 'fusion_stale_sec': 30.0,
             }],
+            condition=IfCondition(LaunchConfiguration('enable_advisory')),
             output='screen',
         ),
         Node(
@@ -261,6 +275,7 @@ def generate_launch_description():
                 'advisory_rules_path': os.path.join(config_dir, 'advisory_rules.yaml'),
                 'fusion_stale_sec': 30.0,
             }],
+            condition=IfCondition(LaunchConfiguration('enable_advisory')),
             output='screen',
         ),
         Node(
@@ -268,6 +283,7 @@ def generate_launch_description():
             executable='data_logger_node',
             name='data_logger_node',
             parameters=[os.path.join(config_dir, 'data_logger_params.yaml')],
+            condition=IfCondition(LaunchConfiguration('enable_advisory')),
             output='screen',
         ),
 
@@ -277,6 +293,7 @@ def generate_launch_description():
             executable='rosbridge_websocket',
             name='rosbridge_websocket',
             parameters=[{'port': 9090}],
+            condition=IfCondition(LaunchConfiguration('enable_web')),
             output='screen',
         ),
     ])

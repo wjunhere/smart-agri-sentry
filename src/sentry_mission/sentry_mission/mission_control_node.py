@@ -12,17 +12,21 @@ States:
 """
 
 import math
+import threading
 
 import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist, Quaternion
 from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+from robot_localization.srv import SetPose
 from sentry_interfaces.msg import PlantDetection, FusionResult, MissionStatus, Diagnosis
 from sentry_interfaces.srv import PipelineTrigger, SetCropType
 from sentry_mission.autonomous_cruise import should_send_patrol_goal
 from std_msgs.msg import Bool
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 import yaml
 
 
@@ -42,6 +46,7 @@ _CMDV_OWNER_STATES = {
 class MissionControlNode(Node):
     def __init__(self):
         super().__init__('mission_control_node')
+        self.service_callback_group = ReentrantCallbackGroup()
 
         self.declare_parameter('cruise_speed', 0.3)
         self.declare_parameter('detection_confidence_threshold', 0.5)
@@ -50,7 +55,7 @@ class MissionControlNode(Node):
         self.declare_parameter('resume_delay_sec', 2.0)
         self.declare_parameter('waypoints_file', '')
         self.declare_parameter('wheel_base', 0.23)
-        self.declare_parameter('pulses_per_meter', 11035)
+        self.declare_parameter('pulses_per_meter', 11552)
         self.declare_parameter('min_resume_distance', 0.5)
         self.declare_parameter('crop_type', 'tomato')
         self.declare_parameter('max_scan_shots', 3)
@@ -109,7 +114,8 @@ class MissionControlNode(Node):
 
         # -- Service --
         self.srv = self.create_service(
-            SetBool, '/set_auto_mode', self.set_auto_mode_cb)
+            SetBool, '/set_auto_mode', self.set_auto_mode_cb,
+            callback_group=self.service_callback_group)
 
         self.crop_type_srv = self.create_service(
             SetCropType, '/set_crop_type', self.set_crop_type_cb)
@@ -121,6 +127,11 @@ class MissionControlNode(Node):
         # -- Plant detector pause client --
         self.pause_detector_client = self.create_client(
             SetBool, '/vision/plant_detector/pause')
+        self.reset_encoder_client = self.create_client(
+            Trigger, '/sentry/reset_encoder')
+        self.reset_wheel_odom_client = self.create_client(
+            Trigger, '/sentry/reset_wheel_odom')
+        self.set_pose_client = self.create_client(SetPose, '/set_pose')
 
         # -- State -- start in MANUAL so car stays still until frontend triggers AUTO
         self.state = STATE_MANUAL
@@ -130,6 +141,8 @@ class MissionControlNode(Node):
         self.last_plant = None
         self.last_fusion = None
         self.sending_goal = False
+        self._cancel_in_progress = False
+        self._next_goal_time = 0.0
 
         # -- De-duplication --
         self.reference_x = 0.0
@@ -198,25 +211,25 @@ class MissionControlNode(Node):
 
     def on_resume(self, msg: Bool):
         if msg.data and self.state == STATE_MANUAL:
+            self._prepare_autonomous_start()
             self._transition(STATE_PATROL)
             self.current_wp_idx = self.saved_wp_idx
-            self.navigator.cancelTask()
-            self._send_next_waypoint()
 
     def set_auto_mode_cb(self, request, response):
         if request.data:
             if self.state == STATE_MANUAL:
+                self._prepare_autonomous_start()
                 self._transition(STATE_PATROL)
                 self.current_wp_idx = self.saved_wp_idx
-                self.navigator.cancelTask()
-                self._send_next_waypoint()
             response.success = True
             response.message = 'Switched to AUTO mode'
         else:
             if self.state != STATE_MANUAL:
                 self.saved_wp_idx = self.current_wp_idx
-                self.navigator.cancelTask()
+                self.sending_goal = False
                 self._transition(STATE_MANUAL)
+                self._publish_stop()
+                self._cancel_nav2_task_async()
             response.success = True
             response.message = 'Switched to MANUAL mode'
         return response
@@ -274,7 +287,7 @@ class MissionControlNode(Node):
     def tick(self):
         now = self.get_clock().now().nanoseconds / 1e9
 
-        # Background Nav2 readiness â€” fast path via action server check,
+        # Background Nav2 readiness â€?fast path via action server check,
         # fallback to 30-tick (~3s) delayed activation
         if not self._nav2_ready:
             if not hasattr(self, '_nav2_tick_count'):
@@ -297,7 +310,7 @@ class MissionControlNode(Node):
                         self._nav2_ready,
                         self.sending_goal,
                         self.current_wp_idx,
-                        len(self.waypoints)):
+                        len(self.waypoints)) and now >= self._next_goal_time:
                     self._send_next_waypoint()
 
         if self.state_enter_time == 0.0:
@@ -321,7 +334,8 @@ class MissionControlNode(Node):
                     self._nav2_ready,
                     self.sending_goal,
                     self.current_wp_idx,
-                    len(self.waypoints)):
+                    len(self.waypoints)
+            ) and now >= self._next_goal_time:
                 self._send_next_waypoint()
 
             if self.sending_goal and self.navigator.isTaskComplete():
@@ -338,8 +352,8 @@ class MissionControlNode(Node):
                 else:
                     self.get_logger().warn(
                         f'Nav2 task failed ({result}), '
-                        f'retrying waypoint {self.current_wp_idx}')
-                    self._send_next_waypoint()
+                        f'retrying waypoint {self.current_wp_idx} after delay')
+                    self._next_goal_time = now + 2.0
 
             # Check for plant detection trigger (with de-duplication)
             if (self.last_plant is not None
@@ -348,7 +362,7 @@ class MissionControlNode(Node):
                     and self.last_plant.area_ratio >= self.min_area_ratio
                     and self._should_trigger_scan()):
                 self.saved_wp_idx = self.current_wp_idx
-                self.navigator.cancelTask()
+                self._cancel_nav2_task_async()
                 self.sending_goal = False
                 self._transition(STATE_STOPPED, now)
 
@@ -457,6 +471,84 @@ class MissionControlNode(Node):
         self.state = new_state
         self.state_enter_time = now
 
+    def _publish_stop(self):
+        cmd = Twist()
+        cmd.linear.x = 0.0
+        cmd.angular.z = 0.0
+        self.pub_cmd.publish(cmd)
+
+    def _prepare_autonomous_start(self):
+        self._publish_stop()
+        self.sending_goal = False
+        self._next_goal_time = self.get_clock().now().nanoseconds / 1e9 + 0.8
+        self._call_trigger_service_async(
+            self.reset_wheel_odom_client, 'wheel odometry reset')
+        self._call_trigger_service_async(
+            self.reset_encoder_client, 'STM32 encoder reset')
+        self._reset_ekf_pose_async()
+
+    def _call_trigger_service_async(self, client, label: str):
+        if not client.wait_for_service(timeout_sec=0.05):
+            self.get_logger().warn(f'{label} service unavailable')
+            return
+        future = client.call_async(Trigger.Request())
+
+        def _log_result(done_future):
+            try:
+                result = done_future.result()
+            except Exception as exc:
+                self.get_logger().warn(f'{label} failed: {exc}')
+                return
+            if result is None or not result.success:
+                message = '' if result is None else result.message
+                self.get_logger().warn(f'{label} rejected: {message}')
+            else:
+                self.get_logger().info(f'{label}: {result.message}')
+
+        future.add_done_callback(_log_result)
+
+    def _reset_ekf_pose_async(self):
+        if not self.set_pose_client.wait_for_service(timeout_sec=0.05):
+            self.get_logger().warn('EKF set_pose service unavailable')
+            return
+
+        req = SetPose.Request()
+        req.pose.header.stamp = self.get_clock().now().to_msg()
+        req.pose.header.frame_id = 'odom'
+        req.pose.pose.pose.position.x = 0.0
+        req.pose.pose.pose.position.y = 0.0
+        req.pose.pose.pose.position.z = 0.0
+        req.pose.pose.pose.orientation.w = 1.0
+        req.pose.pose.covariance[0] = 0.01
+        req.pose.pose.covariance[7] = 0.01
+        req.pose.pose.covariance[35] = 0.01
+        future = self.set_pose_client.call_async(req)
+
+        def _log_result(done_future):
+            try:
+                done_future.result()
+            except Exception as exc:
+                self.get_logger().warn(f'EKF pose reset failed: {exc}')
+                return
+            self.get_logger().info('EKF pose reset to odom origin')
+
+        future.add_done_callback(_log_result)
+
+    def _cancel_nav2_task_async(self):
+        if self._cancel_in_progress:
+            return
+        self._cancel_in_progress = True
+
+        def _cancel():
+            try:
+                self.navigator.cancelTask()
+            except Exception as exc:
+                self.get_logger().warn(f'Nav2 cancel failed: {exc}')
+            finally:
+                self._cancel_in_progress = False
+
+        threading.Thread(target=_cancel, daemon=True).start()
+
     def _compute_progress(self) -> float:
         if self.plants_detected == 0:
             return 0.0
@@ -466,11 +558,14 @@ class MissionControlNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MissionControlNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

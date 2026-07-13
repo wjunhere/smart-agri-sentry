@@ -1,9 +1,9 @@
 # Serpentine coverage waypoints (2.5m length, 0.6m row spacing, 2 rows)
 # Robot starts at (0,0), initial heading 0 deg (positive X)
 waypoints:
-  # Row 1: from start to end (x=2.5, y=0.0), heading 0 deg
-  - {x: 2.5, y: 0.0, yaw: 0.0}
-  # Transverse to row 2 start (x=2.5, y=0.6), turn to 90 deg
-  - {x: 2.5, y: 0.6, yaw: 1.5708}
+  # Row 1 end: arrive at (x=2.5, y=0.0), then face +Y for the turn
+  - {x: 2.5, y: 0.0, yaw: 1.5708}
+  # Row 2 start: arrive at (x=2.5, y=0.6), then face -X for the return row
+  - {x: 2.5, y: 0.6, yaw: 3.1416}
   # Row 2: reverse, end at (x=0.0, y=0.6), heading 180 deg
   - {x: 0.0, y: 0.6, yaw: 3.1416}

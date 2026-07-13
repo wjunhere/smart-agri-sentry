@@ -143,11 +143,13 @@ int main(int argc, char** argv) {
         break;
 
       case ldlidar::LidarStatus::ERROR:
-        RCLCPP_ERROR(node->get_logger(), "lidar driver error");
+        RCLCPP_ERROR_THROTTLE(node->get_logger(), *node->get_clock(), 5000,
+                              "lidar driver error");
         break;
 
       case ldlidar::LidarStatus::DATA_TIME_OUT:
-        RCLCPP_ERROR(node->get_logger(), "lidar data timeout");
+        RCLCPP_WARN_THROTTLE(node->get_logger(), *node->get_clock(), 5000,
+                             "lidar data timeout");
         break;
 
       case ldlidar::LidarStatus::DATA_WAIT:

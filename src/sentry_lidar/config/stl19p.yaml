@@ -4,6 +4,7 @@ sentry_lidar:
     topic_name: "scan"
     port_name: "/dev/wheeltec_lidar"
     port_baudrate: 230400
+    enable_serial_or_network_communication: true
     frame_id: "laser"
     laser_scan_dir: true
     enable_angle_crop_func: false
