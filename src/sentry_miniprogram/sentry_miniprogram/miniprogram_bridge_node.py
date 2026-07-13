@@ -423,6 +423,20 @@ def get_app() -> FastAPI:
             media_type='multipart/x-mixed-replace; boundary=frame'
         )
 
+    @_app.get('/api/camera/snapshot')
+    async def api_camera_snapshot():
+        import cv2
+        import io
+        if _node is None or _node._latest_frame is None:
+            return {'status': 'error', 'message': 'No camera frame available'}
+        img = _node._latest_frame
+        _, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        return StreamingResponse(
+            io.BytesIO(jpeg.tobytes()),
+            media_type='image/jpeg',
+            headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
+        )
+
     # --- WebSocket Endpoint ---
 
     @_app.websocket('/ws')

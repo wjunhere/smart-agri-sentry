@@ -1,5 +1,5 @@
 import { getStore, onStoreChange } from '../../services/store';
-import { getCameraUrl } from '../../services/api';
+import { getCameraSnapshotUrl } from '../../services/api';
 import { formatTemp, formatHumidity, formatCO2, formatNPK } from '../../utils/format';
 
 const REFRESH_MS = 200;
@@ -45,6 +45,7 @@ Component({
   },
   methods: {
     _camTimer: null as any,
+    _errCount: 0,
 
     sync(s: any) {
       this.setData({
@@ -66,8 +67,9 @@ Component({
 
     startCamera() {
       this.stopCamera();
+      this._errCount = 0;
       this.setData({ cameraLoading: true });
-      this.setData({ active: 'A', urlA: getCameraUrl() + '?t=' + Date.now() });
+      this.setData({ active: 'A', urlA: getCameraSnapshotUrl() + '?t=' + Date.now() });
       this._camTimer = setInterval(() => this._tick(), REFRESH_MS);
     },
 
@@ -79,7 +81,7 @@ Component({
     },
 
     _tick() {
-      const next = getCameraUrl() + '?t=' + Date.now();
+      const next = getCameraSnapshotUrl() + '?t=' + Date.now();
       const { active } = this.data;
       // Preload the next frame on the hidden image
       if (active === 'A') {
@@ -98,6 +100,20 @@ Component({
       } else if (key === active) {
         this.setData({ cameraLoading: false });
       }
+    },
+
+    onImgError(e: any) {
+      const key = (e.currentTarget.dataset?.key as string) || '';
+      this._errCount += 1;
+      if (this._errCount > 3) return;
+      setTimeout(() => {
+        const next = getCameraSnapshotUrl() + '?t=' + Date.now();
+        if (key === 'A') {
+          this.setData({ urlA: next });
+        } else if (key === 'B') {
+          this.setData({ urlB: next });
+        }
+      }, 500);
     },
   },
 })

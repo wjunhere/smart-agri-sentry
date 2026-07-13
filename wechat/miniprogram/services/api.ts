@@ -56,6 +56,10 @@ export function getCameraUrl(): string {
   return BASE_URL + '/api/camera';
 }
 
+export function getCameraSnapshotUrl(): string {
+  return BASE_URL + '/api/camera/snapshot';
+}
+
 export function apiLLMAnalyze() {
   return request<any>('POST', '/api/llm/analyze');
 }
