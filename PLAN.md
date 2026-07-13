@@ -18,6 +18,9 @@
 - [x] 板端 camera 驱动验证（MIPI IMX219 + overlay 加载）
 - [x] 板端 YOLO BPU 推理跑通（多输出 DFL 后处理）
 - [ ] MobileNet 病害分类板端联调
+  - [x] **M1** 将 `mobilenetv3_tomato_disease_v4.2.onnx` 量化成 RDK X5 `.bin`
+  - [ ] **M2** 板端 Python 推理验证（logits → softmax → healthy 阈值 0.15）
+  - [ ] **M3** 接入 `vision_pipeline_node` 作为第二阶段分类器
 - [ ] 云台多角度扫描端到端测试（需接舵机）
 - [ ] 端到端验证：巡航行进 → 检测植株 → 停车 → 拍照 → 病害识别 → 农艺建议
 
@@ -84,7 +87,12 @@
 
 - [x] Web 前端仪表盘（`static_v2/` Vue 3 + roslibjs，v2.0 已完成）
 - [x] 微信小程序遥控终端（`wechat/` 原生 TS + Less + Skyline，4 Tab，v2.0 已完成）
-- [x] 云端 LLM 农情分析（DeepSeek API，`sentry_llm` 包，v2.0 已完成，待板端网络稳定后部署）
+- [x] 云端 LLM 农情分析（DeepSeek API，`sentry_llm` 包，v2.0 已完成）
+  - [x] **2026-07-13 板端部署验证**：`sentry_interfaces` + `sentry_llm` + `sentry_miniprogram` colcon build 通过
+  - [x] `llm_advisor_node` 启动正常，API key 从 `~/.bashrc` 加载（需放在交互守卫之前）
+  - [x] `miniprogram_bridge_node` 启动正常，Uvicorn `0.0.0.0:8765`
+  - [x] LLM 测试 7/7 通过；Bridge mock 测试因 Python 版本差异跳过（非代码 bug）
+  - [ ] 待板端网络恢复后：全系统启动验证（`miniprogram_bridge.launch.py`）
 - [ ] 外部天气 API 接入
 - [ ] InfluxDB + Grafana 离线分析管线
 - [ ] 端侧 LLM 农艺建议润色（v3.0）
