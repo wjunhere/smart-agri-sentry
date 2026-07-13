@@ -97,7 +97,48 @@ Component({
         hPoints: chart.hPoints,
         hMax: chart.hMax,
         hMin: chart.hMin,
+      }, () => {
+        this._drawSparkline();
       });
+    },
+
+    _drawSparkline() {
+      const query = wx.createSelectorQuery().in(this);
+      query.select('.spark-track').boundingClientRect((rect: any) => {
+        if (!rect) return;
+        const w = rect.width;
+        const h = rect.height;
+        const pts = this.data.hPoints;
+        if (!pts || pts.length < 2) return;
+
+        const ctx = wx.createCanvasContext('sparklineCanvas', this);
+        const N = pts.length;
+        const stepX = w / N;
+        const barW = stepX * 0.85; // bar takes ~85% of step width
+
+        // Polyline through dot centers (dot is at top-center of each bar)
+        ctx.beginPath();
+        for (let i = 0; i < N; i++) {
+          const x = stepX * i + stepX / 2; // center of bar
+          const y = h * (1 - parseFloat(pts[i].y) / 100); // top of bar
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.setStrokeStyle('rgba(255,255,255,0.6)');
+        ctx.setLineWidth(2);
+        ctx.stroke();
+
+        // Dots
+        for (let i = 0; i < N; i++) {
+          const x = stepX * i + stepX / 2;
+          const y = h * (1 - parseFloat(pts[i].y) / 100);
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.setFillStyle('#fff');
+          ctx.fill();
+        }
+        ctx.draw();
+      }).exec();
     },
 
     async fetchWeather() {

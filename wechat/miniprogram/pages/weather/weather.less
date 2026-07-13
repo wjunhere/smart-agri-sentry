@@ -39,11 +39,13 @@
 .sparkline-wrap { margin: 8rpx 0; }
 .spark-track {
   display: flex; align-items: flex-end; gap: 0;
-  height: 120rpx; padding: 0 4rpx;
+  height: 120rpx; padding: 0 4rpx; position: relative;
+}
+.spark-canvas {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
 }
 .spark-col {
   min-width: 4rpx; position: relative;
-  border-top: 2rpx solid rgba(255,255,255,0.5);
   border-radius: 2rpx 2rpx 0 0;
 }
 .spark-dot {
