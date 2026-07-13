@@ -81,7 +81,7 @@
 
 ## 近期已完成
 
-- [x] **微信小程序 monitor 视频流去频闪 (2026-07-14)**：snapshot 双缓冲从 `<image>` 移到外层 `<view>` 容器做 opacity 过渡，刷新间隔 200ms，切 tab 暂停，禁用 image 自带 fade-in
+- [x] **微信小程序 monitor 视频流去频闪 (2026-07-14)**：snapshot 双缓冲改为 z-index 前后层预加载，取消 opacity 过渡，避免 Skyline 硬切/黑底闪烁；刷新间隔 200ms，切 tab 暂停
 - [x] **番茄病害模型板端测试 (2026-07-13)**：MobilenetV3-Large 准确率 91.58%（healthy_threshold=0.15）
 - [x] **病害分类 healthy 阈值**：`vision_diagnosis_node` 新增参数，healthy 召回率 69.6%→84.5%
 - [x] **LLM 农情分析板端部署**：`sentry_llm` 构建通过，API key 加载问题修复（`.bashrc` 守卫）

@@ -1,9 +1,9 @@
 <view class="page">
   <view class="camera-wrap">
-    <view class="camera-frame camera-back {{active === 'A' ? 'hidden' : ''}}">
+    <view class="camera-frame {{active === 'A' ? 'back' : 'front'}}">
       <image class="camera" src="{{urlB}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="B" />
     </view>
-    <view class="camera-frame camera-front {{active === 'A' ? '' : 'hidden'}}">
+    <view class="camera-frame {{active === 'A' ? 'front' : 'back'}}">
       <image class="camera" src="{{urlA}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="A" />
     </view>
     <view class="camera-hud">
