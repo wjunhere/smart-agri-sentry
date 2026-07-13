@@ -83,7 +83,12 @@ Component({
         hMax: chart.hMax,
         hMin: chart.hMin,
       }, () => {
-        this._drawSparkline();
+        // Only redraw if the h24 data actually changed
+        const key = JSON.stringify(this.data.h24);
+        if (key !== (this as any)._lastH24) {
+          (this as any)._lastH24 = key;
+          this._drawSparkline();
+        }
       });
     },
 
@@ -97,6 +102,8 @@ Component({
         if (!pts || pts.length < 2) return;
 
         const ctx = wx.createCanvasContext('sparklineCanvas', this);
+        ctx.clearRect(0, 0, W, H);  // clear previous frame
+
         const N = pts.length;
         const hMax = this.data.hMax;
         const hMin = this.data.hMin;
