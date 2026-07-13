@@ -114,26 +114,40 @@ Component({
         const ctx = wx.createCanvasContext('sparklineCanvas', this);
         const N = pts.length;
         const stepX = w / N;
-        const barW = stepX * 0.85; // bar takes ~85% of step width
 
-        // Polyline through dot centers (dot is at top-center of each bar)
+        const getX = (i: number) => stepX * i + stepX / 2;
+        const getY = (i: number) => h * (1 - parseFloat(pts[i].y) / 100);
+
+        // Shadow/glow pass - wider semi-transparent line for glow
         ctx.beginPath();
-        for (let i = 0; i < N; i++) {
-          const x = stepX * i + stepX / 2; // center of bar
-          const y = h * (1 - parseFloat(pts[i].y) / 100); // top of bar
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.setStrokeStyle('rgba(255,255,255,0.6)');
-        ctx.setLineWidth(2);
+        ctx.moveTo(getX(0), getY(0));
+        for (let i = 1; i < N; i++) ctx.lineTo(getX(i), getY(i));
+        ctx.setStrokeStyle('rgba(56,189,248,0.5)');
+        ctx.setLineWidth(5);
+        ctx.setLineCap('round');
+        ctx.setLineJoin('round');
         ctx.stroke();
 
-        // Dots
+        // Main line - bright white
+        ctx.beginPath();
+        ctx.moveTo(getX(0), getY(0));
+        for (let i = 1; i < N; i++) ctx.lineTo(getX(i), getY(i));
+        ctx.setStrokeStyle('rgba(255,255,255,0.95)');
+        ctx.setLineWidth(2.5);
+        ctx.stroke();
+
+        // Dots with glow
         for (let i = 0; i < N; i++) {
-          const x = stepX * i + stepX / 2;
-          const y = h * (1 - parseFloat(pts[i].y) / 100);
+          const x = getX(i);
+          const y = getY(i);
+          // glow
           ctx.beginPath();
-          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.arc(x, y, 6, 0, Math.PI * 2);
+          ctx.setFillStyle('rgba(56,189,248,0.3)');
+          ctx.fill();
+          // solid dot
+          ctx.beginPath();
+          ctx.arc(x, y, 3.5, 0, Math.PI * 2);
           ctx.setFillStyle('#fff');
           ctx.fill();
         }
