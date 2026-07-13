@@ -78,6 +78,7 @@
 15. **病害分类阈值 ✅**：`vision_diagnosis_node` 新增 `healthy_threshold` 参数（默认 0.15），板端测试总体准确率 91.58%。
 16. **天气 mock 周期修复**：`sentry_weather` mock 模式改 60s 周期发布，避免桥接节点错过单次消息。
 17. **LLM 板端部署**：API key 需放在 `~/.bashrc` 交互守卫之前，否则非交互 SSH 无法加载。
+18. **微信小程序 monitor 视频流优化 (2026-07-14)**：`<image>` 无法直接消费 MJPEG，后端新增 `/api/camera/snapshot` 并缓存 JPEG；前端用 A/B 双缓冲 + view 容器 opacity 过渡实现 200ms 平滑刷新，离开 monitor 页自动暂停。
 
 ## 模型矩阵
 

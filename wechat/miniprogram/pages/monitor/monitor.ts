@@ -2,7 +2,7 @@ import { getStore, onStoreChange } from '../../services/store';
 import { getCameraSnapshotUrl } from '../../services/api';
 import { formatTemp, formatHumidity, formatCO2, formatNPK } from '../../utils/format';
 
-const REFRESH_MS = 150;
+const REFRESH_MS = 200;
 
 Component({
   data: {
