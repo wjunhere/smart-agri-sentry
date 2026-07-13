@@ -26,7 +26,10 @@
   <view class="card">
     <text class="card-header">🕐 逐时预报</text>
     <view class="sparkline-wrap">
-      <canvas canvas-id="sparklineCanvas" class="spark-canvas"></canvas>
+      <view class="spark-track">
+        <view class="spark-col" wx:for="{{hBars}}" wx:key="index"
+              style="height:{{item.hPct}}%;flex:1"></view>
+      </view>
       <view class="spark-xlabels">
         <text class="dim" style="font-size:16rpx">+0h</text>
         <text class="dim" style="font-size:16rpx">+6h</text>

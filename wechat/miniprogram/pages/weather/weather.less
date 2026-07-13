@@ -36,11 +36,19 @@
 }
 
 /* Hourly sparkline */
-.sparkline-wrap { margin: 8rpx 0; position: relative; }
-.spark-canvas { width: 100%; height: 120rpx; display: block; }
+.sparkline-wrap { margin: 8rpx 0; }
+.spark-track {
+  display: flex; align-items: flex-end; gap: 3rpx;
+  height: 120rpx; padding: 0 4rpx;
+}
+.spark-col {
+  min-width: 4rpx;
+  background: rgba(56,189,248,0.4);
+  border-radius: 3rpx 3rpx 0 0;
+}
 .spark-xlabels {
   display: flex; justify-content: space-between;
-  padding: 4rpx 4rpx 0; margin-top: -2rpx;
+  padding: 4rpx 4rpx 0; margin-top: 4rpx;
 }
 
 .ag-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8rpx; }
