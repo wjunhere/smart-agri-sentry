@@ -18,10 +18,10 @@ function weatherIcon(desc: string): string {
 
 function blueShade(t: number, tMin: number, tMax: number): string {
   const ratio = tMax > tMin ? (t - tMin) / (tMax - tMin) : 0.5;
-  // Dark cool blue → bright warm blue
-  const r = Math.round(30 + ratio * 86);   // 30 → 116
-  const g = Math.round(64 + ratio * 152);  // 64 → 216
-  const b = Math.round(150 + ratio * 105); // 150 → 255
+  // Deep blue → bright purple
+  const r = Math.round(56 + ratio * 111);   // 56 → 167
+  const g = Math.round(100 + ratio * 39);   // 100 → 139
+  const b = Math.round(200 + ratio * 55);   // 200 → 255
   return `rgb(${r},${g},${b})`;
 }
 
