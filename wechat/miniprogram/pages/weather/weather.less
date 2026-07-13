@@ -36,8 +36,18 @@
 }
 
 /* Hourly sparkline */
-.sparkline-wrap { position: relative; margin: 0 8rpx; }
-.sparkline-canvas { width: 100%; height: 120rpx; }
+.sparkline-wrap { margin: 8rpx 0; }
+.spark-track {
+  display: flex; align-items: flex-end; gap: 2rpx;
+  height: 120rpx; padding: 0 4rpx;
+}
+.spark-col {
+  border-radius: 2rpx 2rpx 0 0; min-width: 4rpx;
+}
+.spark-xlabels {
+  display: flex; justify-content: space-between;
+  padding: 4rpx 4rpx 0; margin-top: 2rpx;
+}
 
 .ag-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8rpx; }
 .ag-item {
