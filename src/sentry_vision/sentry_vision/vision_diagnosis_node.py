@@ -35,9 +35,12 @@ class VisionDiagnosisNode(Node):
         self.declare_parameter('model_path', '')
         self.declare_parameter('input_size', 224)
 
+        self.declare_parameter('healthy_threshold', 0.15)
+
         self.crop_type = self.get_parameter('crop_type').value
         self.input_size = self.get_parameter('input_size').value
         model_path = self.get_parameter('model_path').value
+        self.healthy_threshold = self.get_parameter('healthy_threshold').value
 
         model_path = resolve_model_path(self.crop_type, model_path, self.input_size)
         self.labels = get_labels(self.crop_type)
@@ -56,7 +59,8 @@ class VisionDiagnosisNode(Node):
         self.sub = self.create_subscription(
             Image, '/sentry/camera/image_raw', self.on_image, 1)
         self.pub = self.create_publisher(Diagnosis, '/vision/diagnosis', 10)
-        self.get_logger().info('Vision diagnosis node ready (BPU)')
+        self.get_logger().info('Vision diagnosis node ready (BPU) '
+                               f'healthy_threshold={self.healthy_threshold}')
 
     def on_image(self, msg: Image):
         try:
@@ -70,7 +74,14 @@ class VisionDiagnosisNode(Node):
         output = outputs[0].buffer.reshape(-1)
 
         probs = self._softmax(output)
-        class_idx = int(np.argmax(probs))
+        healthy_idx = self.labels.index('healthy') if 'healthy' in self.labels else -1
+        healthy_prob = float(probs[healthy_idx]) if healthy_idx >= 0 else 0.0
+
+        # Healthy threshold: if healthy class probability >= threshold, predict healthy
+        if healthy_idx >= 0 and healthy_prob >= self.healthy_threshold:
+            class_idx = healthy_idx
+        else:
+            class_idx = int(np.argmax(probs))
         confidence = float(probs[class_idx])
 
         out_msg = Diagnosis()
