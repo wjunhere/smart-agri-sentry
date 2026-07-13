@@ -225,7 +225,7 @@ class MiniProgramBridgeNode(Node):
         if frame is None:
             return
         self._latest_frame = frame
-        _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         self._latest_jpeg = jpeg.tobytes()
 
     def _now_ms(self) -> int:
