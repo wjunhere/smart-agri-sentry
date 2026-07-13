@@ -26,6 +26,8 @@
   <view class="card">
     <text class="card-header">🕐 逐时预报</text>
     <view class="sparkline">
+      <view class="spark-seg" wx:for="{{hSegments}}" wx:key="index"
+            style="left:{{item.left}}%;bottom:{{item.bottom}}%;width:{{item.width}}%;transform:rotate({{item.angle}}deg)"></view>
       <view class="spark-dot" wx:for="{{hPoints}}" wx:key="index"
             style="left:{{index * (100 / (hPoints.length - 1 || 1))}}%;bottom:{{item.y}}%">
         <view class="spark-dot-inner"></view>
