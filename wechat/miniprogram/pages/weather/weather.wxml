@@ -10,18 +10,35 @@
 
   <view class="card">
     <text class="card-header">📅 7日预报</text>
-    <scroll-view class="fc-scroll" scroll-x>
-      <view class="fc-item" wx:for="{{days}}" wx:key="index">
-        <text class="dim" style="font-size:18rpx">D+{{item.day_offset || index}}</text>
-        <text style="font-size:22rpx">{{item.weather_desc || '--'}}</text>
-        <text class="mono" style="font-weight:600">{{item.temp_high}}°</text>
+    <view class="day-chart">
+      <view class="day-col" wx:for="{{dayBars}}" wx:key="index">
+        <text class="day-icon">{{item.icon}}</text>
+        <text class="mono dim" style="font-size:18rpx">{{item.temp_high}}°</text>
+        <view class="day-bar-track">
+          <view class="day-bar-fill" style="bottom:{{item.barLow}}%;height:{{item.barHeight}}%"></view>
+        </view>
+        <text class="mono dim" style="font-size:18rpx">{{item.temp_low}}°</text>
+        <text class="dim" style="font-size:18rpx">D+{{item.day_offset||index}}</text>
       </view>
-    </scroll-view>
+    </view>
   </view>
 
   <view class="card">
     <text class="card-header">🕐 逐时预报</text>
-    <scroll-view class="fc-scroll" scroll-x>
+    <view class="sparkline">
+      <view class="spark-dot" wx:for="{{hPoints}}" wx:key="index"
+            style="left:{{index * (100 / (hPoints.length - 1 || 1))}}%;bottom:{{item.y}}%">
+        <view class="spark-dot-inner"></view>
+      </view>
+    </view>
+    <view class="spark-labels">
+      <text class="dim" style="font-size:16rpx">+0h</text>
+      <text class="dim" style="font-size:16rpx">+6h</text>
+      <text class="dim" style="font-size:16rpx">+12h</text>
+      <text class="dim" style="font-size:16rpx">+18h</text>
+      <text class="dim" style="font-size:16rpx">+24h</text>
+    </view>
+    <scroll-view class="fc-scroll" scroll-x style="margin-top:16rpx">
       <view class="fc-item" wx:for="{{hours}}" wx:key="index">
         <text class="dim" style="font-size:18rpx">+{{item.hour_offset}}h</text>
         <text class="mono" style="font-weight:600">{{item.temp}}°</text>

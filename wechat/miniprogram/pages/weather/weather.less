@@ -17,6 +17,43 @@
   min-width: 80rpx; font-size: 22rpx; gap: 4rpx;
 }
 
+/* 7-day chart */
+.day-chart { display: flex; justify-content: space-around; padding: 8rpx 0; }
+.day-col {
+  display: flex; flex-direction: column; align-items: center; gap: 4rpx;
+  flex: 1; min-width: 72rpx;
+}
+.day-icon { font-size: 36rpx; }
+.day-bar-track {
+  position: relative; width: 16rpx; height: 120rpx;
+  background: var(--bg-input); border-radius: 8rpx;
+  overflow: hidden; margin: 4rpx 0;
+}
+.day-bar-fill {
+  position: absolute; left: 0; right: 0;
+  background: linear-gradient(180deg, var(--amber), var(--green));
+  border-radius: 8rpx;
+}
+
+/* Hourly sparkline */
+.sparkline {
+  position: relative; height: 100rpx; margin: 0 16rpx;
+  border-bottom: 1rpx solid var(--border);
+}
+.spark-dot {
+  position: absolute; width: 0; height: 0;
+  transform: translate(-50%, 50%);
+}
+.spark-dot-inner {
+  width: 8rpx; height: 8rpx; border-radius: 50%;
+  background: var(--blue);
+  border: 1px solid var(--bg-card);
+}
+.spark-labels {
+  display: flex; justify-content: space-between;
+  padding: 4rpx 16rpx 0;
+}
+
 .ag-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8rpx; }
 .ag-item {
   background: var(--bg-input); border: 1px solid var(--border);
