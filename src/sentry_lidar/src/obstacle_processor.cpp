@@ -3,11 +3,29 @@
 #include <limits>
 
 namespace ldlidar {
+namespace {
+
+float NormalizeAngleDegrees(float angle_deg) {
+  angle_deg = std::fmod(angle_deg, 360.0f);
+  if (angle_deg < 0.0f) {
+    angle_deg += 360.0f;
+  }
+  return angle_deg;
+}
+
+float AngularDistanceDegrees(float a_deg, float b_deg) {
+  float diff = std::fabs(NormalizeAngleDegrees(a_deg) - NormalizeAngleDegrees(b_deg));
+  return diff > 180.0f ? 360.0f - diff : diff;
+}
+
+}  // namespace
 
 sentry_interfaces::msg::ObstacleInfo ObstacleProcessor::process(
     const Points2D& points,
     float front_sector_half_angle_deg,
-    float danger_threshold_m) {
+    float danger_threshold_m,
+    float front_sector_center_angle_deg,
+    bool reverse_direction) {
 
   sentry_interfaces::msg::ObstacleInfo info;
   info.danger_threshold = danger_threshold_m;
@@ -25,11 +43,10 @@ sentry_interfaces::msg::ObstacleInfo ObstacleProcessor::process(
   int count = 0;
 
   for (const auto& p : points) {
-    bool in_front_sector = false;
-    if (p.angle <= front_sector_half_angle_deg ||
-        p.angle >= (360.0f - front_sector_half_angle_deg)) {
-      in_front_sector = true;
-    }
+    float scan_angle = reverse_direction ? (360.0f - p.angle) : p.angle;
+    bool in_front_sector =
+        AngularDistanceDegrees(scan_angle, front_sector_center_angle_deg) <=
+        front_sector_half_angle_deg;
 
     if (in_front_sector && p.distance > 0) {
       if (p.distance < min_dist_mm) {

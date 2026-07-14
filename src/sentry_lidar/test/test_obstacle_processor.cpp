@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "obstacle_processor.h"
 #include "ldlidar_datatype.h"
+#include "ros2_api.h"
 #include "sentry_interfaces/msg/obstacle_info.hpp"
 #include <cmath>
 #include <limits>
@@ -54,6 +55,29 @@ TEST(ObstacleProcessorTest, OutOfSectorIgnored) {
   EXPECT_TRUE(std::isnan(info.front_min_distance));
   EXPECT_FALSE(info.obstacle_detected);
   EXPECT_EQ(info.front_point_count, 0);
+}
+
+TEST(ObstacleProcessorTest, VehicleFrontUsesCorrectedLaserAngle) {
+  Points2D points;
+  points.emplace_back(270.0f, 400, 100, 0);
+  points.emplace_back(0.0f, 200, 100, 0);
+
+  ObstacleInfo info = ObstacleProcessor::process(points, 30.0f, 0.5f, 90.0f, true);
+
+  EXPECT_FLOAT_EQ(info.front_min_distance, 0.4f);
+  EXPECT_TRUE(info.obstacle_detected);
+  EXPECT_EQ(info.front_point_count, 1);
+}
+TEST(LaserScanAngleTest, ReversesRawClockwiseAnglesWhenConfigured) {
+  EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(0.0f, true), 0.0f);
+  EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(90.0f, true), 270.0f);
+  EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(180.0f, true), 180.0f);
+  EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(270.0f, true), 90.0f);
+}
+
+TEST(LaserScanAngleTest, KeepsAnglesWhenReverseDirectionDisabled) {
+  EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(90.0f, false), 90.0f);
+  EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(270.0f, false), 270.0f);
 }
 
 int main(int argc, char **argv) {

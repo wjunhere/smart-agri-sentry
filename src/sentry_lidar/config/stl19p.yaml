@@ -13,5 +13,6 @@ sentry_lidar:
     min_range: 0.3
     max_range: 20.0
     front_sector_half_angle: 30.0
+    front_sector_center_angle: 90.0
     danger_threshold: 0.5
     enable_filter: false

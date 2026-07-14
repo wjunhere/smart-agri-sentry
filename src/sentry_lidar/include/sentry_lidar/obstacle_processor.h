@@ -11,7 +11,9 @@ class ObstacleProcessor {
   static sentry_interfaces::msg::ObstacleInfo process(
     const Points2D& points,
     float front_sector_half_angle_deg,
-    float danger_threshold_m);
+    float danger_threshold_m,
+    float front_sector_center_angle_deg = 0.0f,
+    bool reverse_direction = false);
 };
 
 }  // namespace ldlidar

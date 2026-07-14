@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 
 from sentry_mission.mission_control_node import MissionControlNode
 from nav2_simple_commander.robot_navigator import TaskResult
+from sentry_interfaces.msg import ObstacleInfo
 
 
 @pytest.fixture(scope='module')
@@ -136,3 +137,367 @@ def test_prepare_autonomous_start_calls_reset_services(node):
     assert pose_req.pose.pose.pose.position.x == 0.0
     assert pose_req.pose.pose.pose.position.y == 0.0
     assert pose_req.pose.pose.pose.orientation.w == 1.0
+
+
+def test_patrol_close_obstacle_stops_and_builds_bypass(node):
+    """PATROL state: a close front obstacle pauses the main route and prepares bypass goals."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.odom_x = 0.0
+    node.odom_y = 0.0
+    node.odom_yaw = 0.0
+    node.waypoints = [{'x': 2.5, 'y': 0.0, 'yaw': 1.5708}]
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.45
+
+    with patch.object(node, '_cancel_nav2_task_async') as mock_cancel, \
+         patch.object(node.pub_cmd, 'publish') as mock_stop, \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'OBSTACLE_STOP'
+    assert node.sending_goal is False
+    assert node.avoidance_return_wp_idx == 0
+    assert node.avoidance_goals == []
+    assert mock_cancel.called
+    assert mock_stop.called
+
+
+def test_patrol_ignores_obstacle_beyond_current_waypoint(node):
+    """PATROL state: an obstacle beyond the active waypoint should not trigger bypass."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.odom_x = 0.0
+    node.odom_y = 0.0
+    node.odom_yaw = 0.0
+    node.waypoints = [{'x': 0.30, 'y': 0.0, 'yaw': 0.0}]
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.45
+
+    with patch.object(node, '_cancel_nav2_task_async') as mock_cancel, \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'PATROL'
+    assert node.sending_goal is True
+    assert node.avoidance_goals == []
+    mock_cancel.assert_not_called()
+
+def test_obstacle_stop_enters_backup_after_delay(node):
+    """OBSTACLE_STOP state: after the stop delay, mission backs away before bypass."""
+    node.state = 'OBSTACLE_STOP'
+    node.state_enter_time = 0.0
+    node.obstacle_resume_delay = 0.0
+    node.odom_x = 0.7
+    node.odom_y = -0.2
+
+    with patch.object(node, '_send_pose_goal') as mock_send:
+        node.tick()
+
+    assert node.state == 'OBSTACLE_BACKUP'
+    assert node.avoidance_backup_start_x == 0.7
+    assert node.avoidance_backup_start_y == -0.2
+    mock_send.assert_not_called()
+
+
+def test_obstacle_backup_enters_turn_after_clearance(node):
+    """OBSTACLE_BACKUP state: after backing up enough, mission starts a direct turn."""
+    node.state = 'OBSTACLE_BACKUP'
+    node.state_enter_time = 0.0
+    node.avoidance_backup_distance = 0.18
+    node.avoidance_backup_timeout = 2.5
+    node.avoidance_backup_start_x = 0.0
+    node.avoidance_backup_start_y = 0.0
+    node.odom_x = -0.19
+    node.odom_y = 0.0
+    node.odom_yaw = 0.25
+
+    node.tick()
+
+    assert node.state == 'OBSTACLE_TURN'
+    assert node.avoidance_turn_start_yaw == 0.25
+
+
+def test_obstacle_turn_enters_arc_drive_after_angle(node):
+    """OBSTACLE_TURN state: after the target angle, mission starts direct arc driving."""
+    node.state = 'OBSTACLE_TURN'
+    node.state_enter_time = 0.0
+    node.avoidance_side = 1
+    node.avoidance_turn_angle = 0.45
+    node.avoidance_turn_start_yaw = 0.0
+    node.odom_yaw = 0.48
+    node.odom_x = 1.0
+    node.odom_y = -0.2
+
+    node.tick()
+
+    assert node.state == 'OBSTACLE_ARC_DRIVE'
+    assert node.avoidance_drive_start_x == 1.0
+    assert node.avoidance_drive_start_y == -0.2
+
+
+def test_obstacle_arc_drive_enters_turn_back_after_distance(node):
+    """OBSTACLE_ARC_DRIVE state: after the bypass distance, mission turns back before resuming Nav2."""
+    node.state = 'OBSTACLE_ARC_DRIVE'
+    node._nav2_ready = True
+    node.state_enter_time = 0.0
+    node.avoidance_return_wp_idx = 1
+    node.avoidance_drive_distance = 0.65
+    node.avoidance_drive_timeout = 10.0
+    node.avoidance_drive_start_x = 0.0
+    node.avoidance_drive_start_y = 0.0
+    node.odom_x = 0.66
+    node.odom_y = 0.0
+    node.odom_yaw = 0.25
+
+    with patch.object(node, '_send_next_waypoint') as mock_send:
+        node.tick()
+
+    assert node.state == 'OBSTACLE_TURN_BACK'
+    assert node.avoidance_turn_start_yaw == 0.25
+    mock_send.assert_not_called()
+
+
+def test_obstacle_arc_drive_enters_turn_back_from_hard_front_obstacle(node):
+    """OBSTACLE_ARC_DRIVE state: a very close front obstacle ends bypass forward and turns back next."""
+    node.state = 'OBSTACLE_ARC_DRIVE'
+    node.state_enter_time = 0.0
+    node.avoidance_side = -1
+    node.avoidance_internal_hard_stop = 0.20
+    node.avoidance_drive_distance = 0.65
+    node.avoidance_drive_timeout = 10.0
+    node.odom_yaw = -0.5
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.18
+
+    with patch.object(node.pub_cmd, 'publish') as mock_cmd:
+        node.tick()
+
+    cmd = mock_cmd.call_args[0][0]
+    assert node.state == 'OBSTACLE_TURN_BACK'
+    assert node.avoidance_turn_start_yaw == -0.5
+    assert cmd.linear.x == 0.0
+    assert cmd.angular.z == 0.0
+
+
+
+def test_bypass_forward_uses_internal_hard_stop_not_patrol_threshold(node):
+    """The bypass forward leg should ignore old patrol/soft thresholds above the internal hard stop."""
+    node.state = 'OBSTACLE_ARC_DRIVE'
+    node.state_enter_time = 0.0
+    node.avoidance_side = 1
+    node.avoidance_drive_speed = 0.08
+    node.avoidance_drive_distance = 0.65
+    node.avoidance_drive_timeout = 10.0
+    node.avoidance_drive_start_x = 0.0
+    node.avoidance_drive_start_y = 0.0
+    node.avoidance_front_hard_stop = 0.50
+    node.avoidance_internal_hard_stop = 0.20
+    node.odom_x = 0.2
+    node.odom_y = 0.0
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.30
+
+    with patch.object(node, '_side_clearance', return_value=float('inf')), \
+         patch.object(node.pub_cmd, 'publish') as mock_cmd:
+        node.tick()
+
+    cmd = mock_cmd.call_args[0][0]
+    assert node.state == 'OBSTACLE_ARC_DRIVE'
+    assert cmd.linear.x == 0.08
+    assert cmd.angular.z == 0.0
+
+
+def test_bypass_forward_enters_turn_back_on_internal_front_or_side_hard_stop(node):
+    """During the bypass forward leg, <=0.20m front/side clearance ends the leg instead of retriggering avoidance."""
+    node.state = 'OBSTACLE_ARC_DRIVE'
+    node.state_enter_time = 0.0
+    node.avoidance_side = 1
+    node.avoidance_drive_distance = 0.65
+    node.avoidance_drive_timeout = 10.0
+    node.avoidance_drive_start_x = 0.0
+    node.avoidance_drive_start_y = 0.0
+    node.avoidance_internal_hard_stop = 0.20
+    node.odom_x = 0.2
+    node.odom_y = 0.0
+    node.odom_yaw = 0.42
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.19
+
+    with patch.object(node, '_side_clearance', return_value=float('inf')), \
+         patch.object(node.pub_cmd, 'publish') as mock_cmd:
+        node.tick()
+
+    cmd = mock_cmd.call_args[0][0]
+    assert node.state == 'OBSTACLE_TURN_BACK'
+    assert node.avoidance_turn_start_yaw == 0.42
+    assert cmd.linear.x == 0.0
+    assert cmd.angular.z == 0.0
+
+
+
+def test_bypass_forward_ignores_side_clearance_above_side_hard_stop(node):
+    """Side plants above the dedicated side hard stop should not end the bypass forward leg."""
+    node.state = 'OBSTACLE_ARC_DRIVE'
+    node.state_enter_time = 0.0
+    node.avoidance_side = 1
+    node.avoidance_drive_speed = 0.08
+    node.avoidance_drive_distance = 0.65
+    node.avoidance_drive_timeout = 10.0
+    node.avoidance_drive_start_x = 0.0
+    node.avoidance_drive_start_y = 0.0
+    node.avoidance_internal_hard_stop = 0.20
+    node.avoidance_internal_side_hard_stop = 0.05
+    node.odom_x = 0.2
+    node.odom_y = 0.0
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.80
+
+    with patch.object(node, '_side_clearance', side_effect=[0.15, 0.42]), \
+         patch.object(node.pub_cmd, 'publish') as mock_cmd:
+        node.tick()
+
+    cmd = mock_cmd.call_args[0][0]
+    assert node.state == 'OBSTACLE_ARC_DRIVE'
+    assert cmd.linear.x == 0.08
+    assert cmd.angular.z == 0.0
+
+
+def test_bypass_forward_enters_turn_back_on_side_hard_stop(node):
+    """Side clearance at or below 0.05m still ends the bypass forward leg."""
+    node.state = 'OBSTACLE_ARC_DRIVE'
+    node.state_enter_time = 0.0
+    node.avoidance_side = 1
+    node.avoidance_drive_distance = 0.65
+    node.avoidance_drive_timeout = 10.0
+    node.avoidance_drive_start_x = 0.0
+    node.avoidance_drive_start_y = 0.0
+    node.avoidance_internal_hard_stop = 0.20
+    node.avoidance_internal_side_hard_stop = 0.05
+    node.odom_x = 0.2
+    node.odom_y = 0.0
+    node.odom_yaw = 0.42
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.80
+
+    with patch.object(node, '_side_clearance', side_effect=[0.04, 0.42]), \
+         patch.object(node.pub_cmd, 'publish') as mock_cmd:
+        node.tick()
+
+    cmd = mock_cmd.call_args[0][0]
+    assert node.state == 'OBSTACLE_TURN_BACK'
+    assert node.avoidance_turn_start_yaw == 0.42
+    assert cmd.linear.x == 0.0
+    assert cmd.angular.z == 0.0
+
+
+def test_bypass_forward_enters_turn_back_after_distance(node):
+    """After the 0.65m bypass leg, mission turns back before rejoining Nav2."""
+    node.state = 'OBSTACLE_ARC_DRIVE'
+    node._nav2_ready = True
+    node.state_enter_time = 0.0
+    node.avoidance_return_wp_idx = 1
+    node.avoidance_drive_distance = 0.65
+    node.avoidance_drive_timeout = 10.0
+    node.avoidance_drive_start_x = 0.0
+    node.avoidance_drive_start_y = 0.0
+    node.odom_x = 0.66
+    node.odom_y = 0.0
+    node.odom_yaw = 0.3
+
+    with patch.object(node, '_send_next_waypoint') as mock_send:
+        node.tick()
+
+    assert node.state == 'OBSTACLE_TURN_BACK'
+    assert node.avoidance_turn_start_yaw == 0.3
+    mock_send.assert_not_called()
+
+
+def test_turn_back_enters_rejoin_forward_after_angle(node):
+    """The turn-back leg rotates opposite the first turn before the short rejoin drive."""
+    node.state = 'OBSTACLE_TURN_BACK'
+    node.state_enter_time = 0.0
+    node.avoidance_side = 1
+    node.avoidance_turn_angle = 0.60
+    node.avoidance_turn_start_yaw = 1.0
+    node.odom_yaw = 0.39
+    node.odom_x = 1.2
+    node.odom_y = -0.4
+
+    node.tick()
+
+    assert node.state == 'OBSTACLE_REJOIN_FORWARD'
+    assert node.avoidance_drive_start_x == 1.2
+    assert node.avoidance_drive_start_y == -0.4
+
+
+def test_rejoin_forward_returns_to_original_waypoint_after_distance(node):
+    """After the short rejoin leg, mission resumes the saved waypoint under Nav2."""
+    node.state = 'OBSTACLE_REJOIN_FORWARD'
+    node._nav2_ready = True
+    node.state_enter_time = 0.0
+    node.avoidance_return_wp_idx = 1
+    node.avoidance_rejoin_distance = 0.30
+    node.avoidance_drive_start_x = 0.0
+    node.avoidance_drive_start_y = 0.0
+    node.odom_x = 0.31
+    node.odom_y = 0.0
+    node.waypoints = [
+        {'x': 0.0, 'y': 0.0, 'yaw': 0.0},
+        {'x': 2.5, 'y': 0.0, 'yaw': 1.5708},
+    ]
+
+    with patch.object(node, '_send_next_waypoint') as mock_send:
+        node.tick()
+
+    assert node.state == 'PATROL'
+    assert node.current_wp_idx == 1
+    mock_send.assert_called_once()
+
+
+def test_avoidance_success_returns_to_original_waypoint(node):
+    """Legacy AVOIDING state falls back to the saved main waypoint."""
+    node.state = 'AVOIDING'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.avoidance_return_wp_idx = 1
+    node.waypoints = [
+        {'x': 0.0, 'y': 0.0, 'yaw': 0.0},
+        {'x': 2.5, 'y': 0.0, 'yaw': 1.5708},
+    ]
+
+    with patch.object(node, '_send_next_waypoint') as mock_send:
+        node.tick()
+
+    assert node.state == 'PATROL'
+    assert node.current_wp_idx == 1
+    mock_send.assert_called_once()
+
+def test_nav_cmd_subscription_uses_velocity_callback_group(node):
+    """Nav velocity callbacks must not share the timer's default callback group."""
+    assert node.sub_nav_cmd.callback_group is node.velocity_callback_group
+
+def test_auto_mode_after_completed_route_restarts_from_first_waypoint(node):
+    """Starting AUTO after a completed route should begin at WP0 again."""
+    from std_srvs.srv import SetBool
+
+    node.state = 'MANUAL'
+    node.waypoints = [
+        {'x': 0.0, 'y': 0.0, 'yaw': 0.0},
+        {'x': 1.0, 'y': 0.0, 'yaw': 0.0},
+        {'x': 2.0, 'y': 0.0, 'yaw': 0.0},
+    ]
+    node.saved_wp_idx = len(node.waypoints)
+    node.current_wp_idx = len(node.waypoints)
+
+    request = SetBool.Request()
+    request.data = True
+    response = node.set_auto_mode_cb(request, SetBool.Response())
+
+    assert response.success is True
+    assert node.state == 'PATROL'
+    assert node.current_wp_idx == 0

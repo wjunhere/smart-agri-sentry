@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
   setting.measure_point_freq = 4500;
 
   float front_sector_half_angle = 30.0f;
+  float front_sector_center_angle = 90.0f;
   float danger_threshold = 0.5f;
   bool enable_filter = false;
 
@@ -52,6 +53,7 @@ int main(int argc, char** argv) {
   node->declare_parameter<double>("max_range", setting.max_range);
   node->declare_parameter<int>("measure_point_freq", setting.measure_point_freq);
   node->declare_parameter<float>("front_sector_half_angle", front_sector_half_angle);
+  node->declare_parameter<float>("front_sector_center_angle", front_sector_center_angle);
   node->declare_parameter<float>("danger_threshold", danger_threshold);
   node->declare_parameter<bool>("enable_filter", enable_filter);
 
@@ -69,6 +71,7 @@ int main(int argc, char** argv) {
   node->get_parameter("max_range", setting.max_range);
   node->get_parameter("measure_point_freq", setting.measure_point_freq);
   node->get_parameter("front_sector_half_angle", front_sector_half_angle);
+  node->get_parameter("front_sector_center_angle", front_sector_center_angle);
   node->get_parameter("danger_threshold", danger_threshold);
   node->get_parameter("enable_filter", enable_filter);
 
@@ -135,7 +138,8 @@ int main(int argc, char** argv) {
 
         {
           auto obstacle_info = ldlidar::ObstacleProcessor::process(
-            laser_scan_points, front_sector_half_angle, danger_threshold);
+            laser_scan_points, front_sector_half_angle, danger_threshold,
+            front_sector_center_angle, setting.laser_scan_dir);
           obstacle_info.header.stamp = node->now();
           obstacle_info.header.frame_id = setting.frame_id;
           obstacle_pub->publish(obstacle_info);
@@ -216,7 +220,7 @@ void ToLaserscanMessagePublish(
       intensity = std::numeric_limits<float>::quiet_NaN();
     }
 
-    float angle = ANGLE_TO_RADIAN(dir_angle);
+    float angle = ANGLE_TO_RADIAN(NormalizeScanAngleDegrees(dir_angle, setting.laser_scan_dir));
     int index = static_cast<int>(std::floor((angle - angle_min) / angle_increment));
     if (index < 0) index = 0;
     if (index >= beam_size) index = beam_size - 1;

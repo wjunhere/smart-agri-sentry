@@ -1,6 +1,6 @@
-﻿from launch import LaunchDescription
+from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, Command
@@ -34,6 +34,8 @@ def generate_launch_description():
         get_package_share_directory('sentry_servo'), 'config', 'servo_config.yaml')
 
     return LaunchDescription([
+        SetEnvironmentVariable('RMW_FASTRTPS_USE_SHM', '0'),
+        SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
         DeclareLaunchArgument('crop_type', default_value='tomato'),
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
         DeclareLaunchArgument('slam', default_value='False'),
@@ -189,17 +191,84 @@ def generate_launch_description():
             parameters=[ekf_config],
         ),
 
-        # Nav2 navigation stack (mapless mode; no map_server/localization)
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(
-                    get_package_share_directory('nav2_bringup'),
-                    'launch', 'navigation_launch.py')
-            ),
-            launch_arguments={
-                'params_file': nav2_config,
-                'use_sim_time': 'False',
-            }.items(),
+        # Nav2 navigation stack (mapless mode; no map_server/localization).
+        # Launch the required nodes explicitly so waypoint_follower cannot block
+        # velocity_smoother activation during lifecycle bringup.
+        Node(
+            package='nav2_controller',
+            executable='controller_server',
+            output='screen',
+            parameters=[nav2_config, {'use_sim_time': False}],
+            arguments=['--ros-args', '--log-level', 'info'],
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static'),
+                        ('cmd_vel', 'cmd_vel_nav')],
+        ),
+        Node(
+            package='nav2_smoother',
+            executable='smoother_server',
+            name='smoother_server',
+            output='screen',
+            parameters=[nav2_config, {'use_sim_time': False}],
+            arguments=['--ros-args', '--log-level', 'info'],
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
+        ),
+        Node(
+            package='nav2_planner',
+            executable='planner_server',
+            name='planner_server',
+            output='screen',
+            parameters=[nav2_config, {'use_sim_time': False}],
+            arguments=['--ros-args', '--log-level', 'info'],
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
+        ),
+        Node(
+            package='nav2_behaviors',
+            executable='behavior_server',
+            name='behavior_server',
+            output='screen',
+            parameters=[nav2_config, {'use_sim_time': False}],
+            arguments=['--ros-args', '--log-level', 'info'],
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static'),
+                        ('cmd_vel', 'cmd_vel_behavior')],
+        ),
+        Node(
+            package='nav2_bt_navigator',
+            executable='bt_navigator',
+            name='bt_navigator',
+            output='screen',
+            parameters=[nav2_config, {'use_sim_time': False}],
+            arguments=['--ros-args', '--log-level', 'info'],
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
+        ),
+        Node(
+            package='nav2_velocity_smoother',
+            executable='velocity_smoother',
+            name='velocity_smoother',
+            output='screen',
+            parameters=[nav2_config, {'use_sim_time': False}],
+            arguments=['--ros-args', '--log-level', 'info'],
+            remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static'),
+                        ('cmd_vel', 'cmd_vel_nav'),
+                        ('cmd_vel_smoothed', 'cmd_vel_nav_smoothed')],
+        ),
+        Node(
+            package='nav2_lifecycle_manager',
+            executable='lifecycle_manager',
+            name='lifecycle_manager_navigation',
+            output='screen',
+            arguments=['--ros-args', '--log-level', 'info'],
+            parameters=[{
+                'use_sim_time': False,
+                'autostart': True,
+                'node_names': [
+                    'controller_server',
+                    'smoother_server',
+                    'planner_server',
+                    'behavior_server',
+                    'bt_navigator',
+                    'velocity_smoother',
+                ],
+            }],
         ),
 
         # Fusion node
