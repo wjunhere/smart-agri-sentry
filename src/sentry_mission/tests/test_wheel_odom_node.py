@@ -127,3 +127,27 @@ def test_timeout_updates_last_time(node):
 
         # After timeout, last_time should be t2 (not t1)
         assert node.last_time == t2
+
+
+def test_reset_odom_service_clears_pose_and_encoder_baseline(node):
+    """Verify reset service clears accumulated odometry and encoder baseline."""
+    from std_srvs.srv import Trigger
+
+    node.last_left = 1234
+    node.last_right = 5678
+    node.last_time = node.get_clock().now()
+    node.x = 1.2
+    node.y = -0.4
+    node.theta = 0.7
+    node.last_timeout_log_time = node.get_clock().now()
+
+    response = node.reset_odom_cb(Trigger.Request(), Trigger.Response())
+
+    assert response.success is True
+    assert node.last_left is None
+    assert node.last_right is None
+    assert node.last_time is None
+    assert node.x == 0.0
+    assert node.y == 0.0
+    assert node.theta == 0.0
+    assert node.last_timeout_log_time is None

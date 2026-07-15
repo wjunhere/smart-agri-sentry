@@ -56,6 +56,19 @@ static float max_credible_innovation(float filtered_speed) {
     return dyn;
 }
 
+void Encoder_Reset_Cumulative(void) {
+    cumul_left  = 0;
+    cumul_right = 0;
+    last_cnt_left  = __HAL_TIM_GET_COUNTER(&htim2);
+    last_cnt_right = __HAL_TIM_GET_COUNTER(&htim3);
+    first_read_left  = 1;
+    first_read_right = 1;
+    filtered_speed_left  = 0.0f;
+    filtered_speed_right = 0.0f;
+    raw_delta_left  = 0;
+    raw_delta_right = 0;
+}
+
 /* Reset encoder state (call on STOP to avoid stale readings) */
 void Encoder_Reset_Filters(void) {
     filtered_speed_left  = 0.0f;

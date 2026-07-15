@@ -28,6 +28,11 @@ int32_t Encoder_Get_Cumulative_Right(void);
 
 void Encoder_Reset_Filters(void);
 
+/* Reset cumulative pulse counters to zero (for re-localisation / new mission).
+ * Also resets last-read counters and first-read flags so the next delta
+ * is zero (not the accumulated counter value since boot). */
+void Encoder_Reset_Cumulative(void);
+
 /* Adaptive filter outlier counters (for diagnostics).
  * Incremented each time a raw delta exceeds the physically-plausible range
  * and gets extra attenuation.  Resettable via Encoder_Reset_Filters(). */

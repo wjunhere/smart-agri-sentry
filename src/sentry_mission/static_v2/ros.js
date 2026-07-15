@@ -21,6 +21,11 @@ window.store = Vue.reactive({
   advisoryUrgency: 0,
   advisoryFungicide: '',
   forecastAlerts: [],
+  weatherDays: [],
+  weatherDisasterAlerts: [],
+  weatherStale: false,
+  weatherLat: null,
+  weatherLon: null,
   fusionResults: [],
   weatherDays: [],
   weatherHours: [],
@@ -51,13 +56,33 @@ window.store = Vue.reactive({
   batteryVoltage: null,
   leftSpeed: 0,
   rightSpeed: 0,
-  mode: 'AUTO',
+  mode: 'MANUAL',
   cropType: 'tomato',
   selectedAlert: null,
   showWpEditor: false,
+  stackStarting: false,
+  stackPreheating: false,
+  stackReady: false,
   _rawWaypoints: [],
 });
 const store = window.store;  // local alias for internal use in this file
+
+function missionStateToMode(state) {
+  const autoStates = new Set([
+    'PATROL',
+    'OBSTACLE_STOP',
+    'OBSTACLE_BACKUP',
+    'OBSTACLE_TURN',
+    'OBSTACLE_ARC_DRIVE',
+    'OBSTACLE_TURN_BACK',
+    'OBSTACLE_REJOIN_FORWARD',
+    'AVOIDING',
+    'ANALYZING',
+    'ACTION',
+    'RESUME',
+  ]);
+  return autoStates.has(state) ? 'AUTO' : 'MANUAL';
+}
 
 let ros = null;
 
@@ -172,6 +197,7 @@ const TOPICS = [
   ['/mission/status', 'sentry_interfaces/MissionStatus',
    (msg) => {
      store.missionState = msg.state;
+     store.mode = missionStateToMode(msg.state);
      store.missionProgress = msg.progress;
      store.missionCurrentAction = msg.current_action;
      store.missionPlantsDetected = msg.plants_detected;
@@ -217,6 +243,83 @@ function callSetAutoMode(auto) {
   });
 }
 
+function callStackStart() {
+  store.stackStarting = true;
+  return fetch('/stack/start', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to start robot stack');
+      }
+      store.mode = 'AUTO';
+      store.stackReady = Boolean(data.stack_ready);
+      return data;
+    })
+    .finally(() => { store.stackStarting = false; });
+}
+
+function callStackStop() {
+  store.stackStarting = false;
+  return fetch('/stack/stop', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to stop robot stack');
+      }
+      store.mode = 'MANUAL';
+      store.stackReady = Boolean(data.stack_ready);
+      return data;
+    });
+}
+
+function callStackPreheat() {
+  store.stackPreheating = true;
+  return fetch('/stack/preheat', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to preheat robot stack');
+      }
+      store.mode = 'MANUAL';
+      store.stackReady = Boolean(data.stack_ready);
+      return data;
+    })
+    .finally(() => { store.stackPreheating = false; });
+}
+function callGetWaypoints() {
+  return fetch('/waypoints')
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to load waypoints');
+      }
+      store._rawWaypoints = data.waypoints || [];
+      store.missionWaypointLabels = store._rawWaypoints.map((wp, i) =>
+        `WP${i}: (${Number(wp.x).toFixed(1)}, ${Number(wp.y).toFixed(1)})`
+      );
+      store.missionTotalWps = store._rawWaypoints.length;
+      return store._rawWaypoints;
+    });
+}
+
+function callSaveWaypoints(waypoints) {
+  return fetch('/waypoints', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ waypoints })
+  }).then(async (resp) => {
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to save waypoints');
+    }
+    store._rawWaypoints = data.waypoints || waypoints;
+    store.missionWaypointLabels = store._rawWaypoints.map((wp, i) =>
+      `WP${i}: (${Number(wp.x).toFixed(1)}, ${Number(wp.y).toFixed(1)})`
+    );
+    store.missionTotalWps = store._rawWaypoints.length;
+    return store._rawWaypoints;
+  });
+}
 function publishCmdVel(linear, angular) {
   const topic = new ROSLIB.Topic({
     ros, name: '/cmd_vel', messageType: 'geometry_msgs/Twist'
@@ -310,24 +413,17 @@ function callSetCropType(cropType) {
   store.batteryVoltage = 12.1;
   store.leftSpeed = 0.15;
   store.rightSpeed = 0.14;
-
-  // Mission
-  store.missionState = 'PATROL';
-  store.missionCurrentAction = '巡航空点 2/5';
-  store.missionPlantsDetected = 23;
-  store.missionPlantsAnalyzed = 18;
-  store.missionProgress = 0.4;
-  store.missionCurrentWpIdx = 1;
-  store.missionTotalWps = 5;
-  store.missionWaypointLabels = [
-    'WP0: (0.0, 0.0)', 'WP1: (4.0, 0.0)',
-    'WP2: (4.0, 1.2)', 'WP3: (0.0, 1.2)', 'WP4: (0.0, 2.4)'
-  ];
-  store._rawWaypoints = [
-    { x: 2.5, y: 0.0, yaw: 0.0 },
-    { x: 2.5, y: 0.6, yaw: 1.5708 },
-    { x: 0.0, y: 0.6, yaw: 3.1416 },
-  ];
+  // Keep mission state empty until real /mission/status or /waypoints data arrives.
+  store.missionState = 'IDLE';
+  store.mode = 'MANUAL';
+  store.missionCurrentAction = '';
+  store.missionPlantsDetected = 0;
+  store.missionPlantsAnalyzed = 0;
+  store.missionProgress = 0;
+  store.missionCurrentWpIdx = 0;
+  store.missionTotalWps = 0;
+  store.missionWaypointLabels = [];
+  store._rawWaypoints = [];
 
   // Weather — fetch from local proxy, fallback to static mock
   (function initWeather() {
@@ -498,9 +594,21 @@ store.setMockMode = async function(mode) {
   } catch (e) { /* server not reachable, local-only */ }
 };
 
+function refreshStackStatus() {
+  return fetch('/status')
+    .then(resp => resp.json())
+    .then(data => {
+      store.stackReady = Boolean(data.stack_ready);
+      return data;
+    })
+    .catch(() => null);
+}
 // Sync from server on load, then poll every 1s
 fetchMockMode();
+callGetWaypoints().catch(err => console.warn('[waypoints] initial load failed:', err));
 setInterval(fetchMockMode, 1000);
+refreshStackStatus();
+setInterval(refreshStackStatus, 3000);
 
 setInterval(() => {
   if (store.mockDiagnosisMode === 'real') return;

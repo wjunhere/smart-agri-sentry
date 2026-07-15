@@ -18,9 +18,13 @@ def mock_ros2():
         'geometry_msgs.msg': types.ModuleType('geometry_msgs.msg'),
         'std_srvs': types.ModuleType('std_srvs'),
         'std_srvs.srv': types.ModuleType('std_srvs.srv'),
+        'sentry_interfaces': types.ModuleType('sentry_interfaces'),
+        'sentry_interfaces.srv': types.ModuleType('sentry_interfaces.srv'),
+        'sentry_interfaces.msg': types.ModuleType('sentry_interfaces.msg'),
     }
 
     modules['rclpy'].init = mock.MagicMock()
+    modules['sentry_interfaces'].__path__ = []
     modules['rclpy'].shutdown = mock.MagicMock()
     modules['rclpy'].ok = mock.MagicMock(return_value=True)
     modules['rclpy'].Node = object
@@ -32,6 +36,12 @@ def mock_ros2():
     SetBool = type('SetBool', (), {})
     SetBool.Request = type('Request', (), {})
     modules['std_srvs.srv'].SetBool = SetBool
+
+    SetCropType = type('SetCropType', (), {})
+    modules['sentry_interfaces.srv'].SetCropType = SetCropType
+    MissionStatus = type('MissionStatus', (), {})
+    modules['sentry_interfaces.msg'].MissionStatus = MissionStatus
+
 
     for name, mod in modules.items():
         sys.modules[name] = mod
@@ -133,3 +143,36 @@ def test_on_stop_response_logs_success():
 
     WebRemoteNode._on_stop_response(web, fake_future)
     logger.info.assert_called_once()
+
+def test_stack_script_env_preserves_frontend_control_plane():
+    from sentry_mission.web_remote_node import _stack_script_env
+
+    env = _stack_script_env({'KEEP': 'yes'})
+
+    assert env['KEEP'] == 'yes'
+    assert env['SENTRY_PRESERVE_WEB'] == '1'
+    assert env['ENABLE_WEB'] == 'false'
+
+
+def test_mission_status_complete_when_all_waypoints_reached():
+    from sentry_mission.web_remote_node import _mission_status_is_complete
+
+    msg = types.SimpleNamespace(
+        state='PATROL',
+        current_wp_idx=3,
+        total_wps=3,
+    )
+
+    assert _mission_status_is_complete(msg) is True
+
+
+def test_mission_status_not_complete_before_last_waypoint():
+    from sentry_mission.web_remote_node import _mission_status_is_complete
+
+    msg = types.SimpleNamespace(
+        state='PATROL',
+        current_wp_idx=2,
+        total_wps=3,
+    )
+
+    assert _mission_status_is_complete(msg) is False
