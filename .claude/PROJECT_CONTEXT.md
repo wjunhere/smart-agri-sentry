@@ -1,9 +1,16 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v2.8 · 更新日期 2026-07-13  
+> 架构版本 v2.9 · 更新日期 2026-07-15  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
+
+## Current field baseline
+
+- Stable branch work from `fix/autonomous-cruise` has been merged into `main`.
+- The robot has demonstrated three-point cruise, mission-owned short-range avoidance, frontend Preheat/Start/Pause/E-STOP, waypoint editing, and automatic stack stop after mission completion.
+- Details are intentionally split by topic: architecture in `docs/ARCHITECTURE.md`, ROS/HTTP interfaces in `docs/ROS2.md`, startup in `docs/SETUP.md`, decisions in `docs/DECISIONS.md`, known issues in `docs/ISSUES.md`, and remaining work in `docs/TODO.md`.
+- RDK access: `ssh rdk` or `ssh sunrise@10.66.175.106`; frontend: `http://10.66.175.106:5000/`.
 
 ## 项目目标
 

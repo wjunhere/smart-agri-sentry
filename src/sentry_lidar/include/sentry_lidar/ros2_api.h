@@ -24,6 +24,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <string>
+#include <cmath>
 
 struct LaserScanSetting {
   std::string frame_id;
@@ -36,6 +37,14 @@ struct LaserScanSetting {
   int measure_point_freq;
 };
 
+inline float NormalizeScanAngleDegrees(float raw_angle_deg, bool reverse_direction) {
+  float angle_deg = reverse_direction ? (360.0f - raw_angle_deg) : raw_angle_deg;
+  angle_deg = std::fmod(angle_deg, 360.0f);
+  if (angle_deg < 0.0f) {
+    angle_deg += 360.0f;
+  }
+  return angle_deg;
+}
 #endif //__ROS_API_H__
 
 /********************* (C) COPYRIGHT SHENZHEN LDROBOT CO., LTD *******END OF

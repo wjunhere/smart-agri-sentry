@@ -14,7 +14,10 @@ const ControlPanel = {
   methods: {
     emergencyStop() {
       publishCmdVel(0, 0);
-      callSetAutoMode(false);
+      callStackStop().catch(err => {
+        console.error(err);
+        callSetAutoMode(false).catch(e => console.error(e));
+      });
     }
   }
 };

@@ -1,6 +1,6 @@
 # 当前任务与阻塞项
 
-> 更新日期：2026-07-13
+> 更新日期：2026-07-15
 
 ---
 
@@ -107,3 +107,19 @@
 | Phase 3 | 固定环境节点硬件固件 + env_bridge | 待实现 |
 | Phase 4 | 外部天气 + Web 前端 + InfluxDB 离线分析 | 后续完善 |
 | **Phase N** | **LiDAR SLAM/mapping 导航迁移** | **已决策，待实现** |
+
+---
+
+## Field Cruise Status (2026-07-15)
+
+Completed:
+
+- [x] Field cruise/avoidance/frontend baseline merged from `fix/autonomous-cruise` into `main`.
+- [x] Three-point cruise, mission-owned short-range avoidance, frontend Preheat/Start/Pause/E-STOP, waypoint editing, and auto stop-on-completion were demonstrated on the robot.
+- [x] Full start/stop scripts are available under `scripts/rdk/`.
+
+Next incremental work:
+
+- [ ] Keep future cruise changes evidence-driven: change one parameter or behavior group at a time, then run the same field validation.
+- [ ] Consider cleaning old tracked temporary shell test scripts from repository history/tree in a separate cleanup change.
+

@@ -9,6 +9,7 @@ import struct
 from geometry_msgs.msg import Twist
 from sentry_interfaces.msg import (
     Environment, SoilNutrition, ChassisStatus, ServoCmd, ChassisConfig)
+from std_srvs.srv import Trigger
 
 
 # ---- Protocol Constants ----
@@ -19,6 +20,11 @@ TYPE_MOTION_CMD = 0x81
 TYPE_SERVO_CMD = 0x82
 TYPE_MODE_CMD = 0x83
 TYPE_CONFIG_CMD = 0x84
+TYPE_RESET_ENCODER = 0x85
+
+MODE_STANDBY = 0x00
+MODE_REMOTE = 0x01
+MODE_AUTO = 0x02
 
 
 # ---- CRC16-CCITT (0x1021, init 0xFFFF) ----
@@ -127,13 +133,26 @@ class UartBridgeNode(Node):
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('forward_servo_cmd', False)
         self.declare_parameter('wheel_base', 0.23)
+        self.declare_parameter('left_speed_scale', 1.0)
+        self.declare_parameter('right_speed_scale', 1.0)
+        self.declare_parameter('swap_wheel_commands', False)
         self.declare_parameter('chassis_timeout_sec', 1.0)
+        self.declare_parameter('motion_mode', MODE_AUTO)
+        self.declare_parameter('min_effective_linear_speed', 0.08)  # m/s, boost floor
         port = self.get_parameter('uart_port').value
         baud = self.get_parameter('baudrate').value
         forward_servo = self.get_parameter('forward_servo_cmd').value
         self.wheel_base = self.get_parameter('wheel_base').value
+        self.left_speed_scale = self.get_parameter('left_speed_scale').value
+        self.right_speed_scale = self.get_parameter('right_speed_scale').value
+        self.swap_wheel_commands = self.get_parameter(
+            'swap_wheel_commands').value
         self.chassis_timeout_sec = self.get_parameter(
             'chassis_timeout_sec').value
+        self.motion_mode = int(self.get_parameter('motion_mode').value)
+        self.min_effective_v = self.get_parameter(
+            'min_effective_linear_speed').value
+        self._last_sent_mode = None
 
         try:
             self.ser = serial.Serial(port, baud, timeout=0)
@@ -161,6 +180,10 @@ class UartBridgeNode(Node):
         else:
             self.get_logger().info(
                 'ServoCmd forwarding disabled; assuming direct RDK X5 PWM')
+
+        # Encoder reset service
+        self.srv_reset_enc = self.create_service(
+            Trigger, '/sentry/reset_encoder', self.reset_encoder_cb)
 
         self.timer_rx = self.create_timer(0.01, self.rx_tick)
         self.rx_buf = bytearray()
@@ -287,16 +310,45 @@ class UartBridgeNode(Node):
                 f'Ignoring non-finite Twist: linear.x={v}, angular.z={w}')
             return
 
+        # Minimum effective speed boost: if |v| is non-zero but below
+        # min_effective_v, scale it up to overcome static friction dead-zone.
+        abs_v = abs(v)
+        if 0.0 < abs_v < self.min_effective_v:
+            scale = self.min_effective_v / abs_v
+            v = v * scale
+            w = w * scale  # scale angular proportionally to keep curvature
+            self.get_logger().debug(
+                f'Boosting cmd_vel: {msg.linear.x:.3f}→{v:.3f} m/s '
+                f'(min={self.min_effective_v:.3f})')
+
+        self._send_mode_if_needed(self.motion_mode)
+
         left_m_s = v - w * self.wheel_base / 2.0
         right_m_s = v + w * self.wheel_base / 2.0
+        left_m_s *= self.left_speed_scale
+        right_m_s *= self.right_speed_scale
 
         left_mm_s = max(-32768, min(32767, int(left_m_s * 1000)))
         right_mm_s = max(-32768, min(32767, int(right_m_s * 1000)))
+        if self.swap_wheel_commands:
+            left_mm_s, right_mm_s = right_mm_s, left_mm_s
 
         payload = struct.pack('<hh', left_mm_s, right_mm_s)
         frame = encode_frame(TYPE_MOTION_CMD, payload)
         try:
             self.ser.write(frame)
+        except serial.SerialException as e:
+            self.get_logger().error(f'UART write error: {e}')
+
+    def _send_mode_if_needed(self, mode: int):
+        if self._last_sent_mode == mode:
+            return
+        payload = bytes([mode & 0xFF])
+        frame = encode_frame(TYPE_MODE_CMD, payload)
+        try:
+            self.ser.write(frame)
+            self._last_sent_mode = mode
+            self.get_logger().info(f'Sent chassis mode: {mode}')
         except serial.SerialException as e:
             self.get_logger().error(f'UART write error: {e}')
 
@@ -325,6 +377,23 @@ class UartBridgeNode(Node):
             self.ser.write(frame)
         except serial.SerialException as e:
             self.get_logger().error(f'UART write error: {e}')
+
+    def reset_encoder_cb(self, request, response):
+        if self.ser is None or not self.ser.is_open:
+            response.success = False
+            response.message = 'UART not open'
+            return response
+        payload = bytes([0x00])  # reserved
+        frame = encode_frame(TYPE_RESET_ENCODER, payload)
+        try:
+            self.ser.write(frame)
+            self.get_logger().info('Sent encoder reset command')
+            response.success = True
+            response.message = 'Encoder reset command sent'
+        except serial.SerialException as e:
+            response.success = False
+            response.message = f'UART write error: {e}'
+        return response
 
     def destroy_node(self):
         if self.ser and self.ser.is_open:

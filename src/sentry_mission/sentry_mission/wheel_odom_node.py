@@ -11,6 +11,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Quaternion
 from sentry_interfaces.msg import ChassisStatus
+from std_srvs.srv import Trigger
 import math
 
 
@@ -18,7 +19,7 @@ class WheelOdomNode(Node):
     def __init__(self):
         super().__init__('wheel_odom_node')
         self.declare_parameter('wheel_base', 0.23)
-        self.declare_parameter('pulses_per_meter', 11035)
+        self.declare_parameter('pulses_per_meter', 11552)
         self.declare_parameter('max_pulse_delta', 1000)
 
         self.wheel_base = self.get_parameter('wheel_base').value
@@ -29,6 +30,8 @@ class WheelOdomNode(Node):
         self.sub = self.create_subscription(
             ChassisStatus, '/sentry/chassis/status', self.on_chassis, qos)
         self.pub = self.create_publisher(Odometry, '/wheel/odom', 10)
+        self.srv_reset = self.create_service(
+            Trigger, '/sentry/reset_wheel_odom', self.reset_odom_cb)
 
         self.last_left = None
         self.last_right = None
@@ -58,6 +61,19 @@ class WheelOdomNode(Node):
         self.get_logger().info(
             f'Wheel odom ready: wheel_base={self.wheel_base}, '
             f'pulses_per_m={self.pulses_per_m}')
+
+    def reset_odom_cb(self, request, response):
+        self.last_left = None
+        self.last_right = None
+        self.last_time = None
+        self.x = 0.0
+        self.y = 0.0
+        self.theta = 0.0
+        self.last_timeout_log_time = None
+        response.success = True
+        response.message = 'Wheel odometry reset'
+        self.get_logger().info('Wheel odometry reset')
+        return response
 
     def on_chassis(self, msg: ChassisStatus):
         if msg.comm_timeout:

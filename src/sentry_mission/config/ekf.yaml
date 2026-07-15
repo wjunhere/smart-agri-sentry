@@ -20,9 +20,9 @@ ekf_filter:
 
     imu0: /sensor/imu/data
     imu0_config: [false, false, false,
-                  true,  true,  true,
                   false, false, false,
-                  true,  true,  true,
+                  false, false, false,
+                  false, false, true,
                   false, false, false]
     imu0_differential: false
     imu0_queue_size: 10

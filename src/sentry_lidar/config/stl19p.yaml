@@ -4,6 +4,7 @@ sentry_lidar:
     topic_name: "scan"
     port_name: "/dev/wheeltec_lidar"
     port_baudrate: 230400
+    enable_serial_or_network_communication: true
     frame_id: "laser"
     laser_scan_dir: true
     enable_angle_crop_func: false
@@ -12,5 +13,6 @@ sentry_lidar:
     min_range: 0.3
     max_range: 20.0
     front_sector_half_angle: 30.0
+    front_sector_center_angle: 90.0
     danger_threshold: 0.5
     enable_filter: false

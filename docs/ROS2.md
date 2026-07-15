@@ -1,6 +1,6 @@
 # ROS2 节点与接口
 
-> 更新日期：2026-07-05
+> 更新日期：2026-07-15
 
 ---
 
@@ -113,6 +113,31 @@
 | 服务名 | 类型 | 服务端 | 说明 |
 |---|---|---|---|
 | `/set_auto_mode` | `std_srvs/SetBool` | `mission_control_node` | `true`=AUTO, `false`=MANUAL |
+
+---
+
+### 2.5 Web and Stack HTTP API
+
+`web_remote_node` serves the browser UI on port 5000 and keeps the operator-facing stack state. rosbridge listens on port 9090 for browser-side ROS subscriptions.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/status` | GET | Current mode, service readiness, stack readiness, and manual velocity state |
+| `/stack/preheat` | POST | Run `start_robot_stack.sh`; keep MANUAL and do not start cruise |
+| `/stack/start` | POST | Start stack if needed, then call `/set_auto_mode=true` |
+| `/stack/stop` | POST | Publish zero velocity and run `stop_robot_stack.sh` |
+| `/waypoints` | GET/POST | Read or write cruise waypoints; POST updates install and source YAML files |
+| `/crop_type` | POST | Set the current crop type |
+
+Field topics to watch during cruise/avoidance:
+
+- `/mission/status`
+- `/cmd_vel`
+- `/odometry/filtered`
+- `/wheel/odom`
+- `/sentry/chassis/status`
+- `/lidar/obstacle_info`
+- `/plan`, `/received_global_plan`, `/lookahead_point`
 
 ---
 

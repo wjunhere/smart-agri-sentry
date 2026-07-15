@@ -145,6 +145,13 @@ void Protocol_Process(void) {
             }
         }
 
+        /* TYPE_RESET_ENCODER (0x85): 1-byte payload, reset cumulative pulse counters.
+         *   [0] reserved (0x00) — future use for selective reset flags.
+         * Sends an empty-ack chassis status frame after reset so RDK can verify. */
+        else if (type == TYPE_RESET_ENCODER && dlen >= 1) {
+            Encoder_Reset_Cumulative();
+        }
+
         offset += total;
     }
 

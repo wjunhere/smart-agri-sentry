@@ -24,6 +24,7 @@ def test_cmd_vel_conversion(node):
     """Verify Twist is converted to differential-drive wheel speeds."""
     import struct
     from geometry_msgs.msg import Twist
+    from sentry_sensors.uart_bridge_node import TYPE_MODE_CMD, TYPE_MOTION_CMD
 
     node.wheel_base = 0.23
     msg = Twist()
@@ -33,13 +34,78 @@ def test_cmd_vel_conversion(node):
     with patch.object(node.ser, 'write') as mock_write:
         node.on_cmd_vel(msg)
         assert mock_write.called
-        frame = mock_write.call_args[0][0]
+        assert mock_write.call_count == 2
+
+        mode_frame = mock_write.call_args_list[0][0][0]
+        assert mode_frame[0:2] == b'\xaa\x55'
+        assert mode_frame[2] == TYPE_MODE_CMD
+        assert mode_frame[3] == 1
+        assert mode_frame[4] == 0x02
+
+        frame = mock_write.call_args_list[1][0][0]
         assert frame[0:2] == b'\xaa\x55'
-        assert frame[2] == 0x81
+        assert frame[2] == TYPE_MOTION_CMD
         assert frame[3] == 4
         left, right = struct.unpack('<hh', frame[4:8])
         assert left == 500
         assert right == 500
+
+
+def test_cmd_vel_mode_frame_not_repeated(node):
+    """Verify repeated Twist commands do not spam mode frames."""
+    from geometry_msgs.msg import Twist
+    from sentry_sensors.uart_bridge_node import TYPE_MOTION_CMD
+
+    msg = Twist()
+    msg.linear.x = 0.2
+
+    with patch.object(node.ser, 'write') as mock_write:
+        node.on_cmd_vel(msg)
+        node.on_cmd_vel(msg)
+
+    frame_types = [call[0][0][2] for call in mock_write.call_args_list]
+    assert frame_types == [0x83, TYPE_MOTION_CMD, TYPE_MOTION_CMD]
+
+
+def test_cmd_vel_applies_track_speed_scale(node):
+    """Verify per-track trim can compensate mechanical speed mismatch."""
+    import struct
+    from geometry_msgs.msg import Twist
+
+    node.left_speed_scale = 1.0
+    node.right_speed_scale = 0.95
+
+    msg = Twist()
+    msg.linear.x = 0.5
+
+    with patch.object(node.ser, 'write') as mock_write:
+        node.on_cmd_vel(msg)
+        frame = mock_write.call_args[0][0]
+        left, right = struct.unpack('<hh', frame[4:8])
+
+    assert left == 500
+    assert right == 475
+
+
+def test_cmd_vel_can_swap_wheel_commands(node):
+    """Verify hardware deployments can swap left/right command channels."""
+    import struct
+    from geometry_msgs.msg import Twist
+
+    node.left_speed_scale = 1.0
+    node.right_speed_scale = 0.9
+    node.swap_wheel_commands = True
+
+    msg = Twist()
+    msg.linear.x = 0.5
+
+    with patch.object(node.ser, 'write') as mock_write:
+        node.on_cmd_vel(msg)
+        frame = mock_write.call_args[0][0]
+        left, right = struct.unpack('<hh', frame[4:8])
+
+    assert left == 450
+    assert right == 500
 
 
 def test_cmd_vel_turn_in_place(node):
