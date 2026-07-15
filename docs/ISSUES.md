@@ -1,6 +1,6 @@
 # 已知问题、硬件限制与规避方案
 
-> 更新日期：2026-07-08
+> 更新日期：2026-07-15
 
 ---
 
@@ -65,6 +65,17 @@
 | 编码器脉冲不递增 | 定时器正交编码器模式未配置 | 检查 TIM 编码器接口与 GPIO 复用 |
 
 ---
+
+
+### 3.4 Frontend and Cruise Startup
+
+| Symptom | Likely cause | Mitigation |
+|---|---|---|
+| Browser cannot open `:5000` | `web_remote_node` is not running or not listening on 5000 | SSH to RDK, run `ss -ltnp`, then use `./scripts/rdk/start_robot_stack.sh` or start `web_remote_node` manually |
+| ROS websocket keeps reconnecting | `rosbridge_websocket` is not running on 9090 | Start through the stack script; if preserving frontend, the start script launches rosbridge when needed |
+| Start Cruise button does nothing | Stack not preheated, `/set_auto_mode` not ready, or stale ROS process conflict | Use Preheat first; if it still fails, run `./scripts/rdk/stop_robot_stack.sh` and preheat again |
+| Robot turns immediately at startup | Obstacle is considered blocking the active waypoint, or stale costmap/process state exists | Clear stale stack and verify obstacle is not between robot and current waypoint |
+| Avoidance re-triggers after rejoin | Robot is still close to the obstacle or side crops are briefly seen | `avoidance_retrigger_suppression_sec=2.5` suppresses the short handoff window; internal hard thresholds still protect the robot |
 
 ## 4. 已弃用 / 遗留代码
 

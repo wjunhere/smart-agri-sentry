@@ -1,7 +1,7 @@
 # 系统架构
 
-> 架构版本：v2.2 两阶段视觉管线  
-> 更新日期：2026-07-05
+> Architecture version: v2.9 field cruise and frontend-control baseline  
+> 更新日期：2026-07-15
 
 ---
 
@@ -92,6 +92,32 @@ smart-agri-sentry/
 - 节点与话题定义 → [`docs/ROS2.md`](ROS2.md)
 - 硬件规格与接线 → [`docs/HARDWARE.md`](HARDWARE.md)
 - 环境搭建与编译 → [`docs/SETUP.md`](SETUP.md)
+
+---
+
+## 3.1 Field Cruise Baseline
+
+The current demo baseline uses mapless Nav2 with odom-frame waypoints, RPP path tracking, and mission-owned short-range obstacle avoidance.
+
+Progressive flow:
+
+1. `web_remote_node` serves the operator panel at `http://<rdk-ip>:5000/`.
+2. The operator clicks Preheat; the backend runs `scripts/rdk/start_robot_stack.sh` to clean leftovers and start the formal launch.
+3. The operator clicks Start Cruise; `/stack/start` switches `/set_auto_mode=true`.
+4. `mission_control_node` sends the three cruise waypoints to Nav2.
+5. `sentry_lidar` publishes `/lidar/obstacle_info`; when an obstacle is between the robot and the active waypoint and below the stop distance, mission cancels Nav2, publishes zero velocity, backs up, turns aside, drives around, turns back, and rejoins.
+6. During the internal avoidance sequence, the normal obstacle trigger is suppressed; only hard safety thresholds can stop the motion.
+7. On mission completion, Pause, or E-STOP, `web_remote_node` calls `scripts/rdk/stop_robot_stack.sh` to publish zero velocity and clear ROS leftovers.
+
+Stable baseline summary:
+
+| Item | Baseline |
+|---|---|
+| Default waypoints | `(2.5,0,90deg) -> (2.5,0.6,180deg) -> (0,0.6,180deg)` |
+| Track scale | `left_speed_scale=1.00`, `right_speed_scale=1.00` |
+| Goal checker | `xy_goal_tolerance=0.05`, `yaw_goal_tolerance=0.10` |
+| Re-trigger suppression | `avoidance_retrigger_suppression_sec=2.5` |
+| Stack scripts | `scripts/rdk/start_robot_stack.sh`, `scripts/rdk/stop_robot_stack.sh` |
 
 ---
 

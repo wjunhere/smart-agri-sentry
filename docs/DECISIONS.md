@@ -1,6 +1,6 @@
 # 技术决策记录
 
-> 更新日期：2026-06-28
+> 更新日期：2026-07-15
 
 ---
 
@@ -50,7 +50,7 @@ v2.0 使用结构化 YAML 规则引擎；端侧大模型（LLM）异步建议润
 
 ---
 
-## ADR-003：Mapless Nav2 + MPPI 控制器
+## ADR-003：Mapless Nav2 + RPP 控制器
 
 **状态**：已实施  
 **日期**：2026-06-07
@@ -64,7 +64,7 @@ v2.0 使用结构化 YAML 规则引擎；端侧大模型（LLM）异步建议润
 采用无地图 Nav2：
 
 - 全局规划：`NavfnPlanner`（Dijkstra）
-- 局部规划：`MPPIController`
+- 局部规划：`RegulatedPurePursuitController` for the field baseline; MPPI was used earlier
 - 代价地图：滚动窗口，odom 帧
 - 航点：odom 坐标系下硬编码
 
@@ -278,3 +278,31 @@ MobileNetV3 7 类番茄病害模型在板端测试中 healthy 类别召回率仅
 - 板端 1995 张测试集验证：总体准确率 89.62% → 91.58%，healthy 召回率 69.6% → 84.5%
 - 阈值可通过 ROS2 参数动态调整（`--ros-args -p healthy_threshold:=0.2`）
 - 实现见 `src/sentry_vision/sentry_vision/vision_diagnosis_node.py:72-77`
+
+---
+
+## ADR-012: Frontend-owned stack scripts and mission-owned obstacle avoidance
+
+**Status**: Implemented  
+**Date**: 2026-07-15
+
+### Context
+
+Field tests repeatedly exposed stale ROS nodes, old TF publishers, and temporary `/cmd_vel` publishers. They made frontend startup, cruise validation, and obstacle testing difficult to trust. Pure Nav2 costmap avoidance also tended to bend the whole path too early when an obstacle was still around 1m away, which did not match crop-row inspection expectations.
+
+### Decision
+
+- Add `scripts/rdk/start_robot_stack.sh` and `scripts/rdk/stop_robot_stack.sh` as the field-demo entry points.
+- Let `web_remote_node` expose `/stack/preheat`, `/stack/start`, `/stack/stop`, and `/waypoints`.
+- Make Preheat start and verify the ROS stack without switching AUTO.
+- Make Start Cruise switch `/set_auto_mode=true` only after the stack is ready.
+- Put short-range obstacle behavior in `mission_control_node`: stop Nav2, publish zero velocity, back up, choose the clearer side, drive around, turn back, rejoin, then hand control back to Nav2.
+- Suppress normal obstacle re-triggering during the internal avoidance sequence and for a short period after rejoin.
+
+### Consequences
+
+- Field demos are more repeatable and frontend-driven.
+- The main crop-row path remains straighter until an obstacle is close enough to matter.
+- Startup is slower than a raw launch, but it includes cleanup and health checks.
+- The same mission-owned safety layer can remain useful after a future map-based navigation upgrade.
+

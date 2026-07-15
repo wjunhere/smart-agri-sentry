@@ -1,6 +1,6 @@
 # 环境搭建与编译烧录
 
-> 更新日期：2026-07-05
+> 更新日期：2026-07-15
 
 ---
 
@@ -19,7 +19,7 @@
 ### 1.2 RDK X5 板端
 
 - **OS**：Ubuntu 22.04
-- **SSH**：`ssh sunrise@ubuntu.local`
+- **SSH**：`ssh rdk` or `ssh sunrise@10.66.175.106`
 - **密码**：`sunrise`
 - **工作区**：`~/dev_ws`（从本仓库克隆，仅文件夹重命名）
 - **预装**：ROS2 Humble、NPU 运行时
@@ -104,7 +104,39 @@ cp config/mission_params.yaml.example config/mission_params.yaml
 
 ## 4. 启动系统
 
-### 4.1 完整系统
+### 4.1 Field Demo Startup
+
+Use the full start/stop scripts for field demos. They are slower than a raw launch, but they avoid stale ROS nodes, old TF publishers, and temporary `/cmd_vel` publishers affecting tests.
+
+```bash
+ssh rdk
+cd /home/sunrise/dev_ws
+./scripts/rdk/start_robot_stack.sh
+# Open http://10.66.175.106:5000/
+./scripts/rdk/stop_robot_stack.sh
+```
+
+Recommended frontend flow:
+
+1. Open `http://10.66.175.106:5000/`.
+2. Click Preheat and wait until the panel reports the stack is ready.
+3. Click Start Cruise to switch AUTO and begin the three-point cruise.
+4. Click Pause or E-STOP to stop the robot and clear the stack.
+
+Script behavior:
+
+| Script | Role |
+|---|---|
+| `scripts/rdk/start_robot_stack.sh` | Runs cleanup, starts `sentry_v2.launch.py`, waits for key ROS nodes, and checks chassis communication |
+| `scripts/rdk/stop_robot_stack.sh` | Switches MANUAL, publishes zero velocity, stops launch/bag/ROS leftovers, and refreshes ROS graph state |
+
+For strict parameter verification:
+
+```bash
+SENTRY_CHECK_STABLE_PARAMS=1 ./scripts/rdk/start_robot_stack.sh
+```
+
+### 4.2 完整系统
 
 ```bash
 ros2 launch sentry_bringup sentry_v2.launch.py crop_type:=tomato
