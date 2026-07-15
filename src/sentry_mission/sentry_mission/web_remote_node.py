@@ -1,22 +1,87 @@
 #!/usr/bin/env python3
 """Web remote control node.
 
-Flask-based HTTP API for manual robot control and mode switching.
-Serves a simple remote control page at port 5000.
+Flask-based HTTP API for manual robot control, mode switching, and demo stack
+start/stop orchestration. Serves the v2 remote control page at port 5000.
 """
 
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import Twist
-from std_srvs.srv import SetBool
-from sentry_interfaces.srv import SetCropType
+import os
+import subprocess
 import threading
 import time
+import math
 from pathlib import Path
+
+import rclpy
+import yaml
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from sentry_interfaces.msg import MissionStatus
+from sentry_interfaces.srv import SetCropType
+from std_srvs.srv import SetBool
 
 # Defer Flask import to avoid import issues when not running
 _app = None
 
+
+def _stack_script_env(base_env=None):
+    """Environment used when frontend-owned stack scripts run.
+
+    The web node and rosbridge are the operator control plane. Frontend-triggered
+    stack start/stop must preserve them, otherwise the browser would kill the
+    server that is handling the button click.
+    """
+    env = dict(base_env or os.environ)
+    env['SENTRY_PRESERVE_WEB'] = '1'
+    env['ENABLE_WEB'] = 'false'
+    return env
+
+
+def _mission_status_is_complete(msg: MissionStatus) -> bool:
+    return (
+        getattr(msg, 'state', '') == 'PATROL'
+        and getattr(msg, 'total_wps', 0) > 0
+        and getattr(msg, 'current_wp_idx', 0) >= getattr(msg, 'total_wps', 0)
+    )
+
+
+
+
+def _validate_waypoints(waypoints):
+    clean = []
+    if not isinstance(waypoints, list) or not waypoints:
+        raise ValueError('waypoints must be a non-empty list')
+    for i, wp in enumerate(waypoints):
+        if not isinstance(wp, dict):
+            raise ValueError(f'waypoint {i} must be an object')
+        try:
+            x = float(wp['x'])
+            y = float(wp['y'])
+            yaw = float(wp['yaw'])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f'waypoint {i} must contain numeric x, y, yaw') from exc
+        if not all(math.isfinite(v) for v in (x, y, yaw)):
+            raise ValueError(f'waypoint {i} contains non-finite values')
+        clean.append({'x': x, 'y': y, 'yaw': yaw})
+    return clean
+
+
+def _read_waypoints_file(path: Path):
+    with path.open('r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    return _validate_waypoints(data.get('waypoints', []))
+
+
+def _write_waypoints_file(path: Path, waypoints):
+    text = '# Serpentine coverage waypoints edited from web frontend\n'
+    text += 'waypoints:\n'
+    for wp in waypoints:
+        text += (
+            f"  - {{x: {wp['x']:.4f}, y: {wp['y']:.4f}, "
+            f"yaw: {wp['yaw']:.4f}}}\n"
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
 
 class WebRemoteNode(Node):
     def __init__(self):
@@ -24,19 +89,37 @@ class WebRemoteNode(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.mode_srv = self.create_client(SetBool, '/set_auto_mode')
         self.crop_type_client = self.create_client(SetCropType, '/set_crop_type')
+        self.mission_status_sub = self.create_subscription(
+            MissionStatus, '/mission/status', self.on_mission_status, 10)
 
         self.declare_parameter('max_linear', 0.5)
         self.declare_parameter('max_angular', 1.0)
+        self.declare_parameter(
+            'stack_start_script',
+            '/home/sunrise/dev_ws/scripts/rdk/start_robot_stack.sh')
+        self.declare_parameter(
+            'stack_stop_script',
+            '/home/sunrise/dev_ws/scripts/rdk/stop_robot_stack.sh')
+        self.declare_parameter('stack_script_timeout_sec', 180.0)
         self.max_linear = self.get_parameter('max_linear').value
         self.max_angular = self.get_parameter('max_angular').value
+        self.stack_start_script = self.get_parameter('stack_start_script').value
+        self.stack_stop_script = self.get_parameter('stack_stop_script').value
+        self.stack_script_timeout = float(
+            self.get_parameter('stack_script_timeout_sec').value)
 
         # Mission control starts in MANUAL; keep the web state aligned.
         self.mode = 'MANUAL'
         self.linear = 0.0
         self.angular = 0.0
         self.lock = threading.Lock()
+        self.stack_lock = threading.Lock()
         self.last_cmd_time = time.time()
         self.TIMEOUT = 0.5
+        self.frontend_started_auto = False
+        self.completion_stop_started = False
+        self.stack_ready = False
+        self.last_stack_output = ''
         self.timer = self.create_timer(0.05, self.timer_cb)
 
     def timer_cb(self):
@@ -52,6 +135,21 @@ class WebRemoteNode(Node):
                 self.cmd_pub.publish(twist)
             # AUTO: do not publish, Nav2 owns /cmd_vel
 
+    def on_mission_status(self, msg: MissionStatus):
+        if not _mission_status_is_complete(msg):
+            return
+        with self.lock:
+            should_stop = self.mode == 'AUTO' and not self.completion_stop_started
+            if should_stop:
+                self.completion_stop_started = True
+        if should_stop:
+            self.get_logger().info(
+                'Mission completed from frontend AUTO session; stopping stack')
+            threading.Thread(
+                target=self.stop_stack,
+                kwargs={'reason': 'mission_complete'},
+                daemon=True).start()
+
     def set_mode_auto(self, auto: bool) -> bool:
         if not self.mode_srv.service_is_ready():
             self.get_logger().error('/set_auto_mode service not available')
@@ -63,7 +161,10 @@ class WebRemoteNode(Node):
             lambda f: self._on_mode_response(f, auto))
         with self.lock:
             self.mode = 'AUTO' if auto else 'MANUAL'
-            if not auto:
+            self.frontend_started_auto = auto
+            if auto:
+                self.completion_stop_started = False
+            else:
                 self.linear = 0.0
                 self.angular = 0.0
                 self.last_cmd_time = time.time()
@@ -100,6 +201,7 @@ class WebRemoteNode(Node):
             future.add_done_callback(self._on_stop_response)
         with self.lock:
             self.mode = 'MANUAL'
+            self.frontend_started_auto = False
             self.linear = 0.0
             self.angular = 0.0
             self.last_cmd_time = time.time()
@@ -117,6 +219,96 @@ class WebRemoteNode(Node):
         except Exception as e:
             self.get_logger().error(f"/set_auto_mode stop call failed: {e}")
 
+    def _run_stack_script(self, script_path: str):
+        path = Path(script_path)
+        if not path.exists():
+            return False, f'Script not found: {path}'
+        try:
+            result = subprocess.run(
+                ['bash', str(path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=self.stack_script_timeout,
+                env=_stack_script_env())
+        except subprocess.TimeoutExpired as exc:
+            output = exc.stdout or ''
+            return False, f'Script timed out: {path}\n{output}'
+        except Exception as exc:
+            return False, f'Script failed to start: {path}: {exc}'
+        output = result.stdout or ''
+        self.last_stack_output = output[-4000:]
+        if result.returncode != 0:
+            return False, output
+        return True, output
+
+    def _wait_for_mode_service(self, timeout_sec=10.0) -> bool:
+        if hasattr(self.mode_srv, 'wait_for_service'):
+            return bool(self.mode_srv.wait_for_service(timeout_sec=timeout_sec))
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            if self.mode_srv.service_is_ready():
+                return True
+            time.sleep(0.1)
+        return False
+
+    def start_stack_and_auto(self):
+        with self.stack_lock:
+            self.get_logger().info('Frontend requested robot stack start')
+            output = 'Robot stack already preheated; switching to AUTO.'
+            with self.lock:
+                stack_ready = self.stack_ready
+            if not stack_ready or not self.mode_srv.service_is_ready():
+                ok, output = self._run_stack_script(self.stack_start_script)
+                if not ok:
+                    self.get_logger().error(f'start_robot_stack failed: {output[-1000:]}')
+                    return False, output
+                with self.lock:
+                    self.stack_ready = True
+            if not self._wait_for_mode_service(timeout_sec=10.0):
+                return False, '/set_auto_mode service not available after stack start'
+            if not self.set_mode_auto(True):
+                return False, '/set_auto_mode rejected AUTO request'
+            return True, output
+
+    def preheat_stack(self):
+        with self.stack_lock:
+            self.get_logger().info('Frontend requested robot stack preheat')
+            ok, output = self._run_stack_script(self.stack_start_script)
+            if not ok:
+                self.get_logger().error(f'start_robot_stack preheat failed: {output[-1000:]}')
+                with self.lock:
+                    self.stack_ready = False
+                return False, output
+            if not self._wait_for_mode_service(timeout_sec=10.0):
+                with self.lock:
+                    self.stack_ready = False
+                return False, '/set_auto_mode service not available after stack preheat'
+            with self.lock:
+                self.stack_ready = True
+                self.mode = 'MANUAL'
+                self.frontend_started_auto = False
+                self.completion_stop_started = False
+            return True, output
+
+    def stop_stack(self, reason='frontend'):
+        with self.stack_lock:
+            self.get_logger().info(f'Frontend requested robot stack stop: {reason}')
+            self.emergency_stop()
+            ok, output = self._run_stack_script(self.stack_stop_script)
+            with self.lock:
+                self.mode = 'MANUAL'
+                self.frontend_started_auto = False
+                self.completion_stop_started = False
+                self.stack_ready = False
+                self.linear = 0.0
+                self.angular = 0.0
+                self.last_cmd_time = time.time()
+            if not ok:
+                self.get_logger().error(f'stop_robot_stack failed: {output[-1000:]}')
+                return False, output
+            return True, output
+
     def get_status(self):
         with self.lock:
             now = time.time()
@@ -127,6 +319,9 @@ class WebRemoteNode(Node):
                 'timeout': (self.mode == 'MANUAL' and
                            (now - self.last_cmd_time) > self.TIMEOUT),
                 'service_ready': self.mode_srv.service_is_ready(),
+                'frontend_started_auto': self.frontend_started_auto,
+                'completion_stop_started': self.completion_stop_started,
+                'stack_ready': self.stack_ready,
             }
 
 
@@ -142,6 +337,8 @@ def _get_app(node: WebRemoteNode):
     SHARE_DIR = Path(get_package_share_directory('sentry_mission'))
     STATIC_DIR = SHARE_DIR / 'static'
     STATIC_V2_DIR = SHARE_DIR / 'static_v2'
+    WAYPOINTS_FILE = SHARE_DIR / 'config' / 'waypoints.yaml'
+    SOURCE_WAYPOINTS_FILE = Path('/home/sunrise/dev_ws/src/sentry_mission/config/waypoints.yaml')
 
     @_app.route('/')
     def index():
@@ -165,6 +362,36 @@ def _get_app(node: WebRemoteNode):
             'mode': 'AUTO' if auto else 'MANUAL'
         })
 
+    @_app.route('/stack/start', methods=['POST'])
+    def stack_start():
+        ok, output = node.start_stack_and_auto()
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': 'AUTO' if ok else node.mode,
+            'stack_ready': node.stack_ready,
+            'message': output[-2000:],
+        }), 200 if ok else 500
+
+    @_app.route('/stack/preheat', methods=['POST'])
+    def stack_preheat():
+        ok, output = node.preheat_stack()
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': 'MANUAL',
+            'stack_ready': node.stack_ready,
+            'message': output[-2000:],
+        }), 200 if ok else 500
+
+    @_app.route('/stack/stop', methods=['POST'])
+    def stack_stop():
+        ok, output = node.stop_stack(reason='frontend')
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': 'MANUAL',
+            'stack_ready': node.stack_ready,
+            'message': output[-2000:],
+        }), 200 if ok else 500
+
     @_app.route('/stop', methods=['POST'])
     def stop():
         node.emergency_stop()
@@ -182,6 +409,26 @@ def _get_app(node: WebRemoteNode):
     def status():
         return jsonify(node.get_status())
 
+
+    @_app.route('/waypoints', methods=['GET'])
+    def get_waypoints():
+        try:
+            waypoints = _read_waypoints_file(WAYPOINTS_FILE)
+        except Exception as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 500
+        return jsonify({'status': 'ok', 'waypoints': waypoints})
+
+    @_app.route('/waypoints', methods=['POST'])
+    def set_waypoints():
+        data = request.get_json() or {}
+        try:
+            waypoints = _validate_waypoints(data.get('waypoints'))
+            _write_waypoints_file(WAYPOINTS_FILE, waypoints)
+            if SOURCE_WAYPOINTS_FILE.exists() and SOURCE_WAYPOINTS_FILE != WAYPOINTS_FILE:
+                _write_waypoints_file(SOURCE_WAYPOINTS_FILE, waypoints)
+        except Exception as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 400
+        return jsonify({'status': 'ok', 'waypoints': waypoints})
     @_app.route('/crop_type', methods=['POST'])
     def set_crop_type():
         data = request.get_json()
@@ -234,7 +481,7 @@ def _get_app(node: WebRemoteNode):
 
 def _start_flask(node: WebRemoteNode):
     app = _get_app(node)
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
 
 
 def main(args=None):
