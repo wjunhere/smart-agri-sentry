@@ -11,7 +11,7 @@
 
 - [x] YOLOv8n BPU `.bin` 接入 `plant_detector_node`（`pyeasy_dnn` 推理，640×640 NV12）
 - [x] `plant_detector_node` → `/vision/plant_detected` → `mission_control_node` 触发停车
-- [x] `vision_pipeline_node` 云台扫描编排 + 两阶段推理 + 汇总诊断
+- [x] `vision_pipeline_node` 固定相机扫描编排 + 两阶段推理 + 汇总诊断（已移除云台移动，改为固定画面多帧推理）
 - [x] `PipelineTrigger.srv` 同步服务定义
 - [x] `mission_control_node` 重构（移除 APPROACHING，新增 SCANNING，里程计去重）
 - [x] `Diagnosis.msg` 新增 `per_angle_confidences`
@@ -21,8 +21,7 @@
   - [x] **M1** 将 `mobilenetv3_tomato_disease_v4.2.onnx` 量化成 RDK X5 `.bin`
   - [ ] **M2** 板端 Python 推理验证（logits → softmax → healthy 阈值 0.15）
   - [ ] **M3** 接入 `vision_pipeline_node` 作为第二阶段分类器
-- [ ] 云台多角度扫描端到端测试（需接舵机）
-- [ ] 端到端验证：巡航行进 → 检测植株 → 停车 → 拍照 → 病害识别 → 农艺建议
+- [ ] 固定相机扫描端到端测试（无需舵机，验证巡航 → 检测 → 停车 → 拍照 → 病害识别 → 农艺建议）
 
 ### P0-2 板端部署验证
 

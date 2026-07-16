@@ -1,4 +1,4 @@
-"""Unit tests for vision_pipeline_node — state machine and aggregation logic."""
+"""Unit tests for vision_pipeline_node — fixed-camera aggregation logic."""
 import pytest
 import numpy as np
 
@@ -38,32 +38,6 @@ class TestAggregation:
         ]
         per_angle = [r[2] for r in results]
         assert per_angle == [0.7, 0.6]
-
-
-class TestBboxEdgeDetection:
-    def test_bbox_centered_no_reshoot(self):
-        """Bbox near center → no gimbal adjustment needed."""
-        bbox = [0.35, 0.35, 0.65, 0.65]
-        cx = (bbox[0] + bbox[2]) / 2.0
-        cy = (bbox[1] + bbox[3]) / 2.0
-        threshold = 0.35
-        centered = (threshold <= cx <= (1.0 - threshold)
-                    and threshold <= cy <= (1.0 - threshold))
-        assert centered
-
-    def test_bbox_left_edge_triggers_reshoot(self):
-        """Bbox on left edge → should adjust yaw left."""
-        bbox = [0.05, 0.35, 0.25, 0.65]
-        cx = (bbox[0] + bbox[2]) / 2.0
-        threshold = 0.35
-        assert cx < threshold  # should trigger yaw adjustment
-
-    def test_bbox_top_edge_triggers_reshoot(self):
-        """Bbox on top edge → should adjust pitch up."""
-        bbox = [0.35, 0.05, 0.65, 0.25]
-        cy = (bbox[1] + bbox[3]) / 2.0
-        threshold = 0.35
-        assert cy < threshold  # should trigger pitch adjustment
 
 
 class TestSoftmax:

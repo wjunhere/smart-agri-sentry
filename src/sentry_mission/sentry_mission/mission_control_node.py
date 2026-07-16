@@ -4,7 +4,7 @@
 States:
   PATROL      - Nav2 waypoint cruising, YOLO real-time detection
   STOPPED     - Stop and trigger vision pipeline scan
-  SCANNING    - Wait for vision pipeline to complete (gimbal + two-stage inference)
+  SCANNING    - Wait for vision pipeline to complete (fixed-camera inference)
   ANALYZING   - Wait for fusion diagnosis result
   ACTION      - Record the diagnosis result
   RESUME      - Brief pause before resuming patrol

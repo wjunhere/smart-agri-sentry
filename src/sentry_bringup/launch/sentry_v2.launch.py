@@ -161,13 +161,6 @@ def generate_launch_description():
             package='sentry_vision',
             executable='vision_pipeline_node',
             name='vision_pipeline_node',
-            parameters=[{
-                'settle_sec': 0.5,
-                'timeout_sec': 15.0,
-                'edge_threshold': 0.35,
-                'step_yaw': 20,
-                'step_pitch': 15,
-            }],
             condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
         ),

@@ -1,8 +1,8 @@
-"""Vision pipeline node: gimbal scan + YOLO detect + MobileNet classify + aggregate.
+"""Vision pipeline node: fixed-camera scan + YOLO detect + MobileNet classify + aggregate.
 
 Provides a synchronous service /vision/pipeline/trigger that executes a complete
-multi-angle scan-and-diagnose cycle. Loads BPU models on-demand during scan and
-unloads them before returning.
+multi-frame scan-and-diagnose cycle without moving the gimbal. Loads BPU models
+on-demand during scan and unloads them before returning.
 """
 import time
 import numpy as np
@@ -10,7 +10,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from sentry_interfaces.msg import Diagnosis, ServoCmd
+from sentry_interfaces.msg import Diagnosis
 from sentry_interfaces.srv import PipelineTrigger
 from cv_bridge import CvBridge
 
@@ -18,39 +18,21 @@ from .yolo_utils import bgr_to_yolo_input, yolo_postprocess
 from .diagnosis_utils import get_labels, resolve_model_path, get_input_format
 
 
-# Gimbal angle limits
-YAW_MIN, YAW_MAX = 0, 180
-PITCH_MIN, PITCH_MAX = 30, 150
-CENTER_YAW, CENTER_PITCH = 90, 90
-STEP_YAW = 20
-STEP_PITCH = 15
-BBOX_EDGE_THRESHOLD = 0.35  # bbox center outside [edge, 1-edge] triggers re-shoot
-SETTLE_SEC = 0.5
+# Scan limits
 SCAN_TIMEOUT_SEC = 15.0
 
 
 class VisionPipelineNode(Node):
     def __init__(self):
         super().__init__('vision_pipeline_node')
-        self.declare_parameter('settle_sec', SETTLE_SEC)
         self.declare_parameter('timeout_sec', SCAN_TIMEOUT_SEC)
-        self.declare_parameter('edge_threshold', BBOX_EDGE_THRESHOLD)
-        self.declare_parameter('step_yaw', STEP_YAW)
-        self.declare_parameter('step_pitch', STEP_PITCH)
-
-        self.settle_sec = self.get_parameter('settle_sec').value
         self.timeout_sec = self.get_parameter('timeout_sec').value
-        self.edge_threshold = self.get_parameter('edge_threshold').value
-        self.step_yaw = self.get_parameter('step_yaw').value
-        self.step_pitch = self.get_parameter('step_pitch').value
-
         self.bridge = CvBridge()
         self._latest_frame = None
         self._frame_received = False
 
         self.sub = self.create_subscription(
             Image, '/sentry/camera/image_raw', self._on_frame, 1)
-        self.pub_servo = self.create_publisher(ServoCmd, '/sentry/servo_cmd', 10)
         self.srv = self.create_service(
             PipelineTrigger, '/vision/pipeline/trigger', self.on_trigger)
 
@@ -59,19 +41,6 @@ class VisionPipelineNode(Node):
     def _on_frame(self, msg: Image):
         self._latest_frame = msg
         self._frame_received = True
-
-    # ── gimbal helpers ──────────────────────────────────────────────
-
-    def _move_gimbal(self, yaw: int, pitch: int):
-        yaw = max(YAW_MIN, min(YAW_MAX, yaw))
-        pitch = max(PITCH_MIN, min(PITCH_MAX, pitch))
-        cmd = ServoCmd()
-        cmd.yaw = yaw
-        cmd.pitch = pitch
-        self.pub_servo.publish(cmd)
-
-    def _gimbal_center(self):
-        self._move_gimbal(CENTER_YAW, CENTER_PITCH)
 
     # ── frame wait helper ───────────────────────────────────────────
 
@@ -138,11 +107,7 @@ class VisionPipelineNode(Node):
 
         t_start = time.monotonic()
 
-        # 1. center gimbal, settle
-        self._gimbal_center()
-        time.sleep(self.settle_sec)
-
-        # 2. load models
+        # 1. load models
         yolo = self._load_yolo()
         mobilenet = self._load_mobilenet(crop_type)
         if yolo is None or mobilenet is None:
@@ -150,10 +115,8 @@ class VisionPipelineNode(Node):
             self.get_logger().error('Failed to load BPU models')
             return response
 
-        # 3. scan loop
+        # 2. scan loop (fixed camera)
         results = []  # list of (disease_class, class_id, confidence, probs, bbox)
-        current_yaw = CENTER_YAW
-        current_pitch = CENTER_PITCH
 
         for shot in range(max_shots):
             if time.monotonic() - t_start > self.timeout_sec:
@@ -198,31 +161,7 @@ class VisionPipelineNode(Node):
                 f'Shot {shot}: {disease_class} conf={class_conf:.3f} '
                 f'bbox=[{bbox[0]:.2f},{bbox[1]:.2f},{bbox[2]:.2f},{bbox[3]:.2f}]')
 
-            # Check if bbox near edge — if so, adjust gimbal
-            cx = (bbox[0] + bbox[2]) / 2.0
-            cy = (bbox[1] + bbox[3]) / 2.0
-
-            if cx < self.edge_threshold:
-                current_yaw -= self.step_yaw
-            elif cx > (1.0 - self.edge_threshold):
-                current_yaw += self.step_yaw
-
-            if cy < self.edge_threshold:
-                current_pitch += self.step_pitch
-            elif cy > (1.0 - self.edge_threshold):
-                current_pitch -= self.step_pitch
-
-            # Check if gimbal already at center (bbox centered) — done
-            if (self.edge_threshold <= cx <= (1.0 - self.edge_threshold)
-                    and self.edge_threshold <= cy <= (1.0 - self.edge_threshold)):
-                self.get_logger().info('Bbox centered, scan complete')
-                break
-
-            # Move gimbal and settle for next shot
-            self._move_gimbal(current_yaw, current_pitch)
-            time.sleep(self.settle_sec)
-
-        # 4. aggregate
+        # 3. aggregate
         diag = Diagnosis()
         diag.header.stamp = self.get_clock().now().to_msg()
         diag.header.frame_id = 'camera'
@@ -244,7 +183,6 @@ class VisionPipelineNode(Node):
 
         diag.per_angle_confidences = per_angle
 
-        self._gimbal_center()
         response.success = True
         response.result = diag
 
