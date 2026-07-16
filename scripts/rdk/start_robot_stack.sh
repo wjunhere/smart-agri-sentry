@@ -24,6 +24,7 @@ CROP_TYPE="${CROP_TYPE:-tomato}"
 ENABLE_VISION="${ENABLE_VISION:-true}"
 ENABLE_ADVISORY="${ENABLE_ADVISORY:-true}"
 ENABLE_WEB="${ENABLE_WEB:-true}"
+CAMERA_BACKEND="${CAMERA_BACKEND:-mipi}"
 if [ "$PRESERVE_WEB" = "1" ]; then
   ENABLE_WEB="false"
 fi
@@ -254,6 +255,7 @@ main() {
   setsid ros2 launch sentry_bringup sentry_v2.launch.py \
     crop_type:="${CROP_TYPE}" \
     enable_vision:="${ENABLE_VISION}" \
+    camera_backend:="${CAMERA_BACKEND}" \
     enable_advisory:="${ENABLE_ADVISORY}" \
     enable_web:="${ENABLE_WEB}" \
     >"${LAUNCH_LOG}" 2>&1 &
@@ -274,7 +276,12 @@ main() {
     nodes+=(/web_remote_node /rosbridge_websocket)
   fi
   if [ "$ENABLE_VISION" = "true" ]; then
-    nodes+=(/mipi_camera_node /plant_detector_node /vision_pipeline_node)
+    if [ "$CAMERA_BACKEND" = "hikrobot" ]; then
+      nodes+=(/hikrobot_camera_node)
+    else
+      nodes+=(/mipi_camera_node)
+    fi
+    nodes+=(/plant_detector_node /vision_pipeline_node)
   fi
   if [ "$ENABLE_ADVISORY" = "true" ]; then
     nodes+=(/fusion_node)

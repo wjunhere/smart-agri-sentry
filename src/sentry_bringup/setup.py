@@ -33,6 +33,7 @@ setup(
             'gps_node = sentry_bringup.gps_node:main',
             'camera_node = sentry_bringup.camera_node:main',
             'mipi_camera_node = sentry_bringup.mipi_camera_node:main',
+            'hikrobot_camera_node = sentry_bringup.hikrobot_camera_node:main',
         ],
     },
 )

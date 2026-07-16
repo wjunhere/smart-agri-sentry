@@ -47,6 +47,12 @@ def _mission_status_is_complete(msg: MissionStatus) -> bool:
     )
 
 
+def _validate_vision_inference_mode(mode: str) -> str:
+    if mode not in ('triggered', 'independent'):
+        raise ValueError(f'Invalid vision inference mode: {mode}')
+    return mode
+
+
 
 
 def _validate_waypoints(waypoints):
@@ -122,6 +128,9 @@ class WebRemoteNode(Node):
         self.completion_stop_started = False
         self.stack_ready = False
         self.last_stack_output = ''
+        self.vision_inference_mode = 'triggered'
+        self.vision_diagnosis_proc = None
+        self.vision_diagnosis_log = None
         self.timer = self.create_timer(0.05, self.timer_cb)
 
     def timer_cb(self):
@@ -297,6 +306,7 @@ class WebRemoteNode(Node):
         with self.stack_lock:
             self.get_logger().info(f'Frontend requested robot stack stop: {reason}')
             self.emergency_stop()
+            self._stop_independent_diagnosis_locked()
             ok, output = self._run_stack_script(self.stack_stop_script)
             with self.lock:
                 self.mode = 'MANUAL'
@@ -311,6 +321,87 @@ class WebRemoteNode(Node):
                 return False, output
             return True, output
 
+    def set_vision_inference_mode(self, mode: str):
+        mode = _validate_vision_inference_mode(mode)
+        with self.stack_lock:
+            if mode == 'independent':
+                ok, message = self._start_independent_diagnosis_locked()
+            else:
+                ok, message = self._stop_independent_diagnosis_locked()
+            if ok:
+                with self.lock:
+                    self.vision_inference_mode = mode
+            return ok, message
+
+    def _start_independent_diagnosis_locked(self):
+        proc = self.vision_diagnosis_proc
+        if proc is not None and proc.poll() is None:
+            return True, 'independent diagnosis already running'
+
+        log_path = Path('/tmp/vision_diagnosis_node_independent.log')
+        try:
+            if self.vision_diagnosis_log is not None:
+                self.vision_diagnosis_log.close()
+            self.vision_diagnosis_log = log_path.open('a', encoding='utf-8')
+            crop_type = os.environ.get('CROP_TYPE', 'tomato')
+            model_path = os.environ.get(
+                'VISION_DIAGNOSIS_MODEL_PATH',
+                '/home/sunrise/dev_ws/models/quantization/'
+                'tomato_mobilenetv3_output/'
+                'tomato_mobilenetv3_bayese_224x224_nv12.bin')
+            cmd = [
+                'ros2', 'run', 'sentry_vision', 'vision_diagnosis_node',
+                '--ros-args',
+                '-p', f'crop_type:={crop_type}',
+                '-p', f'model_path:={model_path}',
+                '-p', 'input_size:=224',
+            ]
+            self.vision_diagnosis_proc = subprocess.Popen(
+                cmd,
+                stdout=self.vision_diagnosis_log,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=os.environ.copy(),
+                start_new_session=True,
+            )
+        except Exception as exc:
+            self.vision_diagnosis_proc = None
+            return False, f'failed to start independent diagnosis: {exc}'
+
+        self.get_logger().info(
+            f'Started independent vision diagnosis node; log={log_path}')
+        return True, 'independent diagnosis started'
+
+    def _stop_independent_diagnosis_locked(self):
+        proc = self.vision_diagnosis_proc
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                proc.terminate()
+            try:
+                proc.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    proc.kill()
+                proc.wait(timeout=2.0)
+            self.get_logger().info('Stopped independent vision diagnosis node')
+        # ros2 run may leave the Python entry-point child alive after the
+        # wrapper exits; clean that exact independent diagnosis command too.
+        pattern = '/sentry_vision/lib/sentry_vision/vision_diagnosis_node --ros-args'
+        subprocess.run(
+            ['pkill', '-TERM', '-f', pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0)
+        self.vision_diagnosis_proc = None
+        if self.vision_diagnosis_log is not None:
+            self.vision_diagnosis_log.close()
+            self.vision_diagnosis_log = None
+        return True, 'independent diagnosis stopped'
+
     def get_status(self):
         with self.lock:
             now = time.time()
@@ -324,7 +415,13 @@ class WebRemoteNode(Node):
                 'frontend_started_auto': self.frontend_started_auto,
                 'completion_stop_started': self.completion_stop_started,
                 'stack_ready': self.stack_ready,
+                'vision_inference_mode': self.vision_inference_mode,
             }
+
+    def destroy_node(self):
+        with self.stack_lock:
+            self._stop_independent_diagnosis_locked()
+        super().destroy_node()
 
 
 def _get_app(node: WebRemoteNode):
@@ -410,6 +507,27 @@ def _get_app(node: WebRemoteNode):
     @_app.route('/status', methods=['GET'])
     def status():
         return jsonify(node.get_status())
+
+    @_app.route('/vision/inference-mode', methods=['GET'])
+    def get_vision_inference_mode():
+        return jsonify({
+            'status': 'ok',
+            'mode': node.get_status()['vision_inference_mode'],
+        })
+
+    @_app.route('/vision/inference-mode', methods=['POST'])
+    def set_vision_inference_mode():
+        data = request.get_json() or {}
+        mode = data.get('mode', 'triggered')
+        try:
+            ok, message = node.set_vision_inference_mode(mode)
+        except ValueError as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 400
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': node.get_status()['vision_inference_mode'],
+            'message': message,
+        }), 200 if ok else 500
 
 
     @_app.route('/waypoints', methods=['GET'])

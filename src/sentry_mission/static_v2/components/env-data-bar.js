@@ -61,6 +61,17 @@ const EnvDataBar = {
                   @click="store.setMockMode('early_blight')">Early Blight</button>
         </div>
       </div>
+      <div class="diag-toggle-section hidden-tool-section">
+        <span class="diag-toggle-label">视觉逻辑</span>
+        <div class="diag-toggle-pills">
+          <button class="diag-pill vision-mode-pill"
+                  :class="{ active: store.visionInferenceMode === 'triggered' }"
+                  :disabled="store.visionInferenceModeBusy"
+                  @click="store.toggleVisionInferenceMode()">
+            {{ store.visionInferenceMode === 'triggered' ? '植株后分类' : '独立分类' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>`
 };

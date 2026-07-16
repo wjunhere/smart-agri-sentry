@@ -63,6 +63,8 @@ window.store = Vue.reactive({
   stackStarting: false,
   stackPreheating: false,
   stackReady: false,
+  visionInferenceMode: 'triggered',
+  visionInferenceModeBusy: false,
   _rawWaypoints: [],
 });
 const store = window.store;  // local alias for internal use in this file
@@ -599,12 +601,48 @@ function refreshStackStatus() {
     .then(resp => resp.json())
     .then(data => {
       store.stackReady = Boolean(data.stack_ready);
+      if (data.vision_inference_mode) {
+        store.visionInferenceMode = data.vision_inference_mode;
+      }
       return data;
     })
     .catch(() => null);
 }
+
+function fetchVisionInferenceMode() {
+  return fetch('/vision/inference-mode')
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.mode) store.visionInferenceMode = data.mode;
+      return data;
+    })
+    .catch(() => null);
+}
+
+store.toggleVisionInferenceMode = async function() {
+  const next = store.visionInferenceMode === 'triggered'
+    ? 'independent'
+    : 'triggered';
+  store.visionInferenceModeBusy = true;
+  try {
+    const resp = await fetch('/vision/inference-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: next }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to switch vision inference mode');
+    }
+    store.visionInferenceMode = data.mode || next;
+    return data;
+  } finally {
+    store.visionInferenceModeBusy = false;
+  }
+};
 // Sync from server on load, then poll every 1s
 fetchMockMode();
+fetchVisionInferenceMode();
 callGetWaypoints().catch(err => console.warn('[waypoints] initial load failed:', err));
 setInterval(fetchMockMode, 1000);
 refreshStackStatus();

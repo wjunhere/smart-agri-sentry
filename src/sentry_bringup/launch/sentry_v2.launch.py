@@ -3,7 +3,7 @@ from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, Command
+from launch.substitutions import LaunchConfiguration, Command, PythonExpression
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -40,6 +40,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
         DeclareLaunchArgument('slam', default_value='False'),
         DeclareLaunchArgument('enable_vision', default_value='true'),
+        DeclareLaunchArgument('camera_backend', default_value='mipi'),
         DeclareLaunchArgument('enable_live_diagnosis', default_value='false'),
         DeclareLaunchArgument('enable_advisory', default_value='true'),
         DeclareLaunchArgument('enable_web', default_value='true'),
@@ -88,7 +89,32 @@ def generate_launch_description():
                 'saturation_scale': 0.95,
                 'sharpen_amount': 0.15,
             }],
-            condition=IfCondition(LaunchConfiguration('enable_vision')),
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('enable_vision'),
+                "' == 'true' and '", LaunchConfiguration('camera_backend'),
+                "' == 'mipi'",
+            ])),
+            output='screen',
+        ),
+        Node(
+            package='sentry_bringup',
+            executable='hikrobot_camera_node',
+            name='hikrobot_camera_node',
+            parameters=[{
+                'fps': 5.0,
+                'output_width': 640,
+                'output_height': 480,
+                'frame_id': 'camera',
+                'image_topic': '/sentry/camera/image_raw',
+                'mvs_common_runenv': '/opt/MVS/lib',
+                'mvs_python_path': '/opt/MVS/Samples/aarch64/Python/MvImport',
+                'mvs_library_path': '/opt/MVS/lib/aarch64',
+            }],
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('enable_vision'),
+                "' == 'true' and '", LaunchConfiguration('camera_backend'),
+                "' == 'hikrobot'",
+            ])),
             output='screen',
         ),
 
