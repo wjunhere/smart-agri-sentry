@@ -683,6 +683,7 @@ class MissionControlNode(Node):
                     and self.last_plant.area_ratio >= self.min_area_ratio
                     and self._should_trigger_scan()):
                 self.saved_wp_idx = self.current_wp_idx
+                self.last_fusion = None
                 self._cancel_nav2_task_async()
                 self.sending_goal = False
                 self.last_goal_sent_time = 0.0

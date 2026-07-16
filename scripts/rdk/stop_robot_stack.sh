@@ -108,6 +108,7 @@ stop_patterns() {
   terminate_pattern "$signal" "fusion_node"
   terminate_pattern "$signal" "forecast_node"
   terminate_pattern "$signal" "advisory_node"
+  terminate_pattern "$signal" "data_logger_node"
 }
 
 sleep_if_stopped() {

@@ -154,6 +154,20 @@ def test_stack_script_env_preserves_frontend_control_plane():
     assert env['ENABLE_WEB'] == 'false'
 
 
+def test_stack_script_env_enables_vision_and_advisory_for_cruise():
+    from sentry_mission.web_remote_node import _stack_script_env
+
+    env = _stack_script_env({
+        'ENABLE_VISION': 'false',
+        'ENABLE_ADVISORY': 'false',
+    })
+
+    assert env['SENTRY_PRESERVE_WEB'] == '1'
+    assert env['ENABLE_WEB'] == 'false'
+    assert env['ENABLE_VISION'] == 'true'
+    assert env['ENABLE_ADVISORY'] == 'true'
+
+
 def test_mission_status_complete_when_all_waypoints_reached():
     from sentry_mission.web_remote_node import _mission_status_is_complete
 

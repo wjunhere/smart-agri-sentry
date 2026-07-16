@@ -21,8 +21,8 @@ REQUIRE_SCAN_SAMPLE="${SENTRY_REQUIRE_SCAN_SAMPLE:-0}"
 CHECK_STABLE_PARAMS="${SENTRY_CHECK_STABLE_PARAMS:-0}"
 
 CROP_TYPE="${CROP_TYPE:-tomato}"
-ENABLE_VISION="${ENABLE_VISION:-false}"
-ENABLE_ADVISORY="${ENABLE_ADVISORY:-false}"
+ENABLE_VISION="${ENABLE_VISION:-true}"
+ENABLE_ADVISORY="${ENABLE_ADVISORY:-true}"
 ENABLE_WEB="${ENABLE_WEB:-true}"
 if [ "$PRESERVE_WEB" = "1" ]; then
   ENABLE_WEB="false"
@@ -272,6 +272,12 @@ main() {
   if control_web_expected; then
     ensure_preserved_rosbridge
     nodes+=(/web_remote_node /rosbridge_websocket)
+  fi
+  if [ "$ENABLE_VISION" = "true" ]; then
+    nodes+=(/mipi_camera_node /plant_detector_node /vision_pipeline_node)
+  fi
+  if [ "$ENABLE_ADVISORY" = "true" ]; then
+    nodes+=(/fusion_node)
   fi
   wait_for_nodes "$NODE_WAIT_TIMEOUT" "${nodes[@]}"
 

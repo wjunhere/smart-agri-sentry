@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 from sentry_mission.mission_control_node import MissionControlNode
 from nav2_simple_commander.robot_navigator import TaskResult
-from sentry_interfaces.msg import ObstacleInfo
+from sentry_interfaces.msg import FusionResult, ObstacleInfo, PlantDetection
 
 
 @pytest.fixture(scope='module')
@@ -501,3 +501,27 @@ def test_auto_mode_after_completed_route_restarts_from_first_waypoint(node):
     assert response.success is True
     assert node.state == 'PATROL'
     assert node.current_wp_idx == 0
+
+
+def test_plant_trigger_clears_stale_fusion_before_analysis(node):
+    """A new stopped scan must wait for fusion from this diagnosis, not an old one."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.last_fusion = FusionResult()
+    node.last_plant = PlantDetection()
+    node.last_plant.detected = True
+    node.last_plant.confidence = 0.95
+    node.last_plant.area_ratio = 0.20
+    node.reference_x = 0.0
+    node.reference_y = 0.0
+    node.odom_x = 1.0
+    node.odom_y = 0.0
+
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'STOPPED'
+    assert node.last_fusion is None

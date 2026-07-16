@@ -34,6 +34,8 @@ def _stack_script_env(base_env=None):
     env = dict(base_env or os.environ)
     env['SENTRY_PRESERVE_WEB'] = '1'
     env['ENABLE_WEB'] = 'false'
+    env['ENABLE_VISION'] = 'true'
+    env['ENABLE_ADVISORY'] = 'true'
     return env
 
 

@@ -32,6 +32,16 @@ class MipiCameraNode(Node):
         self.declare_parameter('frame_id', 'camera')
         self.declare_parameter('sensor_width', 1920)
         self.declare_parameter('sensor_height', 1080)
+        self.declare_parameter('yuv_format', 'nv12')
+        self.declare_parameter('enable_color_correction', False)
+        self.declare_parameter('blue_gain', 1.0)
+        self.declare_parameter('green_gain', 1.0)
+        self.declare_parameter('red_gain', 1.0)
+        self.declare_parameter('enable_low_light_enhancement', False)
+        self.declare_parameter('denoise_h', 0.0)
+        self.declare_parameter('gamma', 1.0)
+        self.declare_parameter('saturation_scale', 1.0)
+        self.declare_parameter('sharpen_amount', 0.0)
 
         self.width = self.get_parameter('width').value
         self.height = self.get_parameter('height').value
@@ -39,6 +49,24 @@ class MipiCameraNode(Node):
         self.frame_id = self.get_parameter('frame_id').value
         self.sensor_width = self.get_parameter('sensor_width').value
         self.sensor_height = self.get_parameter('sensor_height').value
+        self.yuv_format = str(self.get_parameter('yuv_format').value).lower()
+        if self.yuv_format not in ('nv12', 'nv21'):
+            self.get_logger().warn(
+                f'Unsupported yuv_format={self.yuv_format}; using nv12')
+            self.yuv_format = 'nv12'
+        self.enable_color_correction = self.get_parameter(
+            'enable_color_correction').value
+        self.blue_gain = float(self.get_parameter('blue_gain').value)
+        self.green_gain = float(self.get_parameter('green_gain').value)
+        self.red_gain = float(self.get_parameter('red_gain').value)
+        self.enable_low_light_enhancement = self.get_parameter(
+            'enable_low_light_enhancement').value
+        self.denoise_h = max(0.0, float(self.get_parameter('denoise_h').value))
+        self.gamma = max(0.1, float(self.get_parameter('gamma').value))
+        self.saturation_scale = max(
+            0.0, float(self.get_parameter('saturation_scale').value))
+        self.sharpen_amount = max(
+            0.0, float(self.get_parameter('sharpen_amount').value))
 
         # Import hobot_vio (only available on RDK X5)
         try:
@@ -56,7 +84,10 @@ class MipiCameraNode(Node):
         self.cam = self.srcampy.Camera()
         self.get_logger().info(
             f'Opening MIPI camera: output={self.width}x{self.height}, '
-            f'sensor={self.sensor_width}x{self.sensor_height}'
+            f'sensor={self.sensor_width}x{self.sensor_height}, '
+            f'yuv_format={self.yuv_format}, '
+            f'color_correction={self.enable_color_correction}, '
+            f'low_light_enhancement={self.enable_low_light_enhancement}'
         )
 
         # RDK Camera API: the FIRST output channel resolution is limited by ISP
@@ -103,8 +134,59 @@ class MipiCameraNode(Node):
         self.timer = self.create_timer(timer_period, self.capture)
         self.frame_count = 0
 
+    def _yuv_to_bgr_code(self):
+        if self.yuv_format == 'nv21':
+            return cv2.COLOR_YUV2BGR_NV21
+        return cv2.COLOR_YUV2BGR_NV12
+
+    def _apply_color_correction(self, frame):
+        if not self.enable_color_correction:
+            return frame
+        corrected = frame.astype(np.float32)
+        corrected[:, :, 0] *= self.blue_gain
+        corrected[:, :, 1] *= self.green_gain
+        corrected[:, :, 2] *= self.red_gain
+        return np.clip(corrected, 0, 255).astype(np.uint8)
+
+    def _build_gamma_lut(self, gamma):
+        inv_gamma = 1.0 / max(0.1, gamma)
+        return np.array([
+            ((i / 255.0) ** inv_gamma) * 255.0 for i in range(256)
+        ], dtype=np.uint8)
+
+    def _apply_low_light_enhancement(self, frame):
+        if not self.enable_low_light_enhancement:
+            return frame
+
+        enhanced = frame
+        if self.denoise_h > 0.0:
+            enhanced = cv2.fastNlMeansDenoisingColored(
+                enhanced, None, self.denoise_h, self.denoise_h, 7, 21)
+
+        if abs(self.gamma - 1.0) > 1e-3:
+            enhanced = cv2.LUT(enhanced, self._build_gamma_lut(self.gamma))
+
+        if abs(self.saturation_scale - 1.0) > 1e-3:
+            hsv = cv2.cvtColor(enhanced, cv2.COLOR_BGR2HSV)
+            hsv = hsv.astype(np.float32)
+            hsv[:, :, 1] *= self.saturation_scale
+            hsv[:, :, 1] = np.clip(hsv[:, :, 1], 0, 255)
+            enhanced = cv2.cvtColor(
+                hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+
+        if self.sharpen_amount > 0.0:
+            blurred = cv2.GaussianBlur(enhanced, (0, 0), 1.0)
+            enhanced = cv2.addWeighted(
+                enhanced,
+                1.0 + self.sharpen_amount,
+                blurred,
+                -self.sharpen_amount,
+                0)
+
+        return enhanced
+
     def _nv12_to_bgr(self, nv12_data, width, height, actual_size):
-        """Convert NV12 bytes to BGR, handling stride alignment.
+        """Convert NV12/NV21 bytes to BGR, handling stride alignment.
 
         The camera hardware may pad each row to 64-byte or 32-byte boundaries.
         We must inspect actual_size and derive the real stride before reshaping.
@@ -117,7 +199,7 @@ class MipiCameraNode(Node):
             yuv = np.frombuffer(nv12_data, dtype=np.uint8).reshape(
                 (int(height * 1.5), width)
             )
-            return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
+            return cv2.cvtColor(yuv, self._yuv_to_bgr_code())
 
         # Try 64-byte stride alignment first
         stride = (width + 63) // 64 * 64
@@ -154,7 +236,7 @@ class MipiCameraNode(Node):
         yuv = np.zeros((int(height * 1.5), width), dtype=np.uint8)
         yuv[:height, :] = y_plane
         yuv[height:, :] = uv_plane
-        return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
+        return cv2.cvtColor(yuv, self._yuv_to_bgr_code())
 
     def capture(self):
         try:
@@ -176,6 +258,8 @@ class MipiCameraNode(Node):
             frame = self._nv12_to_bgr(img_buf, self.width, self.height, actual_size)
             if frame is None:
                 return
+            frame = self._apply_color_correction(frame)
+            frame = self._apply_low_light_enhancement(frame)
 
             msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
             msg.header.stamp = self.get_clock().now().to_msg()
