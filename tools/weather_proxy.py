@@ -12,7 +12,7 @@ sys.path.insert(0, SRC)
 from sentry_weather.cma_client import CMAClient, _make_jwt
 
 # --- Config ---
-LAT, LON = 32.06, 118.79  # Nanjing
+LAT, LON = 34.26, 117.20  # Xuzhou, Jiangsu
 REFRESH_SEC = 3600        # 1 hour
 PORT = 8090
 
@@ -38,7 +38,7 @@ def fetch_weather():
     alerts = client.fetch_disaster_warning(LAT, LON)
     if data:
         data["disaster_alerts"] = alerts if alerts else []
-        data["city"] = "南京"
+        data["city"] = "徐州"
         data["lat"] = LAT
         data["lon"] = LON
         data["fetch_time"] = time.strftime("%H:%M:%S")

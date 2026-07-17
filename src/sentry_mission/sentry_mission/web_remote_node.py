@@ -518,6 +518,29 @@ class WebRemoteNode(Node):
             self.cruise_speed = speed
         return True, f'Cruise speed set to {speed:.2f} m/s'
 
+    def _ensure_weather_proxy(self):
+        """Start tools/weather_proxy.py if the :8090 endpoint is not up."""
+        import socket
+        ws_root = Path(self.stack_start_script).resolve().parents[2]
+        proxy = ws_root / 'tools' / 'weather_proxy.py'
+        if not proxy.exists():
+            self.get_logger().warn(f'Weather proxy not found: {proxy}')
+            return
+        try:
+            with socket.create_connection(('127.0.0.1', 8090), timeout=0.5):
+                return  # already running
+        except OSError:
+            pass
+        try:
+            log = open('/tmp/weather_proxy.log', 'ab')
+            subprocess.Popen(
+                ['python3', str(proxy)], cwd=str(ws_root),
+                stdout=log, stderr=subprocess.STDOUT,
+                start_new_session=True)
+            self.get_logger().info('Weather proxy started on :8090')
+        except Exception as exc:
+            self.get_logger().warn(f'Weather proxy start failed: {exc}')
+
     def start_stack_and_auto(self):
         with self.stack_lock:
             self.get_logger().info('Frontend requested robot stack start')
@@ -535,6 +558,7 @@ class WebRemoteNode(Node):
                 return False, '/set_auto_mode service not available after stack start'
             if not self.set_mode_auto(True):
                 return False, '/set_auto_mode rejected AUTO request'
+            self._ensure_weather_proxy()
             return True, output
 
     def preheat_stack(self):
@@ -555,6 +579,7 @@ class WebRemoteNode(Node):
                 self.mode = 'MANUAL'
                 self.frontend_started_auto = False
                 self.completion_stop_started = False
+            self._ensure_weather_proxy()
             return True, output
 
     def stop_stack(self, reason='frontend'):
