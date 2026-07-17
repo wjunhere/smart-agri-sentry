@@ -141,3 +141,29 @@ def test_zero_mean_treated_as_very_dark():
     cmd = ctl.update(LumaStats(mean=0.0, saturated_ratio=0.0),
                      moving=False, now_s=0.0)
     assert cmd.exposure_us == pytest.approx(14000.0)
+
+
+def test_saturation_bypasses_rate_limit():
+    ctl = make_controller()
+    ctl.seed(exposure_us=10000.0, gain=3.0)
+    first = ctl.update(LumaStats(mean=40.0, saturated_ratio=0.0),
+                       moving=False, now_s=0.0)
+    assert first is not None  # normal write starts the rate window
+    # 0.2s later (inside window): blown-out scene must not wait
+    cmd = ctl.update(LumaStats(mean=250.0, saturated_ratio=0.5),
+                     moving=False, now_s=0.2)
+    assert cmd is not None
+    assert cmd.exposure_us == pytest.approx(14000.0 * 0.6)
+
+
+def test_motion_clamp_bypasses_rate_limit():
+    ctl = make_controller()
+    ctl.seed(exposure_us=100000.0, gain=3.0)
+    first = ctl.update(LumaStats(mean=40.0, saturated_ratio=0.0),
+                       moving=False, now_s=0.0)
+    assert first is not None  # gain bump at still cap, window starts
+    # robot starts moving 0.2s later: clamp must not wait
+    cmd = ctl.update(LumaStats(mean=80.0, saturated_ratio=0.0),
+                     moving=True, now_s=0.2)
+    assert cmd is not None
+    assert cmd.exposure_us == pytest.approx(20000.0)

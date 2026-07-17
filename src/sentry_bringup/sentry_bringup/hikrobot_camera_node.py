@@ -382,23 +382,38 @@ class HikrobotCameraNode(Node):
         if ret != MV_OK:
             self.get_logger().warn(
                 f'AE set {name}={value:.1f} failed: {_to_hex(ret)}')
+            return False
+        return True
 
     def _ae_update_from_frame(self, bgr, now_s):
         stats = compute_luma_stats(bgr)
-        cmd = self.ae_controller.update(stats, self._is_moving(), now_s)
+        moving = self._is_moving()
+        cmd = self.ae_controller.update(stats, moving, now_s)
         if cmd is None:
             return
+        ok = True
         if self._last_ae_exposure is None or abs(
                 cmd.exposure_us - self._last_ae_exposure) > 1.0:
-            self._write_float_register('ExposureTime', cmd.exposure_us)
-            self._last_ae_exposure = cmd.exposure_us
+            if self._write_float_register('ExposureTime', cmd.exposure_us):
+                self._last_ae_exposure = cmd.exposure_us
+            else:
+                ok = False
         if self._last_ae_gain is None or abs(
                 cmd.gain - self._last_ae_gain) > 0.01:
-            self._write_float_register('Gain', cmd.gain)
-            self._last_ae_gain = cmd.gain
+            if self._write_float_register('Gain', cmd.gain):
+                self._last_ae_gain = cmd.gain
+            else:
+                ok = False
+        if not ok:
+            # Hardware rejected a write; roll the controller back to the
+            # last known hardware state so the command is re-issued later.
+            if self._last_ae_exposure is not None:
+                self.ae_controller.seed(
+                    self._last_ae_exposure, self._last_ae_gain)
+            return
         self.get_logger().info(
             f'AE: mean={stats.mean:.1f} sat={stats.saturated_ratio:.3f} '
-            f'moving={self._is_moving()} -> exp={cmd.exposure_us:.0f}us '
+            f'moving={moving} -> exp={cmd.exposure_us:.0f}us '
             f'gain={cmd.gain:.2f}')
 
     def _set_optional_enum(self, name, value):

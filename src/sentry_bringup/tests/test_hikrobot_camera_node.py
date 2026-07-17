@@ -269,3 +269,23 @@ def test_ae_update_from_frame_skips_when_no_command():
     node._ae_update_from_frame(frame, 100.0)
 
     node.cam.MV_CC_SetFloatValue.assert_not_called()
+
+
+def test_ae_update_retries_after_failed_register_write():
+    from sentry_bringup.auto_exposure import AeCommand
+    node = _make_ae_node()
+    node.cam = mock.MagicMock()
+    node.cam.MV_CC_SetFloatValue.side_effect = [1, 0]  # fail, then succeed
+    node.ae_controller = mock.MagicMock()
+    node.ae_controller.update.return_value = AeCommand(
+        exposure_us=14285.0, gain=3.0)
+    node._last_ae_exposure = 20000.0
+    node._last_ae_gain = 3.0
+    node._moving = False
+    node._last_odom_time = 99.5
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    node._ae_update_from_frame(frame, 100.0)
+
+    assert node._last_ae_exposure == 20000.0  # not updated on failure
+    node.ae_controller.seed.assert_called_once_with(20000.0, 3.0)

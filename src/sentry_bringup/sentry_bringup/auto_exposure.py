@@ -67,13 +67,11 @@ class AdaptiveExposureController:
 
     def update(self, stats, moving, now_s):
         """Return an AeCommand when registers should change, else None."""
-        if (self._last_update_s is not None
-                and now_s - self._last_update_s < self.update_period_s):
-            return None
-
         exp_max = (self.exp_max_moving_us if moving
                    else self.exp_max_still_us)
 
+        # Safety paths bypass the rate limit: blown-out frames and motion
+        # must react within one frame, not one rate window.
         if stats.saturated_ratio > self.sat_limit:
             return self._apply(
                 max(self.exp_min_us, self.exposure_us * 0.6),
@@ -81,6 +79,10 @@ class AdaptiveExposureController:
 
         if self.exposure_us > exp_max:
             return self._apply(exp_max, self.gain, now_s)
+
+        if (self._last_update_s is not None
+                and now_s - self._last_update_s < self.update_period_s):
+            return None
 
         if stats.mean <= 0.0:
             ratio = self.max_step
