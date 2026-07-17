@@ -138,3 +138,21 @@ def test_draw_bbox_on_jpeg_passes_through_undecodable():
     from sentry_mission.batch_recorder import draw_bbox_on_jpeg
 
     assert draw_bbox_on_jpeg(b'not-a-jpeg', [0, 0, 1, 1], 'x') == b'not-a-jpeg'
+
+
+def test_stop_trigger_rejects_malformed_bbox():
+    rec, _ = make_recorder()
+    rec.on_mode_change('AUTO')
+    rec.on_stop_trigger([], 0.9, b'jpeg1')
+    rec.on_stop_trigger([0.1, 0.2], 0.9, b'jpeg1')
+    assert rec.current.records == []
+
+
+def test_oldest_batch_dropped_beyond_cap():
+    rec, _ = make_recorder()
+    for _ in range(BatchRecorder.MAX_BATCHES + 3):
+        rec.on_mode_change('AUTO')
+        rec.on_stop_trigger([0.1, 0.1, 0.5, 0.5], 0.9, b'jpeg')
+        rec.on_mode_change('MANUAL')
+    assert len(rec.batches) == BatchRecorder.MAX_BATCHES
+    assert rec.batches[0].id == 4  # 前 3 个被挤掉
