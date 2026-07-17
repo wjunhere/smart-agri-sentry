@@ -99,6 +99,23 @@
 
 ---
 
+## 临时任务：巡航检测消息推送（2026-07-17）
+
+> 设计：`docs/superpowers/specs/2026-07-17-mission-message-center-design.md`
+> 计划：`docs/superpowers/plans/2026-07-17-mission-message-center.md`
+> 分支：`feat/mission-message-center`
+
+前端顶部状态栏消息中心：巡航批次内检测植株快照（画检测框）+ 病害类别，存 web_remote_node 内存，未读角标 + 一键清理。
+
+- [x] **T1** `BatchRecorder` 纯逻辑 TDD（批次开关、空批次丢弃、诊断回填、未读、清理）
+- [x] **T2** 快照画框 `draw_bbox_on_jpeg` TDD
+- [x] **T3** web_remote_node 接线 TDD（PATROL→STOPPED 边沿快照、固定点无框不记录、class_id 254 哨兵忽略、`/api/messages*` 路由、`/status.message_unread`）
+- [x] **T4** 前端：top-bar 铃铛 + 未读角标、message-center modal（批次分组、缩略图、大图预览、一键清理）
+- [x] **T5** 本地 48 测试全过 + code review 修复（BatchRecorder 加 RLock 线程安全、bbox 长度校验、批次上限 10）+ 板端部署
+- [ ] 板端巡航实测（用户验证：角标 → 快照带框 → 多批次 → 清理）
+
+---
+
 ## P4：后续完善
 
 - [x] Web 前端仪表盘（`static_v2/` Vue 3 + roslibjs，v2.0 已完成）

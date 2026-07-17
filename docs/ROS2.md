@@ -128,6 +128,10 @@
 | `/stack/stop` | POST | Publish zero velocity and run `stop_robot_stack.sh` |
 | `/waypoints` | GET/POST | Read or write cruise waypoints; POST updates install and source YAML files |
 | `/crop_type` | POST | Set the current crop type |
+| `/api/messages` | GET | 巡航消息列表：批次（启动巡航→停止）+ 每株检测记录（快照 URL、病害类别、置信度、时间），附未读批次数 |
+| `/api/messages/<batch_id>/<seq>/snapshot` | GET | 某条检测记录的快照 JPEG（已画检测框） |
+| `/api/messages/read` | POST | 清除未读角标 |
+| `/api/messages/clear` | POST | 一键清空全部批次与快照 |
 
 Field topics to watch during cruise/avoidance:
 
