@@ -18,7 +18,8 @@ import yaml
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import CompressedImage
-from sentry_interfaces.msg import MissionStatus
+from sentry_interfaces.msg import MissionStatus, PlantDetection, Diagnosis
+from sentry_mission.batch_recorder import BatchRecorder, draw_bbox_on_jpeg
 from sentry_interfaces.srv import SetCropType
 from std_srvs.srv import SetBool
 
@@ -246,11 +247,52 @@ class WebRemoteNode(Node):
         self.latest_camera_jpeg = None
         self.camera_image_sub = self.create_subscription(
             CompressedImage, '/out/compressed', self._on_camera_image, 1)
+        self.latest_plant = None
+        self.latest_plant_time = 0.0
+        self._last_mission_state = None
+        self.batch_recorder = BatchRecorder()
+        self.plant_sub = self.create_subscription(
+            PlantDetection, '/vision/plant_detected',
+            self._on_plant_detected, 10)
+        self.diagnosis_sub = self.create_subscription(
+            Diagnosis, '/vision/diagnosis', self._on_diagnosis, 10)
         self.timer = self.create_timer(0.05, self.timer_cb)
 
     def _on_camera_image(self, msg: CompressedImage):
         with self.lock:
             self.latest_camera_jpeg = bytes(msg.data)
+
+    def _on_plant_detected(self, msg):
+        with self.lock:
+            if msg.detected:
+                self.latest_plant = (list(msg.bbox), float(msg.confidence))
+                self.latest_plant_time = time.time()
+            else:
+                self.latest_plant = None
+
+    def _on_diagnosis(self, msg):
+        if getattr(msg, 'class_id', 0) == 254:
+            return
+        self.batch_recorder.on_diagnosis(
+            msg.disease_class, float(msg.confidence))
+
+    def _record_detection_snapshot(self):
+        with self.lock:
+            plant = self.latest_plant
+            plant_time = self.latest_plant_time
+            jpeg = self.latest_camera_jpeg
+        if plant is None or (time.time() - plant_time) > 2.0:
+            return  # 固定点停车且无有效检测框 -> 不记录
+        if not jpeg:
+            self.get_logger().warn('Detection snapshot skipped: no frame')
+            return
+        bbox, conf = plant
+        try:
+            snap = draw_bbox_on_jpeg(jpeg, bbox, f'Plant {conf * 100:.0f}%')
+        except Exception as exc:
+            self.get_logger().warn(f'bbox draw failed: {exc}')
+            snap = jpeg
+        self.batch_recorder.on_stop_trigger(bbox, conf, snap)
 
     def capture_camera_image(self):
         with self.lock:
@@ -280,10 +322,17 @@ class WebRemoteNode(Node):
             # AUTO: do not publish, Nav2 owns /cmd_vel
 
     def on_mission_status(self, msg: MissionStatus):
+        state = getattr(msg, 'state', '')
+        prev_state = self._last_mission_state
+        self._last_mission_state = state
+        if prev_state == 'PATROL' and state == 'STOPPED':
+            self._record_detection_snapshot()
+        if state == 'MANUAL':
+            self.batch_recorder.on_mode_change('MANUAL')
         # The mission mode may also be changed by an operator or recovery
         # script that calls /set_auto_mode directly. Keep the web control
         # plane aligned so it does not leave the UI locked in AUTO.
-        if getattr(msg, 'state', '') == 'MANUAL':
+        if state == 'MANUAL':
             with self.lock:
                 self.mode = 'MANUAL'
                 self.frontend_started_auto = False
@@ -321,6 +370,7 @@ class WebRemoteNode(Node):
                 self.angular = 0.0
                 self.last_cmd_time = time.time()
         self.get_logger().info(f"Switched to {self.mode}")
+        self.batch_recorder.on_mode_change('AUTO' if auto else 'MANUAL')
         return True
 
     def _on_mode_response(self, future, auto: bool):
@@ -357,6 +407,7 @@ class WebRemoteNode(Node):
             self.linear = 0.0
             self.angular = 0.0
             self.last_cmd_time = time.time()
+        self.batch_recorder.on_mode_change('MANUAL')
         self.get_logger().warn('EMERGENCY STOP triggered')
 
     def _on_stop_response(self, future):
@@ -613,6 +664,7 @@ class WebRemoteNode(Node):
                 'stack_ready': self.stack_ready,
                 'cruise_speed': self.cruise_speed,
                 'vision_inference_mode': self.vision_inference_mode,
+                'message_unread': self.batch_recorder.unread,
             }
 
     def destroy_node(self):
@@ -649,6 +701,28 @@ def _get_app(node: WebRemoteNode):
     @_app.route('/old')
     def old_index():
         return send_from_directory(str(STATIC_DIR), 'index.html')
+
+    @_app.route('/api/messages')
+    def api_messages():
+        return jsonify(node.batch_recorder.to_dict())
+
+    @_app.route('/api/messages/<int:batch_id>/<int:seq>/snapshot')
+    def api_message_snapshot(batch_id, seq):
+        from flask import Response
+        jpeg = node.batch_recorder.get_snapshot(batch_id, seq)
+        if jpeg is None:
+            return jsonify({'error': 'not found'}), 404
+        return Response(jpeg, mimetype='image/jpeg')
+
+    @_app.route('/api/messages/read', methods=['POST'])
+    def api_messages_read():
+        node.batch_recorder.mark_read()
+        return jsonify({'status': 'ok'})
+
+    @_app.route('/api/messages/clear', methods=['POST'])
+    def api_messages_clear():
+        node.batch_recorder.clear()
+        return jsonify({'status': 'ok'})
 
     @_app.route('/<path:filename>')
     def v2_static(filename):

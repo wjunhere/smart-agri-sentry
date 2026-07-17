@@ -49,6 +49,10 @@ def mock_ros2():
     modules['sentry_interfaces.srv'].SetCropType = SetCropType
     MissionStatus = type('MissionStatus', (), {})
     modules['sentry_interfaces.msg'].MissionStatus = MissionStatus
+    PlantDetection = type('PlantDetection', (), {})
+    modules['sentry_interfaces.msg'].PlantDetection = PlantDetection
+    Diagnosis = type('Diagnosis', (), {})
+    modules['sentry_interfaces.msg'].Diagnosis = Diagnosis
     CompressedImage = type('CompressedImage', (), {})
     modules['sensor_msgs.msg'].CompressedImage = CompressedImage
 
@@ -96,6 +100,8 @@ def test_set_mode_auto_adds_done_callback():
         web.TIMEOUT = 0.5
         web.timer = None
         web.get_logger = node.get_logger
+        from sentry_mission.batch_recorder import BatchRecorder
+        web.batch_recorder = BatchRecorder()
 
         result = web.set_mode_auto(False)
 
@@ -362,3 +368,96 @@ def test_capture_camera_image_rejects_when_no_frame_has_arrived(tmp_path):
 
     assert ok is False
     assert 'No camera frame' in message
+
+
+def _make_wired_node():
+    import time as _time
+    from sentry_mission.web_remote_node import WebRemoteNode
+    from sentry_mission.batch_recorder import BatchRecorder
+
+    node = WebRemoteNode.__new__(WebRemoteNode)
+    node.batch_recorder = BatchRecorder()
+    node.latest_plant = None
+    node.latest_plant_time = 0.0
+    node.latest_camera_jpeg = b'frame'
+    node._last_mission_state = None
+    node.lock = threading.Lock()
+    node.get_logger = mock.MagicMock()
+    return node
+
+
+def _status(state):
+    return types.SimpleNamespace(state=state, total_wps=3, current_wp_idx=0)
+
+
+def test_patrol_to_stopped_records_snapshot_with_fresh_plant():
+    import time
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+    node.latest_plant = ([0.1, 0.1, 0.5, 0.5], 0.9)
+    node.latest_plant_time = time.time()
+
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    assert len(node.batch_recorder.current.records) == 1
+
+
+def test_patrol_to_stopped_without_plant_records_nothing():
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    assert node.batch_recorder.current.records == []
+
+
+def test_stale_plant_detection_is_ignored():
+    import time
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+    node.latest_plant = ([0.1, 0.1, 0.5, 0.5], 0.9)
+    node.latest_plant_time = time.time() - 5.0
+
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    assert node.batch_recorder.current.records == []
+
+
+def test_diagnosis_sentinel_class_id_ignored():
+    import time
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+    node.latest_plant = ([0.1, 0.1, 0.5, 0.5], 0.9)
+    node.latest_plant_time = time.time()
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    node._on_diagnosis(types.SimpleNamespace(
+        class_id=254, disease_class='', confidence=0.0))
+    assert node.batch_recorder.current.records[0].disease_class is None
+
+    node._on_diagnosis(types.SimpleNamespace(
+        class_id=1, disease_class='early_blight', confidence=0.8))
+    assert node.batch_recorder.current.records[0].disease_class == 'early_blight'
+
+
+def test_get_status_includes_message_unread():
+    import time
+    node = _make_wired_node()
+    node.mode = 'MANUAL'
+    node.linear = 0.0
+    node.angular = 0.0
+    node.last_cmd_time = time.time()
+    node.TIMEOUT = 0.5
+    node.mode_srv = mock.MagicMock()
+    node.frontend_started_auto = False
+    node.completion_stop_started = False
+    node.stack_ready = False
+    node.cruise_speed = 0.18
+    node.vision_inference_mode = 'triggered'
+    node.batch_recorder.unread = 2
+
+    assert node.get_status()['message_unread'] == 2
