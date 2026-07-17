@@ -97,6 +97,7 @@ function missionStateToMode(state) {
 }
 
 let ros = null;
+let lastRealEnvTime = 0;  // real /sensor/environment_fixed overrides sim
 
 function rosConnect() {
   ros = new ROSLIB.Ros({ url: ROS_CONFIG.url });
@@ -199,6 +200,7 @@ const TOPICS = [
    }],
   ['/sensor/environment_fixed', 'sentry_interfaces/Environment',
    (msg) => {
+     lastRealEnvTime = Date.now();
      store.envAirTemp = msg.air_temp;
      store.envAirHumidity = msg.air_humidity;
      store.envCO2 = msg.air_co2;
@@ -517,18 +519,32 @@ function callSetCropType(cropType) {
   store.advisoryFungicide = '嘧菌酯 250g/L SC 800x';
   // === MOCK END ===
 
-  // Environment — fixed node
-  store.envAirTemp = 26.4;
-  store.envAirHumidity = 88.2;
-  store.envCO2 = 420;
-  store.envSoilTemp = 22.1;
-  store.envSoilHumidity = 60.5;
-  store.envLeafWetness = 6.2;
-  store.envSoilN = 12.5;
-  store.envSoilP = 8.3;
-  store.envSoilK = 15.7;
-  store.envSoilPH = 6.5;
+  // Environment — Xuzhou July 11:00 overcast scenario: bounded random walk, 60s tick.
+  // Real /sensor/environment_fixed data overrides sim for 90s after the last message.
+  // [storeKey, base, min, max, maxStepPerTick, decimals]
+  const ENV_SIM = [
+    ['envAirTemp',      28.0, 26.0,  30.5, 0.4,  1],
+    ['envAirHumidity',  78.0, 70.0,  88.0, 2.0,  1],
+    ['envCO2',         420.0, 400.0, 460.0, 8.0, 0],
+    ['envSoilTemp',     26.0, 24.5,  27.5, 0.2,  1],
+    ['envSoilHumidity', 58.0, 50.0,  65.0, 1.5,  1],
+    ['envLeafWetness',   3.0,  0.5,   5.0, 0.6,  1],
+    ['envSoilN',        12.5, 10.0,  15.0, 0.3,  1],
+    ['envSoilP',         8.3,  7.0,  10.0, 0.2,  1],
+    ['envSoilK',        15.7, 13.0,  18.0, 0.3,  1],
+    ['envSoilPH',        6.5,  6.3,   6.8, 0.05, 2],
+  ];
+  function envSimTick() {
+    if (Date.now() - lastRealEnvTime < 90000) return;  // real sensor active
+    ENV_SIM.forEach(([key, , min, max, maxStep, decimals]) => {
+      let v = store[key] + (Math.random() * 2 - 1) * maxStep;
+      v = Math.min(max, Math.max(min, v));
+      store[key] = parseFloat(v.toFixed(decimals));
+    });
+  }
+  ENV_SIM.forEach(([key, base]) => { store[key] = base; });
   store.envDataSource = 'FIXED_NODE_01';
+  setInterval(envSimTick, 60000);
 
   // Chassis
   store.batteryVoltage = 12.1;
