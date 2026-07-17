@@ -12,6 +12,11 @@ const WeatherPanel = {
       </span>
       <span class="stale-badge" v-if="store.weatherStale">缓存</span>
       <span style="margin-left:auto; display:flex; gap:4px; align-items:center;">
+        <label class="weather-toggle" @click.stop title="自动获取天气">
+          <input type="checkbox" :checked="store.weatherAutoFetch"
+                 @change="e => store.setWeatherAutoFetch(e.target.checked)">
+          <span class="weather-toggle-slider"></span>
+        </label>
         <input type="number" :value="store.weatherLat" step="0.01"
                @change="e => store.weatherLat = parseFloat(e.target.value)"
                @click.stop

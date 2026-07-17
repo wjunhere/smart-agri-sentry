@@ -31,6 +31,7 @@ window.store = Vue.reactive({
   weatherHours: [],
   weatherDisasterAlerts: [],
   weatherStale: false,
+  weatherAutoFetch: true,
   weatherCity: '',
   weatherLat: 39.9,
   weatherLon: 116.4,
@@ -563,6 +564,7 @@ function callSetCropType(cropType) {
     }
 
     function fetchWeather() {
+      if (!store.weatherAutoFetch) return;
       fetch(WEATHER_PROXY)
         .then(r => r.json())
         .then(data => { if (data && data.days) applyWeather(data); })
@@ -572,6 +574,11 @@ function callSetCropType(cropType) {
     // Try immediately, then every hour
     fetchWeather();
     setInterval(fetchWeather, REFRESH_MS);
+
+    store.setWeatherAutoFetch = function(on) {
+      store.weatherAutoFetch = Boolean(on);
+      if (store.weatherAutoFetch) fetchWeather();
+    };
   })();
 
   // === MOCK START: forecast alerts (remove after test) ===

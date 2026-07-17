@@ -645,3 +645,23 @@ body {
   max-width: 90vw; max-height: 85vh; border-radius: var(--radius-pill);
   cursor: zoom-out;
 }
+
+/* ── Weather auto-fetch toggle ── */
+.weather-toggle { position: relative; display: inline-block; width: 28px; height: 16px; }
+.weather-toggle input { opacity: 0; width: 0; height: 0; }
+.weather-toggle-slider {
+  position: absolute; inset: 0; border-radius: 16px;
+  background: var(--bg-hover); border: 1px solid var(--border);
+  transition: background 0.2s;
+}
+.weather-toggle-slider::before {
+  content: ''; position: absolute; width: 12px; height: 12px;
+  left: 1px; top: 1px; border-radius: 50%;
+  background: var(--text-dim); transition: transform 0.2s, background 0.2s;
+}
+.weather-toggle input:checked + .weather-toggle-slider {
+  background: rgba(16, 185, 129, 0.25); border-color: var(--green);
+}
+.weather-toggle input:checked + .weather-toggle-slider::before {
+  transform: translateX(12px); background: var(--green);
+}
