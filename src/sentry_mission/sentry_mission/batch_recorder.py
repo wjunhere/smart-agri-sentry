@@ -113,3 +113,23 @@ class BatchRecorder:
                 'snapshot_url': f'/api/messages/{batch.id}/{r.seq}/snapshot',
             } for r in batch.records],
         }
+
+
+def draw_bbox_on_jpeg(jpeg_bytes, bbox, label):
+    """Burn a normalized bbox + label onto a JPEG frame (#10B981 green)."""
+    import cv2
+    import numpy as np
+
+    arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        return jpeg_bytes
+    h, w = img.shape[:2]
+    x1, y1 = int(bbox[0] * w), int(bbox[1] * h)
+    x2, y2 = int(bbox[2] * w), int(bbox[3] * h)
+    color = (16, 185, 129)  # BGR of #10B981
+    cv2.rectangle(img, (x1, y1), (x2, y2), color, 3)
+    cv2.putText(img, label, (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    ok, enc = cv2.imencode('.jpg', img)
+    return enc.tobytes() if ok else jpeg_bytes

@@ -115,3 +115,26 @@ def test_get_snapshot_returns_stored_bytes():
     assert rec.get_snapshot(1, 0) == b'jpeg1'
     assert rec.get_snapshot(1, 9) is None
     assert rec.get_snapshot(99, 0) is None
+
+
+def test_draw_bbox_on_jpeg_burns_rectangle():
+    import cv2
+    import numpy as np
+    from sentry_mission.batch_recorder import draw_bbox_on_jpeg
+
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    ok, enc = cv2.imencode('.jpg', img)
+    assert ok
+    out = draw_bbox_on_jpeg(enc.tobytes(), [0.5, 0.5, 0.75, 0.75],
+                            'Plant 90%')
+    decoded = cv2.imdecode(np.frombuffer(out, dtype=np.uint8),
+                           cv2.IMREAD_COLOR)
+    assert decoded is not None
+    column = decoded[300, 320]
+    assert column[1] > 100  # G 通道明显抬升
+
+
+def test_draw_bbox_on_jpeg_passes_through_undecodable():
+    from sentry_mission.batch_recorder import draw_bbox_on_jpeg
+
+    assert draw_bbox_on_jpeg(b'not-a-jpeg', [0, 0, 1, 1], 'x') == b'not-a-jpeg'
