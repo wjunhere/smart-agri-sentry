@@ -69,15 +69,16 @@ def test_hikrobot_is_the_default_launch_backend():
     assert 'CAMERA_BACKEND="${CAMERA_BACKEND:-hikrobot}"' in start_script
 
 
-def test_hikrobot_launch_uses_adaptive_exposure_for_low_light():
+def test_hikrobot_launch_uses_adaptive_exposure():
     repo_root = Path(__file__).parents[2]
     launch_source = (repo_root / 'sentry_bringup' / 'launch' /
                      'sentry_v2.launch.py').read_text(encoding='utf-8')
 
-    assert "'exposure_auto': True" in launch_source
-    assert "'gain_auto': True" in launch_source
-    assert "'auto_exposure_max_us': 40000.0" in launch_source
-    assert "'auto_gain_max': 12.0" in launch_source
+    assert "'ae_enabled': True" in launch_source
+    assert "'exposure_auto': False" in launch_source
+    assert "'gain_auto': False" in launch_source
+    assert "'ae_exp_max_moving_us': 20000.0" in launch_source
+    assert "'ae_exp_max_still_us': 100000.0" in launch_source
     assert "'enable_image_enhancement': True" in launch_source
     assert "'gamma': 2.0" in launch_source
 
