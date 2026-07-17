@@ -22,6 +22,8 @@ def mock_ros2_and_cv():
         'rclpy.node': types.ModuleType('rclpy.node'),
         'sensor_msgs': types.ModuleType('sensor_msgs'),
         'sensor_msgs.msg': types.ModuleType('sensor_msgs.msg'),
+        'nav_msgs': types.ModuleType('nav_msgs'),
+        'nav_msgs.msg': types.ModuleType('nav_msgs.msg'),
         'cv_bridge': types.ModuleType('cv_bridge'),
         'cv2': types.ModuleType('cv2'),
     }
@@ -31,6 +33,7 @@ def mock_ros2_and_cv():
     modules['rclpy'].spin = mock.MagicMock()
     modules['rclpy.node'].Node = object
     modules['sensor_msgs.msg'].Image = type('Image', (), {})
+    modules['nav_msgs.msg'].Odometry = type('Odometry', (), {})
     modules['cv_bridge'].CvBridge = type(
         'CvBridge', (), {'cv2_to_imgmsg': mock.MagicMock()})
     modules['cv2'].COLOR_RGB2BGR = 4
@@ -169,3 +172,99 @@ def test_load_mvs_sdk_sets_paths_and_imports_module(tmp_path, monkeypatch):
     assert os.environ['LD_LIBRARY_PATH'].split(os.pathsep)[0] == (
         '/opt/MVS/lib/aarch64')
     assert sys.path[0] == str(tmp_path)
+
+
+def _make_ae_node():
+    from sentry_bringup.hikrobot_camera_node import HikrobotCameraNode
+
+    node = HikrobotCameraNode.__new__(HikrobotCameraNode)
+    node.ae_move_speed_thresh = 0.05
+    node.ae_still_speed_thresh = 0.02
+    node._moving = True
+    node._last_odom_time = None
+    node._still_since = None
+    node._now = mock.MagicMock(return_value=100.0)
+    node.get_logger = mock.MagicMock()
+    return node
+
+
+def _make_odom(speed_x, speed_y=0.0):
+    return types.SimpleNamespace(
+        twist=types.SimpleNamespace(
+            twist=types.SimpleNamespace(
+                linear=types.SimpleNamespace(x=speed_x, y=speed_y))))
+
+
+def test_on_odom_marks_moving_above_threshold():
+    node = _make_ae_node()
+    node._moving = False
+
+    node._on_odom(_make_odom(0.1))
+
+    assert node._moving is True
+    assert node._last_odom_time == 100.0
+
+
+def test_on_odom_clears_moving_after_still_hold():
+    node = _make_ae_node()
+    node._on_odom(_make_odom(0.0))
+    assert node._moving is True  # hold period not elapsed
+
+    node._now.return_value = 101.5
+    node._on_odom(_make_odom(0.0))
+    assert node._moving is False  # still for 1.5s >= 1.0s hold
+
+
+def test_is_moving_true_when_odom_never_received():
+    node = _make_ae_node()
+    assert node._is_moving() is True
+
+
+def test_is_moving_true_when_odom_stale():
+    node = _make_ae_node()
+    node._moving = False
+    node._last_odom_time = 97.0  # 3s ago at _now=100
+    assert node._is_moving() is True
+
+
+def test_is_moving_uses_state_when_odom_fresh():
+    node = _make_ae_node()
+    node._moving = False
+    node._last_odom_time = 99.5
+    assert node._is_moving() is False
+
+
+def test_ae_update_from_frame_writes_registers_on_command():
+    from sentry_bringup.auto_exposure import AeCommand
+    node = _make_ae_node()
+    node.cam = mock.MagicMock()
+    node.cam.MV_CC_SetFloatValue.return_value = 0
+    node.ae_controller = mock.MagicMock()
+    node.ae_controller.update.return_value = AeCommand(
+        exposure_us=14285.0, gain=3.0)
+    node._last_ae_exposure = 20000.0
+    node._last_ae_gain = 3.0
+    node._moving = False
+    node._last_odom_time = 99.5
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    node._ae_update_from_frame(frame, 100.0)
+
+    node.cam.MV_CC_SetFloatValue.assert_called_once_with(
+        'ExposureTime', 14285.0)
+
+
+def test_ae_update_from_frame_skips_when_no_command():
+    node = _make_ae_node()
+    node.cam = mock.MagicMock()
+    node.ae_controller = mock.MagicMock()
+    node.ae_controller.update.return_value = None
+    node._last_ae_exposure = 20000.0
+    node._last_ae_gain = 3.0
+    node._moving = False
+    node._last_odom_time = 99.5
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    node._ae_update_from_frame(frame, 100.0)
+
+    node.cam.MV_CC_SetFloatValue.assert_not_called()

@@ -7,9 +7,11 @@ topic used by the existing vision pipeline.
 
 import atexit
 import importlib
+import math
 import os
 import signal
 import sys
+import time
 from ctypes import (
     POINTER,
     byref,
@@ -26,6 +28,12 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from nav_msgs.msg import Odometry
+
+from sentry_bringup.auto_exposure import (
+    AdaptiveExposureController,
+    compute_luma_stats,
+)
 
 
 DEFAULT_IMAGE_TOPIC = '/sentry/camera/image_raw'
@@ -96,6 +104,20 @@ class HikrobotCameraNode(Node):
         self.declare_parameter('auto_gain_max', 12.0)
         self.declare_parameter('enable_image_enhancement', False)
         self.declare_parameter('gamma', 3.0)
+        self.declare_parameter('ae_enabled', True)
+        self.declare_parameter('ae_target_luma', 80.0)
+        self.declare_parameter('ae_deadband', 0.05)
+        self.declare_parameter('ae_max_step', 1.4)
+        self.declare_parameter('ae_sat_limit', 0.02)
+        self.declare_parameter('ae_exp_min_us', 2000.0)
+        self.declare_parameter('ae_exp_max_moving_us', 20000.0)
+        self.declare_parameter('ae_exp_max_still_us', 100000.0)
+        self.declare_parameter('ae_gain_min', 0.0)
+        self.declare_parameter('ae_gain_max', 12.0)
+        self.declare_parameter('ae_move_speed_thresh', 0.05)
+        self.declare_parameter('ae_still_speed_thresh', 0.02)
+        self.declare_parameter('ae_update_period_s', 0.4)
+        self.declare_parameter('odom_topic', '/wheel/odom')
 
         self.image_topic = self.get_parameter('image_topic').value
         self.frame_id = self.get_parameter('frame_id').value
@@ -125,6 +147,34 @@ class HikrobotCameraNode(Node):
         self.gamma = max(0.1, float(self.get_parameter('gamma').value))
         self.gamma_lut = self._build_gamma_lut(self.gamma)
 
+        self.ae_enabled = bool(self.get_parameter('ae_enabled').value)
+        self.ae_move_speed_thresh = float(
+            self.get_parameter('ae_move_speed_thresh').value)
+        self.ae_still_speed_thresh = float(
+            self.get_parameter('ae_still_speed_thresh').value)
+        self.ae_controller = None
+        self._moving = True
+        self._last_odom_time = None
+        self._still_since = None
+        self._now = time.monotonic
+        self._last_ae_exposure = None
+        self._last_ae_gain = None
+        if self.ae_enabled:
+            self.ae_controller = AdaptiveExposureController(
+                target_luma=float(self.get_parameter('ae_target_luma').value),
+                deadband=float(self.get_parameter('ae_deadband').value),
+                max_step=float(self.get_parameter('ae_max_step').value),
+                sat_limit=float(self.get_parameter('ae_sat_limit').value),
+                exp_min_us=float(self.get_parameter('ae_exp_min_us').value),
+                exp_max_moving_us=float(
+                    self.get_parameter('ae_exp_max_moving_us').value),
+                exp_max_still_us=float(
+                    self.get_parameter('ae_exp_max_still_us').value),
+                gain_min=float(self.get_parameter('ae_gain_min').value),
+                gain_max=float(self.get_parameter('ae_gain_max').value),
+                update_period_s=float(
+                    self.get_parameter('ae_update_period_s').value))
+
         self.mvs = _load_mvs_sdk(
             self.get_parameter('mvs_common_runenv').value,
             self.get_parameter('mvs_python_path').value,
@@ -140,6 +190,10 @@ class HikrobotCameraNode(Node):
 
         self.bridge = CvBridge()
         self.pub = self.create_publisher(Image, self.image_topic, 10)
+        if self.ae_enabled:
+            self.odom_sub = self.create_subscription(
+                Odometry, self.get_parameter('odom_topic').value,
+                self._on_odom, 10)
         self.timer = self.create_timer(1.0 / self.fps, self.capture)
         self.get_logger().info(
             f'Hikrobot camera publishing {self.image_topic} at {self.fps:.1f} fps')
@@ -191,6 +245,11 @@ class HikrobotCameraNode(Node):
                         f'Set GevSCPSPacketSize failed: {_to_hex(ret)}')
 
         self._configure_exposure_and_gain()
+        if self.ae_enabled:
+            exposure = (self._read_optional_float('ExposureTime')
+                        or self.exposure_time_us)
+            gain = self._read_optional_float('Gain') or self.gain
+            self._seed_ae_controller(exposure, gain)
 
         ret = self.cam.MV_CC_SetEnumValue(
             'TriggerMode', self.mvs.MV_TRIGGER_MODE_OFF)
@@ -287,6 +346,61 @@ class HikrobotCameraNode(Node):
             self._set_optional_enum('GainAuto', 0)
             self._set_optional_float('Gain', self.gain)
 
+    def _seed_ae_controller(self, exposure_us, gain):
+        self.ae_controller.seed(exposure_us, gain)
+        self._last_ae_exposure = exposure_us
+        self._last_ae_gain = gain
+        self.get_logger().info(
+            f'AE seeded from hardware: exposure={exposure_us:.0f}us '
+            f'gain={gain:.2f}')
+
+    def _on_odom(self, msg):
+        speed = math.hypot(msg.twist.twist.linear.x,
+                           msg.twist.twist.linear.y)
+        now = self._now()
+        self._last_odom_time = now
+        if speed > self.ae_move_speed_thresh:
+            self._moving = True
+            self._still_since = None
+        elif speed < self.ae_still_speed_thresh:
+            if self._still_since is None:
+                self._still_since = now
+            elif now - self._still_since >= 1.0:
+                self._moving = False
+        else:
+            self._still_since = None
+
+    def _is_moving(self):
+        if self._last_odom_time is None:
+            return True
+        if self._now() - self._last_odom_time > 2.0:
+            return True
+        return self._moving
+
+    def _write_float_register(self, name, value):
+        ret = self.cam.MV_CC_SetFloatValue(name, value)
+        if ret != MV_OK:
+            self.get_logger().warn(
+                f'AE set {name}={value:.1f} failed: {_to_hex(ret)}')
+
+    def _ae_update_from_frame(self, bgr, now_s):
+        stats = compute_luma_stats(bgr)
+        cmd = self.ae_controller.update(stats, self._is_moving(), now_s)
+        if cmd is None:
+            return
+        if self._last_ae_exposure is None or abs(
+                cmd.exposure_us - self._last_ae_exposure) > 1.0:
+            self._write_float_register('ExposureTime', cmd.exposure_us)
+            self._last_ae_exposure = cmd.exposure_us
+        if self._last_ae_gain is None or abs(
+                cmd.gain - self._last_ae_gain) > 0.01:
+            self._write_float_register('Gain', cmd.gain)
+            self._last_ae_gain = cmd.gain
+        self.get_logger().info(
+            f'AE: mean={stats.mean:.1f} sat={stats.saturated_ratio:.3f} '
+            f'moving={self._is_moving()} -> exp={cmd.exposure_us:.0f}us '
+            f'gain={cmd.gain:.2f}')
+
     def _set_optional_enum(self, name, value):
         ret = self.cam.MV_CC_SetEnumValue(name, value)
         if ret != MV_OK:
@@ -358,6 +472,8 @@ class HikrobotCameraNode(Node):
 
         try:
             bgr = self._convert_frame_to_bgr(frame)
+            if self.ae_enabled:
+                self._ae_update_from_frame(bgr, time.monotonic())
             bgr = self._apply_image_enhancement(bgr)
             msg = self.bridge.cv2_to_imgmsg(bgr, encoding='bgr8')
             msg.header.stamp = self.get_clock().now().to_msg()
