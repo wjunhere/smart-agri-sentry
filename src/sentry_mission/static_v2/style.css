@@ -611,3 +611,37 @@ body {
 .disaster-alerts { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 .disaster-tag { background: #7F1D1D; color: #FCA5A5; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
 .stale-badge { background: #78350F; color: #FBBF24; padding: 1px 6px; border-radius: 4px; font-size: 11px; margin-left: 8px; }
+
+/* ── Message center ── */
+.message-btn {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill); color: var(--text); cursor: pointer;
+}
+.msg-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  background: var(--red); color: #fff; border-radius: 8px;
+  font-size: 10px; line-height: 16px; text-align: center; font-weight: 600;
+}
+.msg-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.msg-batch { margin-bottom: 16px; }
+.msg-batch-header {
+  font-weight: 600; font-size: 13px; padding: 6px 0;
+  border-bottom: 1px solid var(--border); margin-bottom: 8px;
+}
+.msg-record {
+  display: flex; gap: 10px; padding: 6px; border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.msg-record:hover { background: var(--bg-hover); }
+.msg-thumb { width: 96px; height: 72px; object-fit: cover; border-radius: var(--radius); }
+.msg-record-info { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.msg-disease { font-weight: 600; font-size: 14px; }
+.msg-preview {
+  max-width: 90vw; max-height: 85vh; border-radius: var(--radius-pill);
+  cursor: zoom-out;
+}

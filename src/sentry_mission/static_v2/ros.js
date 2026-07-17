@@ -72,6 +72,9 @@ window.store = Vue.reactive({
   fixedPointStops: [],
   fixedPointStopsBusy: false,
   _rawWaypoints: [],
+  messageUnread: 0,
+  messageBatches: [],
+  showMessages: false,
 });
 const store = window.store;  // local alias for internal use in this file
 
@@ -724,6 +727,7 @@ function refreshStackStatus() {
       if (data.vision_inference_mode) {
         store.visionInferenceMode = data.vision_inference_mode;
       }
+      store.messageUnread = Number(data.message_unread || 0);
       return data;
     })
     .catch(() => null);
@@ -791,6 +795,36 @@ setInterval(() => {
     store.diagnosisProbabilities = [0.06, conf, 0.04, 0.02, 0.01, 0.01, Math.max(0, 1 - conf - 0.14)];
   }
 }, 1500);
+
+// ── Mission message center ──
+function fetchMessages() {
+  return fetch('/api/messages')
+    .then(resp => resp.json())
+    .then(data => {
+      store.messageBatches = data.batches || [];
+      store.messageUnread = Number(data.unread || 0);
+      return data;
+    })
+    .catch(() => null);
+}
+
+store.openMessages = async function() {
+  await fetchMessages();
+  store.showMessages = true;
+  store.messageUnread = 0;
+  fetch('/api/messages/read', { method: 'POST' }).catch(() => {});
+};
+
+store.clearMessages = async function() {
+  if (!window.confirm('确定清空所有巡航批次的快照与记录？')) return;
+  await fetch('/api/messages/clear', { method: 'POST' }).catch(() => {});
+  store.messageBatches = [];
+  store.messageUnread = 0;
+};
+
+store.formatMsgTime = function(ts) {
+  return new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour12: false });
+};
 
 // Auto-connect on load (real ROS data will overwrite mock if connected)
 try { rosConnect(); } catch(e) { console.log('[ROS] Connection deferred'); }
