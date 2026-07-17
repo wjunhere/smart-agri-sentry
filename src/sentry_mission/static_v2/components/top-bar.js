@@ -6,6 +6,14 @@ const TopBar = {
       <span class="dot" :class="store.connected ? 'dot-green' : 'dot-red'"></span>
       {{ store.mode === 'AUTO' ? 'AUTO' : store.mode === 'MANUAL' ? 'MANUAL' : 'ESTOP' }}
     </span>
+    <button class="camera-start-btn" :disabled="store.visionStarting || store.stackReady"
+            @click="startVision">
+      {{ store.visionStarting ? '启动中...' : store.stackReady ? '摄像头已开启' : '开启摄像头' }}
+    </button>
+    <button class="camera-capture-btn" :disabled="store.cameraCaptureBusy"
+            @click="captureImage">
+      {{ store.cameraCaptureBusy ? '保存中...' : '拍摄' }}
+    </button>
     <span class="spacer"></span>
     <span class="ros-indicator">
       <span class="dot" :class="store.connected ? 'dot-green' : 'dot-red'"></span>
@@ -31,6 +39,12 @@ const TopBar = {
     }
   },
   methods: {
+    startVision() {
+      callVisionStart().catch(err => console.error(err));
+    },
+    captureImage() {
+      callCaptureImage().catch(err => console.error(err));
+    },
     updateTime() {
       const d = new Date();
       this.timeStr = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });

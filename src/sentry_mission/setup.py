@@ -13,6 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', [
             'config/ekf.yaml',
+            'config/mission_params.yaml',
             'config/nav2_no_map.yaml',
             'config/waypoints.yaml',
         ]),

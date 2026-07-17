@@ -86,8 +86,16 @@ class HikrobotCameraNode(Node):
         self.declare_parameter('mvs_python_path', DEFAULT_MVS_PYTHON_PATH)
         self.declare_parameter('mvs_library_path', DEFAULT_MVS_LIBRARY_PATH)
         self.declare_parameter('bayer_cvt_quality', 1)
-        self.declare_parameter('exposure_time_us', 0.0)
-        self.declare_parameter('gain', 0.0)
+        self.declare_parameter('exposure_time_us', 100000.0)
+        self.declare_parameter('gain', 3.0)
+        self.declare_parameter('exposure_auto', False)
+        self.declare_parameter('gain_auto', False)
+        self.declare_parameter('auto_exposure_min_us', 2000.0)
+        self.declare_parameter('auto_exposure_max_us', 40000.0)
+        self.declare_parameter('auto_gain_min', 0.0)
+        self.declare_parameter('auto_gain_max', 12.0)
+        self.declare_parameter('enable_image_enhancement', False)
+        self.declare_parameter('gamma', 3.0)
 
         self.image_topic = self.get_parameter('image_topic').value
         self.frame_id = self.get_parameter('frame_id').value
@@ -101,6 +109,21 @@ class HikrobotCameraNode(Node):
         self.exposure_time_us = float(
             self.get_parameter('exposure_time_us').value)
         self.gain = float(self.get_parameter('gain').value)
+        self.exposure_auto = bool(
+            self.get_parameter('exposure_auto').value)
+        self.gain_auto = bool(self.get_parameter('gain_auto').value)
+        self.auto_exposure_min_us = float(
+            self.get_parameter('auto_exposure_min_us').value)
+        self.auto_exposure_max_us = float(
+            self.get_parameter('auto_exposure_max_us').value)
+        self.auto_gain_min = float(
+            self.get_parameter('auto_gain_min').value)
+        self.auto_gain_max = float(
+            self.get_parameter('auto_gain_max').value)
+        self.enable_image_enhancement = bool(
+            self.get_parameter('enable_image_enhancement').value)
+        self.gamma = max(0.1, float(self.get_parameter('gamma').value))
+        self.gamma_lut = self._build_gamma_lut(self.gamma)
 
         self.mvs = _load_mvs_sdk(
             self.get_parameter('mvs_common_runenv').value,
@@ -167,8 +190,7 @@ class HikrobotCameraNode(Node):
                     self.get_logger().warn(
                         f'Set GevSCPSPacketSize failed: {_to_hex(ret)}')
 
-        self._set_optional_float('ExposureTime', self.exposure_time_us)
-        self._set_optional_float('Gain', self.gain)
+        self._configure_exposure_and_gain()
 
         ret = self.cam.MV_CC_SetEnumValue(
             'TriggerMode', self.mvs.MV_TRIGGER_MODE_OFF)
@@ -191,6 +213,82 @@ class HikrobotCameraNode(Node):
         if value <= 0.0:
             return
         ret = self.cam.MV_CC_SetFloatValue(name, value)
+        if ret != MV_OK:
+            self.get_logger().warn(
+                f'Set {name}={value} failed: {_to_hex(ret)}')
+
+    def _read_optional_float(self, name):
+        value = self.mvs.MVCC_FLOATVALUE()
+        ret = self.cam.MV_CC_GetFloatValue(name, value)
+        if ret != MV_OK:
+            self.get_logger().warn(
+                f'Read {name} failed: {_to_hex(ret)}')
+            return None
+        return float(value.fCurValue)
+
+    def _read_optional_float_limits(self, name):
+        value = self.mvs.MVCC_FLOATVALUE()
+        ret = self.cam.MV_CC_GetFloatValue(name, value)
+        if ret != MV_OK:
+            self.get_logger().warn(
+                f'Read {name} limits failed: {_to_hex(ret)}')
+            return None
+        return float(value.fMin), float(value.fMax)
+
+    def _read_optional_enum(self, name):
+        value = self.mvs.MVCC_ENUMVALUE()
+        ret = self.cam.MV_CC_GetEnumValue(name, value)
+        if ret != MV_OK:
+            self.get_logger().warn(
+                f'Read {name} failed: {_to_hex(ret)}')
+            return None
+        return int(value.nCurValue)
+
+    def _log_hardware_exposure_and_gain(self):
+        exposure = self._read_optional_float('ExposureTime')
+        exposure_limits = self._read_optional_float_limits('ExposureTime')
+        gain = self._read_optional_float('Gain')
+        exposure_auto = self._read_optional_enum('ExposureAuto')
+        gain_auto = self._read_optional_enum('GainAuto')
+        self.get_logger().info(
+            'Hardware exposure: '
+            f'ExposureAuto={exposure_auto}, ExposureTime={exposure}, '
+            f'ExposureTimeRange={exposure_limits}, '
+            f'GainAuto={gain_auto}, Gain={gain}')
+
+    @staticmethod
+    def _build_gamma_lut(gamma):
+        inv_gamma = 1.0 / max(0.1, gamma)
+        return np.array([
+            ((i / 255.0) ** inv_gamma) * 255.0 for i in range(256)
+        ], dtype=np.uint8)
+
+    def _apply_image_enhancement(self, frame):
+        if not self.enable_image_enhancement:
+            return frame
+        return cv2.LUT(frame, self.gamma_lut)
+
+    def _configure_exposure_and_gain(self):
+        if self.exposure_auto:
+            self._set_optional_float(
+                'AutoExposureTimeLowerLimit', self.auto_exposure_min_us)
+            self._set_optional_float(
+                'AutoExposureTimeUpperLimit', self.auto_exposure_max_us)
+            self._set_optional_enum('ExposureAuto', 2)
+        else:
+            self._set_optional_enum('ExposureAuto', 0)
+            self._set_optional_float('ExposureTime', self.exposure_time_us)
+
+        if self.gain_auto:
+            self._set_optional_float('AutoGainLowerLimit', self.auto_gain_min)
+            self._set_optional_float('AutoGainUpperLimit', self.auto_gain_max)
+            self._set_optional_enum('GainAuto', 2)
+        else:
+            self._set_optional_enum('GainAuto', 0)
+            self._set_optional_float('Gain', self.gain)
+
+    def _set_optional_enum(self, name, value):
+        ret = self.cam.MV_CC_SetEnumValue(name, value)
         if ret != MV_OK:
             self.get_logger().warn(
                 f'Set {name}={value} failed: {_to_hex(ret)}')
@@ -260,6 +358,7 @@ class HikrobotCameraNode(Node):
 
         try:
             bgr = self._convert_frame_to_bgr(frame)
+            bgr = self._apply_image_enhancement(bgr)
             msg = self.bridge.cv2_to_imgmsg(bgr, encoding='bgr8')
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.header.frame_id = self.frame_id
@@ -269,6 +368,7 @@ class HikrobotCameraNode(Node):
             if self.frame_count % 30 == 0:
                 self.get_logger().info(
                     f'Published {self.frame_count} Hikrobot frames')
+                self._log_hardware_exposure_and_gain()
         except Exception as exc:
             self.get_logger().error(f'Hikrobot capture error: {exc}')
         finally:

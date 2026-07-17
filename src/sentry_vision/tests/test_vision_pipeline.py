@@ -1,6 +1,35 @@
 """Unit tests for vision_pipeline_node — fixed-camera aggregation logic."""
+from pathlib import Path
+
 import pytest
 import numpy as np
+
+
+PIPELINE_SOURCE = (
+    Path(__file__).parent.parent / 'sentry_vision' / 'vision_pipeline_node.py'
+).read_text(encoding='utf-8')
+LAUNCH_SOURCE = (
+    Path(__file__).parents[2] / 'sentry_bringup' / 'launch' / 'sentry_v2.launch.py'
+).read_text(encoding='utf-8')
+
+
+def test_pipeline_waits_for_frames_without_nested_spin():
+    """A service callback must leave an executor thread available for images."""
+    assert 'threading.Condition' in PIPELINE_SOURCE
+    assert 'self._frame_sequence' in PIPELINE_SOURCE
+    assert 'rclpy.spin_once(self' not in PIPELINE_SOURCE
+    assert 'MultiThreadedExecutor(num_threads=2)' in PIPELINE_SOURCE
+
+
+def test_pipeline_yolo_model_path_is_absolute_on_rdk():
+    """The pipeline must not depend on the process working directory."""
+    expected_path = (
+        '/home/sunrise/dev_ws/models/'
+        'yolov8n_crop_weed_bayese_640x640_nv12.bin'
+    )
+    assert "declare_parameter('yolo_model_path'" in PIPELINE_SOURCE
+    assert expected_path in PIPELINE_SOURCE
+    assert "'yolo_model_path': '/home/sunrise/dev_ws/models/" in LAUNCH_SOURCE
 
 
 class TestAggregation:

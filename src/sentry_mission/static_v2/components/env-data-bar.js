@@ -72,6 +72,30 @@ const EnvDataBar = {
           </button>
         </div>
       </div>
+      <div class="fixed-point-stop-section">
+        <div class="fixed-point-stop-header">
+          <span class="diag-toggle-label">固定点停车</span>
+          <div class="fixed-point-stop-actions">
+            <button class="diag-pill" @click="store.addFixedPointStop()">添加</button>
+            <button class="diag-pill active" :disabled="store.fixedPointStopsBusy"
+                    @click="store.saveFixedPointStops()">保存</button>
+          </div>
+        </div>
+        <div class="fixed-point-stop-row fixed-point-stop-labels">
+          <span>#</span><span>X (m)</span><span>Y (m)</span><span>半径 (m)</span><span>病害</span><span></span>
+        </div>
+        <div v-for="(stop, index) in store.fixedPointStops" :key="index" class="fixed-point-stop-row">
+          <span class="fixed-point-index">{{ index + 1 }}</span>
+          <input v-model.number="stop.x" type="number" step="0.1" aria-label="固定点 X 坐标">
+          <input v-model.number="stop.y" type="number" step="0.1" aria-label="固定点 Y 坐标">
+          <input v-model.number="stop.radius" type="number" min="0.01" step="0.01" aria-label="固定点触发半径">
+          <select v-model="stop.disease_class" aria-label="固定点病害类别">
+            <option v-for="disease in store.fixedPointDiseaseClasses" :key="disease" :value="disease">{{ disease }}</option>
+          </select>
+          <button class="fixed-point-delete" title="删除固定点" aria-label="删除固定点"
+                  @click="store.removeFixedPointStop(index)">&times;</button>
+        </div>
+      </div>
     </div>
   </div>`
 };
