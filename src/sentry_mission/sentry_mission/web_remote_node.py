@@ -329,11 +329,15 @@ class WebRemoteNode(Node):
             self._record_detection_snapshot()
         if state == 'MANUAL':
             self.batch_recorder.on_mode_change('MANUAL')
-        # The mission mode may also be changed by an operator or recovery
-        # script that calls /set_auto_mode directly. Keep the web control
-        # plane aligned so it does not leave the UI locked in AUTO.
-        if state == 'MANUAL':
-            with self.lock:
+        # Mirror mission state into the control-plane mode both ways: in
+        # every non-MANUAL state mission_control or Nav2 owns /cmd_vel, so
+        # the joystick watchdog must stay silent. A MANUAL status racing
+        # set_mode_auto must not leave the mode stuck in MANUAL, or the
+        # watchdog floods /cmd_vel with zeros for the whole cruise.
+        with self.lock:
+            if state and state != 'MANUAL':
+                self.mode = 'AUTO'
+            elif state == 'MANUAL':
                 self.mode = 'MANUAL'
                 self.frontend_started_auto = False
                 self.completion_stop_started = False

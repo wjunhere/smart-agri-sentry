@@ -461,3 +461,44 @@ def test_get_status_includes_message_unread():
     node.batch_recorder.unread = 2
 
     assert node.get_status()['message_unread'] == 2
+
+
+def test_mission_status_flips_mode_to_auto_on_patrol():
+    node = _make_wired_node()
+    node.mode = 'MANUAL'
+    node.frontend_started_auto = True
+    node.completion_stop_started = False
+
+    node.on_mission_status(_status('PATROL'))
+
+    assert node.mode == 'AUTO'
+
+
+def test_manual_status_racing_set_mode_auto_does_not_stick():
+    # set_mode_auto just ran, then a stale MANUAL status lands before
+    # PATROL starts: the following PATROL status must restore AUTO or the
+    # joystick watchdog floods /cmd_vel with zeros all cruise long.
+    node = _make_wired_node()
+    node.mode = 'AUTO'
+    node.frontend_started_auto = True
+    node.completion_stop_started = False
+
+    node.on_mission_status(_status('MANUAL'))
+    assert node.mode == 'MANUAL'
+    assert node.frontend_started_auto is False
+
+    node.on_mission_status(_status('PATROL'))
+    assert node.mode == 'AUTO'
+
+
+def test_mission_owned_states_keep_mode_auto():
+    # STOPPED/SCANNING/OBSTACLE_*: mission_control owns /cmd_vel there too.
+    node = _make_wired_node()
+    node.mode = 'MANUAL'
+    node.frontend_started_auto = True
+    node.completion_stop_started = False
+
+    for state in ('STOPPED', 'SCANNING', 'OBSTACLE_BACKUP', 'ANALYZING'):
+        node.mode = 'MANUAL'
+        node.on_mission_status(_status(state))
+        assert node.mode == 'AUTO', state
