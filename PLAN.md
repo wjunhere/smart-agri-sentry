@@ -82,6 +82,23 @@
 
 ---
 
+## 临时任务：海康相机软件自适应曝光（2026-07-17）
+
+> 设计：`docs/superpowers/specs/2026-07-17-hikrobot-adaptive-exposure-design.md`
+> 计划：`docs/superpowers/plans/2026-07-17-hikrobot-adaptive-exposure.md`
+> 分支：`feat/adaptive-exposure`（基线 dbce5c4 + 4 提交：dcdb665, f475699, 013cff8, b08172c）
+
+解决海康 MV-CS016-10UC 硬件自动曝光失效导致的过曝/拖影问题。
+
+- [x] **T0** 板端 codex 未提交代码基线入库（dbce5c4）
+- [x] **T1** 纯 Python 曝光控制器 TDD（`auto_exposure.py`，15 测试，dcdb665）
+- [x] **T2** 节点集成 TDD（odom 迟滞运动判定 + 寄存器写入 + 硬件回读种子，f475699）
+- [x] **T3** launch 切换软件 AE 默认参数（013cff8），本地 33 测试全过
+- [x] **T4** 板端实测：暗场景收敛 mean→80.0（目标值）、动/静模式切换、硬件回读一致（ExposureAuto=0, ExposureTime=20000, GainAuto=0, Gain=11.99）、逃生舱 `ae_enabled:=false` 验证
+- [x] **T5** Code review + 修复（b08172c：安全钳制绕过限频、写寄存器失败回滚重试），修复版板端冒烟通过；文档更新（ROS2.md 第 9 节、ISSUES.md、PROJECT_CONTEXT.md）
+
+---
+
 ## P4：后续完善
 
 - [x] Web 前端仪表盘（`static_v2/` Vue 3 + roslibjs，v2.0 已完成）

@@ -1,6 +1,6 @@
 # ROS2 节点与接口
 
-> 更新日期：2026-07-15
+> 更新日期：2026-07-17
 
 ---
 
@@ -77,7 +77,7 @@
 
 | 话题名 | 类型 | 发布者 | 订阅者 | 频率 | 说明 |
 |---|---|---|---|---|---|
-| `/sentry/camera/image_raw` | `sensor_msgs/Image` | `camera_node` | `plant_detector`, `vision_diagnosis` | 2 Hz | 摄像头原始图像 |
+| `/sentry/camera/image_raw` | `sensor_msgs/Image` | `hikrobot_camera_node`（默认）/ `mipi_camera_node` | `plant_detector`, `vision_diagnosis` | 5 Hz | 摄像头原始图像，backend 由 launch 参数 `camera_backend` 选择 |
 | `/vision/plant_detected` | `PlantDetection` | `plant_detector_node` | `mission_control` | 5 Hz | 植株检测结果（bbox + 置信度） |
 | `/vision/diagnosis` | `Diagnosis` | `vision_diagnosis_node` | `fusion_node` | 2 Hz | 病害分类结果 |
 | `/sensor/environment_mobile` | `Environment` | `uart_bridge_node` | `fusion_node` | 1 Hz | 移动传感器环境数据 |
@@ -400,3 +400,39 @@ ros2 run sentry_mission imu_turn --stop         # 急停
 ```
 
 依赖：IMU 节点正在运行，启动时自动校准陀螺仪零偏（100 样本）。
+
+---
+
+## 9. 相机节点与软件自适应曝光
+
+默认相机后端为 `hikrobot_camera_node`（海康 MV-CS016-10UC, USB3），launch 参数 `camera_backend=hikrobot|mipi` 切换。两种后端发布同一话题 `/sentry/camera/image_raw`，下游节点无感知。
+
+### 9.1 为什么需要软件 AE
+
+该型号硬件自动曝光失效（任何场景都收敛到 ~6ms），且 `AutoExposureTimeLimit` 等寄存器返回 `0x80000109` 不支持。因此节点内置纯 Python 闭环控制器（`sentry_bringup/auto_exposure.py`，无 ROS 依赖，可离线单测），按帧亮度反馈直接写曝光/增益寄存器。
+
+### 9.2 控制策略（每帧评估，寄存器写入限频 0.4s）
+
+1. **饱和保护**（绕过限频）：>2% 像素过曝 → 曝光 ×0.6
+2. **运动钳制**（绕过限频）：曝光超过当前模式上限 → 立即钳制
+3. **死区**：|目标/均值 − 1| < 5% 不动
+4. **调亮**：先加曝光，到上限后加增益；**调暗**：先减增益，到下限后减曝光
+
+运动模式由 `/wheel/odom` 速度判定（>0.05 m/s 为运动；<0.02 m/s 持续 1s 为静止；里程计超时/缺失按运动处理，偏安全）。
+
+### 9.3 主要参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `ae_enabled` | `true` | 软件 AE 总开关（逃生舱；`false` 时回退固定曝光） |
+| `ae_target_luma` | `80.0` | 目标亮度均值（0–255） |
+| `ae_exp_min_us` | `2000.0` | 曝光下限 µs |
+| `ae_exp_max_moving_us` | `20000.0` | 运动（巡航）曝光上限，防拖影 |
+| `ae_exp_max_still_us` | `100000.0` | 静止（停车拍照）曝光上限 |
+| `ae_gain_min` / `ae_gain_max` | `0.0` / `12.0` | 增益范围 dB |
+| `exposure_auto` / `gain_auto` | `false` | 硬件 AE/AGC（本型号失效，必须关） |
+| `exposure_time_us` / `gain` | `20000.0` / `3.0` | 固定曝光初值（AE 关闭时生效） |
+| `gamma` | `2.0` | 软件 gamma LUT 提亮暗部 |
+| `enable_image_enhancement` | `true` | gamma LUT 开关 |
+
+板端实测（2026-07-17）：暗场景静止收敛 mean→80.0（目标值），运动/静止切换按里程计迟滞工作，硬件回读与控制器状态一致（ExposureAuto=0, ExposureTime=20000, GainAuto=0, Gain≈12）。
