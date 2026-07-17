@@ -544,6 +544,7 @@ class WebRemoteNode(Node):
     def start_stack_and_auto(self):
         with self.stack_lock:
             self.get_logger().info('Frontend requested robot stack start')
+            self._ensure_weather_proxy()
             output = 'Robot stack already preheated; switching to AUTO.'
             with self.lock:
                 stack_ready = self.stack_ready
@@ -558,12 +559,12 @@ class WebRemoteNode(Node):
                 return False, '/set_auto_mode service not available after stack start'
             if not self.set_mode_auto(True):
                 return False, '/set_auto_mode rejected AUTO request'
-            self._ensure_weather_proxy()
             return True, output
 
     def preheat_stack(self):
         with self.stack_lock:
             self.get_logger().info('Frontend requested robot stack preheat')
+            self._ensure_weather_proxy()
             ok, output = self._run_stack_script(self.stack_start_script)
             if not ok:
                 self.get_logger().error(f'start_robot_stack preheat failed: {output[-1000:]}')
@@ -579,7 +580,6 @@ class WebRemoteNode(Node):
                 self.mode = 'MANUAL'
                 self.frontend_started_auto = False
                 self.completion_stop_started = False
-            self._ensure_weather_proxy()
             return True, output
 
     def stop_stack(self, reason='frontend'):
