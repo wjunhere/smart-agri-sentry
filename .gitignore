@@ -95,6 +95,12 @@ yolov8n.pt
 *.pt
 智农哨兵_Grafana风格重构提示词.md
 
+# RDK runtime artifacts
+bags/
+images/
+src/sentry_mission/config/mission_params.yaml
+frontend_screenshot.png
+
 #videos making
 videos/
 video/

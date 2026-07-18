@@ -11,7 +11,7 @@
 
 - [x] YOLOv8n BPU `.bin` 接入 `plant_detector_node`（`pyeasy_dnn` 推理，640×640 NV12）
 - [x] `plant_detector_node` → `/vision/plant_detected` → `mission_control_node` 触发停车
-- [x] `vision_pipeline_node` 云台扫描编排 + 两阶段推理 + 汇总诊断
+- [x] `vision_pipeline_node` 固定相机扫描编排 + 两阶段推理 + 汇总诊断（已移除云台移动，改为固定画面多帧推理）
 - [x] `PipelineTrigger.srv` 同步服务定义
 - [x] `mission_control_node` 重构（移除 APPROACHING，新增 SCANNING，里程计去重）
 - [x] `Diagnosis.msg` 新增 `per_angle_confidences`
@@ -21,8 +21,7 @@
   - [x] **M1** 将 `mobilenetv3_tomato_disease_v4.2.onnx` 量化成 RDK X5 `.bin`
   - [ ] **M2** 板端 Python 推理验证（logits → softmax → healthy 阈值 0.15）
   - [ ] **M3** 接入 `vision_pipeline_node` 作为第二阶段分类器
-- [ ] 云台多角度扫描端到端测试（需接舵机）
-- [ ] 端到端验证：巡航行进 → 检测植株 → 停车 → 拍照 → 病害识别 → 农艺建议
+- [ ] 固定相机扫描端到端测试（无需舵机，验证巡航 → 检测 → 停车 → 拍照 → 病害识别 → 农艺建议）
 
 ### P0-2 板端部署验证
 
@@ -80,6 +79,41 @@
 - [ ] **T7** 删除 `AGENT.md`，`tmp_rdk_auto_cruise_test.sh` → `scripts/`
 - [ ] **T8** 新增 `scripts/chassis_direct_test.sh` 底盘直控诊断脚本
 - [ ] **T9** 本地验证：off-board 测试 + 编译 + YAML lint
+
+---
+
+## 临时任务：海康相机软件自适应曝光（2026-07-17）
+
+> 设计：`docs/superpowers/specs/2026-07-17-hikrobot-adaptive-exposure-design.md`
+> 计划：`docs/superpowers/plans/2026-07-17-hikrobot-adaptive-exposure.md`
+> 分支：`feat/adaptive-exposure`（基线 dbce5c4 + 4 提交：dcdb665, f475699, 013cff8, b08172c）
+
+解决海康 MV-CS016-10UC 硬件自动曝光失效导致的过曝/拖影问题。
+
+- [x] **T0** 板端 codex 未提交代码基线入库（dbce5c4）
+- [x] **T1** 纯 Python 曝光控制器 TDD（`auto_exposure.py`，15 测试，dcdb665）
+- [x] **T2** 节点集成 TDD（odom 迟滞运动判定 + 寄存器写入 + 硬件回读种子，f475699）
+- [x] **T3** launch 切换软件 AE 默认参数（013cff8），本地 33 测试全过
+- [x] **T4** 板端实测：暗场景收敛 mean→80.0（目标值）、动/静模式切换、硬件回读一致（ExposureAuto=0, ExposureTime=20000, GainAuto=0, Gain=11.99）、逃生舱 `ae_enabled:=false` 验证
+- [x] **T5** Code review + 修复（b08172c：安全钳制绕过限频、写寄存器失败回滚重试），修复版板端冒烟通过；文档更新（ROS2.md 第 9 节、ISSUES.md、PROJECT_CONTEXT.md）
+
+---
+
+## 临时任务：巡航检测消息推送（2026-07-17）
+
+> 设计：`docs/superpowers/specs/2026-07-17-mission-message-center-design.md`
+> 计划：`docs/superpowers/plans/2026-07-17-mission-message-center.md`
+> 分支：`feat/mission-message-center`
+
+前端顶部状态栏消息中心：巡航批次内检测植株快照（画检测框）+ 病害类别，存 web_remote_node 内存，未读角标 + 一键清理。
+
+- [x] **T1** `BatchRecorder` 纯逻辑 TDD（批次开关、空批次丢弃、诊断回填、未读、清理）
+- [x] **T2** 快照画框 `draw_bbox_on_jpeg` TDD
+- [x] **T3** web_remote_node 接线 TDD（PATROL→STOPPED 边沿快照、固定点无框不记录、class_id 254 哨兵忽略、`/api/messages*` 路由、`/status.message_unread`）
+- [x] **T4** 前端：top-bar 铃铛 + 未读角标、message-center modal（批次分组、缩略图、大图预览、一键清理）
+- [x] **T5** 本地 48 测试全过 + code review 修复（BatchRecorder 加 RLock 线程安全、bbox 长度校验、批次上限 10）+ 板端部署
+- [x] **T6** 巡航爬行 bug 修复（26baff5）：`on_mission_status` 只单向同步 MANUAL，竞态导致 web 节点 mode 卡 MANUAL，摇杆看门狗全程向 `/cmd_vel` 发零速（实测 74% 零速），改为双向镜像任务状态
+- [ ] 板端巡航实测（用户验证：角标 → 快照带框 → 多批次 → 清理 + 巡航速度恢复 0.18 m/s）
 
 ---
 

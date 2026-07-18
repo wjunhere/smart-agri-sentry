@@ -25,9 +25,12 @@ class ServoDriverNode(Node):
         self.sub = self.create_subscription(
             ServoCmd, '/sentry/servo_cmd', self.on_servo_cmd, 10)
 
-        self.yaw.set_angle(servos_cfg.get('yaw', {}).get('initial_angle', 90))
-        self.pitch.set_angle(
-            servos_cfg.get('pitch', {}).get('initial_angle', 90))
+        if self.yaw is not None:
+            self.yaw.set_angle(
+                servos_cfg.get('yaw', {}).get('initial_angle', 90))
+        if self.pitch is not None:
+            self.pitch.set_angle(
+                servos_cfg.get('pitch', {}).get('initial_angle', 90))
 
         self.get_logger().info('Servo driver node ready')
 
@@ -89,6 +92,8 @@ class ServoDriverNode(Node):
         return self._default_config()
 
     def _create_servo(self, servo_cfg, pwm_cfg):
+        if not servo_cfg:
+            return None
         return Servo(
             channel=servo_cfg.get('channel', 0),
             chip=pwm_cfg.get('chip', 0),
@@ -101,12 +106,16 @@ class ServoDriverNode(Node):
         )
 
     def on_servo_cmd(self, msg: ServoCmd):
-        self.pitch.set_angle(float(msg.pitch))
-        self.yaw.set_angle(float(msg.yaw))
+        if self.pitch is not None:
+            self.pitch.set_angle(float(msg.pitch))
+        if self.yaw is not None:
+            self.yaw.set_angle(float(msg.yaw))
 
     def destroy_node(self):
-        self.yaw.disable()
-        self.pitch.disable()
+        if self.yaw is not None:
+            self.yaw.disable()
+        if self.pitch is not None:
+            self.pitch.disable()
         super().destroy_node()
 
 

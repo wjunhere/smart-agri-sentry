@@ -6,6 +6,21 @@ const TopBar = {
       <span class="dot" :class="store.connected ? 'dot-green' : 'dot-red'"></span>
       {{ store.mode === 'AUTO' ? 'AUTO' : store.mode === 'MANUAL' ? 'MANUAL' : 'ESTOP' }}
     </span>
+    <button class="camera-start-btn" :disabled="store.visionStarting || store.stackReady"
+            @click="startVision">
+      {{ store.visionStarting ? '启动中...' : store.stackReady ? '摄像头已开启' : '开启摄像头' }}
+    </button>
+    <button class="camera-capture-btn" :disabled="store.cameraCaptureBusy"
+            @click="captureImage">
+      {{ store.cameraCaptureBusy ? '保存中...' : '拍摄' }}
+    </button>
+    <button class="message-btn" @click="store.openMessages()" title="巡航消息">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.7 21a2 2 0 01-3.4 0"/>
+      </svg>
+      <span class="msg-badge" v-if="store.messageUnread > 0">{{ store.messageUnread }}</span>
+    </button>
     <span class="spacer"></span>
     <span class="ros-indicator">
       <span class="dot" :class="store.connected ? 'dot-green' : 'dot-red'"></span>
@@ -31,6 +46,12 @@ const TopBar = {
     }
   },
   methods: {
+    startVision() {
+      callVisionStart().catch(err => console.error(err));
+    },
+    captureImage() {
+      callCaptureImage().catch(err => console.error(err));
+    },
     updateTime() {
       const d = new Date();
       this.timeStr = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });

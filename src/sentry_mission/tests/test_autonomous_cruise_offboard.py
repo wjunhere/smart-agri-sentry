@@ -46,7 +46,7 @@ def test_frontend_defaults_manual_and_syncs_mode_from_mission_status():
     assert "store.mode = missionStateToMode(msg.state);" in text
 
 
-def test_launch_uses_navigation_stack_without_map_argument():
+def test_launch_uses_explicit_mapless_navigation_stack():
     launch_file = (
         REPO_ROOT
         / "src"
@@ -56,10 +56,41 @@ def test_launch_uses_navigation_stack_without_map_argument():
     )
     text = launch_file.read_text(encoding="utf-8")
 
-    assert "navigation_launch.py" in text
+    assert "navigation_launch.py" not in text
     assert "bringup_launch.py" not in text
     assert "'map': ''" not in text
-    assert "mission_params.yaml" not in text
+    assert "DeclareLaunchArgument('cruise_speed'" in text
+    assert "executable='controller_server'" in text
+    assert "executable='planner_server'" in text
+    assert "executable='bt_navigator'" in text
+    assert "executable='velocity_smoother'" in text
+
+
+def test_frontend_exposes_camera_start_and_cruise_speed_controls():
+    top_bar = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'components' / 'top-bar.js'
+    cruise_panel = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'components' / 'cruise-panel.js'
+    ros_js = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'ros.js'
+
+    assert '开启摄像头' in top_bar.read_text(encoding='utf-8')
+    assert 'callVisionStart' in top_bar.read_text(encoding='utf-8')
+    assert '拍摄' in top_bar.read_text(encoding='utf-8')
+    assert 'callCaptureImage' in top_bar.read_text(encoding='utf-8')
+    assert '巡航速度' in cruise_panel.read_text(encoding='utf-8')
+    assert 'callSetCruiseSpeed' in cruise_panel.read_text(encoding='utf-8')
+    assert "'/vision/start'" in ros_js.read_text(encoding='utf-8')
+    assert "'/cruise-speed'" in ros_js.read_text(encoding='utf-8')
+    assert "'/camera/capture'" in ros_js.read_text(encoding='utf-8')
+    assert ':disabled="store.cruiseSpeedBusy"' in cruise_panel.read_text(encoding='utf-8')
+    assert 'let cruiseSpeedLoaded = false;' in ros_js.read_text(encoding='utf-8')
+    assert 'if (!cruiseSpeedLoaded && Number.isFinite(Number(data.cruise_speed)))' in ros_js.read_text(encoding='utf-8')
+
+
+def test_start_script_loads_saved_cruise_speed_before_launch():
+    start_script = REPO_ROOT / 'scripts' / 'rdk' / 'start_robot_stack.sh'
+    text = start_script.read_text(encoding='utf-8')
+
+    assert 'MISSION_PARAMS_FILE' in text
+    assert 'cruise_speed:="${CRUISE_SPEED}"' in text
 
 
 def test_bringup_declares_autonomous_cruise_runtime_dependencies():

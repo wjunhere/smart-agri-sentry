@@ -42,7 +42,19 @@ def test_mipi_camera_entry_point_present(setup_ast):
     assert 'mipi_camera_node' in names
 
 
+def test_hikrobot_camera_entry_point_present(setup_ast):
+    eps = _find_entry_points_dict(setup_ast)
+    console_scripts = eps.get('console_scripts', [])
+    names = [line.split('=')[0].strip() for line in console_scripts]
+    assert 'hikrobot_camera_node' in names
+
+
 def test_legacy_nodes_files_removed():
     pkg_dir = Path(__file__).parent.parent / 'sentry_bringup'
     assert not (pkg_dir / 'ai_inference_node.py').exists()
     assert not (pkg_dir / 'uart_bridge_node.py').exists()
+
+
+def test_legacy_uart_protocol_test_is_removed():
+    tests_dir = Path(__file__).parent
+    assert not (tests_dir / 'test_protocol.py').exists()

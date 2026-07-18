@@ -1,6 +1,6 @@
 # 已知问题、硬件限制与规避方案
 
-> 更新日期：2026-07-15
+> 更新日期：2026-07-17
 
 ---
 
@@ -15,6 +15,7 @@
 | **MIPI 摄像头 ISP 限制** | 第一个输出通道分辨率不能等于 sensor 原始分辨率 | ✅ 已解决：`out_w=[512, target]`, `out_h=[512, target]`；`get_img(type=2, w, h)` 中 type=2=NV12，w×h 匹配通道；NV12 stride 根据 `actual_size/(h*1.5)` 自动检测 |
 | **CH340 USB 串口 ARM 驱动** | RDK X5 上 `in_waiting` 报告有数据但 `read()` 返回 0，导致 YbImuSerial 读线程崩溃 | ✅ 已解决：`imu_node.py` monkey-patch `read_all` 加容错 + 固定大小读取 fallback |
 | **LoRa 野外丢包/延迟** | 固定环境节点数据可能不完整 | 协议层加 seq 序号和 ACK 重传，非关键数据允许丢包 |
+| **海康 MV-CS016-10UC 硬件自动曝光失效** | 任何场景曝光收敛到 ~6ms；`AutoExposureTimeLimit` 寄存器返回 `0x80000109` 不支持 | ✅ 已解决：节点内置软件闭环 AE（`auto_exposure.py`），帧亮度反馈写寄存器，运动/静止分档曝光上限（2026-07-17） |
 
 ---
 

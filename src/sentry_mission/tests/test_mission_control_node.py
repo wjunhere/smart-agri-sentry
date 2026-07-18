@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 from sentry_mission.mission_control_node import MissionControlNode
 from nav2_simple_commander.robot_navigator import TaskResult
-from sentry_interfaces.msg import ObstacleInfo
+from sentry_interfaces.msg import Diagnosis, FusionResult, ObstacleInfo, PlantDetection
 
 
 @pytest.fixture(scope='module')
@@ -119,11 +119,13 @@ def test_prepare_autonomous_start_calls_reset_services(node):
     node.reset_encoder_client = reset_encoder
     node.set_pose_client = set_pose
     node.sending_goal = True
+    node.has_scan_reference = True
 
     with patch.object(node.pub_cmd, 'publish') as mock_stop:
         node._prepare_autonomous_start()
 
     assert node.sending_goal is False
+    assert node.has_scan_reference is False
     assert node._next_goal_time > 0.0
     assert mock_stop.called
     reset_odom.wait_for_service.assert_called_once()
@@ -238,6 +240,49 @@ def test_obstacle_turn_enters_arc_drive_after_angle(node):
     assert node.state == 'OBSTACLE_ARC_DRIVE'
     assert node.avoidance_drive_start_x == 1.0
     assert node.avoidance_drive_start_y == -0.2
+
+
+def test_obstacle_turn_uses_fresh_imu_yaw_when_odom_yaw_is_stale(node):
+    """An IMU heading completes the turn when encoder odometry has frozen."""
+    now = node.get_clock().now().nanoseconds / 1e9
+    node.state = 'OBSTACLE_TURN'
+    node.state_enter_time = now
+    node.avoidance_side = 1
+    node.avoidance_turn_angle = 0.45
+    node.avoidance_turn_start_yaw = 0.0
+    node.avoidance_turn_yaw_source = 'imu'
+    node.avoidance_turn_timeout = 5.0
+    node.odom_yaw = 0.0
+    node.imu_yaw = 0.48
+    node.last_imu_time = now
+    node.odom_x = 1.0
+    node.odom_y = -0.2
+
+    node.tick()
+
+    assert node.state == 'OBSTACLE_ARC_DRIVE'
+
+
+def test_obstacle_turn_waits_for_heading_not_elapsed_time(node):
+    """A turn only advances after the selected yaw source reaches its target."""
+    now = node.get_clock().now().nanoseconds / 1e9
+    node.state = 'OBSTACLE_TURN'
+    node.state_enter_time = now - 10.0
+    node.avoidance_side = 1
+    node.avoidance_turn_angle = 0.45
+    node.avoidance_turn_start_yaw = 0.0
+    node.avoidance_turn_yaw_source = 'imu'
+    node.odom_yaw = 0.0
+    node.imu_yaw = 0.20
+    node.last_imu_time = now
+
+    with patch.object(node.pub_cmd, 'publish') as mock_cmd:
+        node.tick()
+
+    cmd = mock_cmd.call_args[0][0]
+    assert node.state == 'OBSTACLE_TURN'
+    assert cmd.linear.x == 0.0
+    assert cmd.angular.z == node.avoidance_turn_speed
 
 
 def test_obstacle_arc_drive_enters_turn_back_after_distance(node):
@@ -501,3 +546,225 @@ def test_auto_mode_after_completed_route_restarts_from_first_waypoint(node):
     assert response.success is True
     assert node.state == 'PATROL'
     assert node.current_wp_idx == 0
+
+
+def test_plant_trigger_clears_stale_fusion_before_analysis(node):
+    """A new stopped scan must wait for fusion from this diagnosis, not an old one."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.last_fusion = FusionResult()
+    node.last_plant = PlantDetection()
+    node.last_plant.detected = True
+    node.last_plant.confidence = 0.95
+    node.last_plant.area_ratio = 0.20
+    node.reference_x = 0.0
+    node.reference_y = 0.0
+    node.odom_x = 1.0
+    node.odom_y = 0.0
+
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'STOPPED'
+    assert node.last_fusion is None
+
+
+def test_first_plant_trigger_stops_before_dedup_distance(node):
+    """The first real plant must stop patrol even close to the start point."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.reference_x = 0.0
+    node.reference_y = 0.0
+    node.odom_x = 0.10
+    node.odom_y = 0.0
+    node.last_plant = PlantDetection()
+    node.last_plant.detected = True
+    node.last_plant.confidence = 0.60
+    node.last_plant.area_ratio = 0.35
+
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'STOPPED'
+
+
+def test_fusion_before_current_diagnosis_is_ignored(node):
+    """Only fusion generated after this scan's diagnosis may finish analysis."""
+    stale = FusionResult()
+    stale.header.stamp.sec = 10
+    stale.header.stamp.nanosec = 0
+    node._diagnosis_published_at_ns = 10_000_000_001
+
+    node.on_fusion(stale)
+
+    assert node.last_fusion is None
+
+    fresh = FusionResult()
+    fresh.header.stamp.sec = 10
+    fresh.header.stamp.nanosec = 2
+    node.on_fusion(fresh)
+
+    assert node.last_fusion is fresh
+
+
+def test_plant_is_counted_only_when_patrol_accepts_stop_trigger(node):
+    """Repeated detector frames for one stopped plant must not inflate totals."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.reference_x = 0.0
+    node.reference_y = 0.0
+    node.odom_x = 1.0
+    node.odom_y = 0.0
+    detection = PlantDetection()
+    detection.detected = True
+    detection.confidence = 0.95
+    detection.area_ratio = 0.20
+
+    node.on_plant_detected(detection)
+    node.on_plant_detected(detection)
+
+    assert node.plants_detected == 0
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+    assert node.plants_detected == 1
+
+
+def test_plant_detection_during_obstacle_turn_is_not_latched(node):
+    """Avoidance frames must not cause a delayed plant stop after rejoin."""
+    node.state = 'OBSTACLE_TURN'
+    node.last_plant = None
+    detection = PlantDetection()
+    detection.detected = True
+    detection.confidence = 0.95
+    detection.area_ratio = 0.20
+
+    node.on_plant_detected(detection)
+
+    assert node.last_plant is None
+
+
+def test_obstacle_entry_clears_pending_plant_detection(node):
+    """An obstacle must take priority over a plant frame from the prior patrol tick."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.odom_x = 0.0
+    node.odom_y = 0.0
+    node.odom_yaw = 0.0
+    node.waypoints = [{'x': 2.5, 'y': 0.0, 'yaw': 0.0}]
+    node.last_obstacle = ObstacleInfo()
+    node.last_obstacle.front_min_distance = 0.45
+    node.last_plant = PlantDetection()
+    node.last_plant.detected = True
+    node.last_plant.confidence = 0.95
+    node.last_plant.area_ratio = 0.20
+
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node.pub_cmd, 'publish'), \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'OBSTACLE_STOP'
+    assert node.last_plant is None
+
+
+def test_patrol_enters_stop_state_at_configured_fixed_point(node):
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.fixed_point_stops = [{
+        'x': 1.0,
+        'y': -0.5,
+        'radius': 0.2,
+        'disease_class': 'late_blight',
+    }]
+    node.handled_fixed_point_stops = set()
+    node.odom_x = 1.1
+    node.odom_y = -0.5
+
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'STOPPED'
+    assert node.active_fixed_point_disease == 'late_blight'
+    assert node.handled_fixed_point_stops == {0}
+
+
+def test_fixed_point_does_not_trigger_outside_configured_radius(node):
+    node.fixed_point_stops = [{
+        'x': 1.0,
+        'y': 0.0,
+        'radius': 0.2,
+        'disease_class': 'healthy',
+    }]
+    node.handled_fixed_point_stops = set()
+    node.odom_x = 1.21
+    node.odom_y = 0.0
+
+    assert node._find_unhandled_fixed_point_stop() is None
+
+
+def test_fixed_point_does_not_trigger_again_in_same_patrol(node):
+    node.fixed_point_stops = [{
+        'x': 1.0,
+        'y': 0.0,
+        'radius': 0.2,
+        'disease_class': 'healthy',
+    }]
+    node.handled_fixed_point_stops = {0}
+    node.odom_x = 1.0
+    node.odom_y = 0.0
+
+    assert node._find_unhandled_fixed_point_stop() is None
+
+
+def test_fixed_point_does_not_trigger_during_obstacle_turn(node):
+    node.state = 'OBSTACLE_TURN'
+    node.fixed_point_stops = [{
+        'x': 0.0,
+        'y': 0.0,
+        'radius': 0.2,
+        'disease_class': 'early_blight',
+    }]
+    node.handled_fixed_point_stops = set()
+    node.odom_x = 0.0
+    node.odom_y = 0.0
+
+    assert node._find_unhandled_fixed_point_stop() is None
+
+
+def test_fixed_point_diagnosis_uses_selected_disease_with_bounded_confidence(node):
+    node.active_fixed_point_disease = 'early_blight'
+    diagnosis = Diagnosis()
+    diagnosis.disease_class = 'healthy'
+    diagnosis.confidence = 0.35
+
+    overridden = node._apply_fixed_point_diagnosis_override(diagnosis)
+
+    assert overridden.disease_class == 'early_blight'
+    assert 0.80 <= overridden.confidence <= 0.90
+
+
+def test_normal_diagnosis_is_unchanged_without_active_fixed_point(node):
+    node.active_fixed_point_disease = None
+    diagnosis = Diagnosis()
+    diagnosis.disease_class = 'healthy'
+    diagnosis.confidence = 0.72
+
+    result = node._apply_fixed_point_diagnosis_override(diagnosis)
+
+    assert result is diagnosis
+    assert result.disease_class == 'healthy'
+    assert result.confidence == 0.72

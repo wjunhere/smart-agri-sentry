@@ -101,6 +101,7 @@ stop_patterns() {
   terminate_pattern "$signal" "imu_filter_madgwick_node"
   terminate_pattern "$signal" "servo_driver_node"
   terminate_pattern "$signal" "mipi_camera_node"
+  terminate_pattern "$signal" "hikrobot_camera_node"
   terminate_pattern "$signal" "image_republisher"
   terminate_pattern "$signal" "vision_diagnosis_node"
   terminate_pattern "$signal" "plant_detector_node"
@@ -108,6 +109,7 @@ stop_patterns() {
   terminate_pattern "$signal" "fusion_node"
   terminate_pattern "$signal" "forecast_node"
   terminate_pattern "$signal" "advisory_node"
+  terminate_pattern "$signal" "data_logger_node"
 }
 
 sleep_if_stopped() {

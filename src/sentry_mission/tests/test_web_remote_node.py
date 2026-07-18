@@ -3,9 +3,15 @@
 import sys
 import threading
 import types
+import signal
+from pathlib import Path
 from unittest import mock
 
 import pytest
+
+PKG_ROOT = Path(__file__).resolve().parents[1]
+if str(PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(PKG_ROOT))
 
 
 @pytest.fixture(scope='module', autouse=True)
@@ -21,6 +27,8 @@ def mock_ros2():
         'sentry_interfaces': types.ModuleType('sentry_interfaces'),
         'sentry_interfaces.srv': types.ModuleType('sentry_interfaces.srv'),
         'sentry_interfaces.msg': types.ModuleType('sentry_interfaces.msg'),
+        'sensor_msgs': types.ModuleType('sensor_msgs'),
+        'sensor_msgs.msg': types.ModuleType('sensor_msgs.msg'),
     }
 
     modules['rclpy'].init = mock.MagicMock()
@@ -41,6 +49,12 @@ def mock_ros2():
     modules['sentry_interfaces.srv'].SetCropType = SetCropType
     MissionStatus = type('MissionStatus', (), {})
     modules['sentry_interfaces.msg'].MissionStatus = MissionStatus
+    PlantDetection = type('PlantDetection', (), {})
+    modules['sentry_interfaces.msg'].PlantDetection = PlantDetection
+    Diagnosis = type('Diagnosis', (), {})
+    modules['sentry_interfaces.msg'].Diagnosis = Diagnosis
+    CompressedImage = type('CompressedImage', (), {})
+    modules['sensor_msgs.msg'].CompressedImage = CompressedImage
 
 
     for name, mod in modules.items():
@@ -86,6 +100,8 @@ def test_set_mode_auto_adds_done_callback():
         web.TIMEOUT = 0.5
         web.timer = None
         web.get_logger = node.get_logger
+        from sentry_mission.batch_recorder import BatchRecorder
+        web.batch_recorder = BatchRecorder()
 
         result = web.set_mode_auto(False)
 
@@ -154,6 +170,28 @@ def test_stack_script_env_preserves_frontend_control_plane():
     assert env['ENABLE_WEB'] == 'false'
 
 
+def test_stack_script_env_enables_vision_and_advisory_for_cruise():
+    from sentry_mission.web_remote_node import _stack_script_env
+
+    env = _stack_script_env({
+        'ENABLE_VISION': 'false',
+        'ENABLE_ADVISORY': 'false',
+    })
+
+    assert env['SENTRY_PRESERVE_WEB'] == '1'
+    assert env['ENABLE_WEB'] == 'false'
+    assert env['ENABLE_VISION'] == 'true'
+    assert env['ENABLE_ADVISORY'] == 'true'
+
+
+def test_stack_script_env_defaults_to_hikrobot_camera():
+    from sentry_mission.web_remote_node import _stack_script_env
+
+    env = _stack_script_env({})
+
+    assert env['CAMERA_BACKEND'] == 'hikrobot'
+
+
 def test_mission_status_complete_when_all_waypoints_reached():
     from sentry_mission.web_remote_node import _mission_status_is_complete
 
@@ -176,3 +214,291 @@ def test_mission_status_not_complete_before_last_waypoint():
     )
 
     assert _mission_status_is_complete(msg) is False
+
+
+def test_validate_vision_inference_mode_accepts_known_modes():
+    from sentry_mission.web_remote_node import _validate_vision_inference_mode
+
+    assert _validate_vision_inference_mode('triggered') == 'triggered'
+    assert _validate_vision_inference_mode('independent') == 'independent'
+
+
+def test_validate_vision_inference_mode_rejects_unknown_mode():
+    from sentry_mission.web_remote_node import _validate_vision_inference_mode
+
+    with pytest.raises(ValueError):
+        _validate_vision_inference_mode('always')
+
+
+def test_set_vision_inference_mode_updates_mode_on_success():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.stack_lock = threading.Lock()
+    web.lock = threading.Lock()
+    web.vision_inference_mode = 'triggered'
+    web._start_independent_diagnosis_locked = mock.MagicMock(
+        return_value=(True, 'started'))
+    web._stop_independent_diagnosis_locked = mock.MagicMock()
+
+    ok, message = web.set_vision_inference_mode('independent')
+
+    assert ok is True
+    assert message == 'started'
+    assert web.vision_inference_mode == 'independent'
+
+
+def test_stop_independent_diagnosis_only_terminates_owned_process_group():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.vision_diagnosis_proc = mock.MagicMock(pid=42)
+    web.vision_diagnosis_proc.poll.return_value = None
+    web.vision_diagnosis_log = None
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+
+    with mock.patch('sentry_mission.web_remote_node.os.getpgid', return_value=42,
+                    create=True), \
+         mock.patch('sentry_mission.web_remote_node.os.killpg', create=True) as killpg, \
+         mock.patch('sentry_mission.web_remote_node.subprocess.run') as run:
+        ok, _ = web._stop_independent_diagnosis_locked()
+
+    assert ok is True
+    killpg.assert_called_once_with(42, signal.SIGTERM)
+    run.assert_not_called()
+
+
+def test_start_vision_stack_reuses_manual_preheat():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.preheat_stack = mock.MagicMock(return_value=(True, 'ready'))
+    web.lock = threading.Lock()
+    web.stack_ready = False
+
+    assert web.start_vision_stack() == (True, 'ready')
+    web.preheat_stack.assert_called_once()
+
+
+def test_validate_cruise_speed_limits_value():
+    from sentry_mission.web_remote_node import _validate_cruise_speed
+
+    assert _validate_cruise_speed(0.18) == 0.18
+    with pytest.raises(ValueError):
+        _validate_cruise_speed(0.04)
+    with pytest.raises(ValueError):
+        _validate_cruise_speed(0.36)
+
+
+def test_cruise_speed_config_round_trip(tmp_path):
+    from sentry_mission.web_remote_node import (
+        _read_cruise_speed_file,
+        _write_cruise_speed_file,
+    )
+
+    config_path = tmp_path / 'mission_params.yaml'
+    _write_cruise_speed_file(config_path, 0.22)
+
+    assert _read_cruise_speed_file(config_path) == 0.22
+    assert 'cruise_speed: 0.22' in config_path.read_text(encoding='utf-8')
+
+
+def test_set_cruise_speed_before_preheat_saves_requested_value():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.stack_ready = False
+    web.lock = threading.Lock()
+    web.cruise_speed = 0.18
+    web._set_remote_parameter = mock.MagicMock()
+
+    ok, message = web.set_cruise_speed(0.22)
+
+    assert ok is True
+    assert web.cruise_speed == 0.22
+    assert 'saved for preheat' in message
+    web._set_remote_parameter.assert_not_called()
+
+
+def test_set_cruise_speed_updates_mission_and_nav_controller():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.stack_ready = True
+    web.lock = threading.Lock()
+    web.cruise_speed = 0.18
+    web._set_remote_parameter = mock.MagicMock(return_value=(True, 'ok'))
+
+    ok, _ = web.set_cruise_speed(0.22)
+
+    assert ok is True
+    assert web.cruise_speed == 0.22
+    assert web._set_remote_parameter.call_args_list == [
+        mock.call('/mission_control_node', 'cruise_speed', 0.22),
+        mock.call('/controller_server', 'FollowPath.desired_linear_vel', 0.22),
+    ]
+
+
+def test_capture_camera_image_saves_latest_jpeg_to_configured_directory(tmp_path):
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.capture_dir = str(tmp_path)
+    web.latest_camera_jpeg = b'\xff\xd8mock-jpeg\xff\xd9'
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+
+    ok, filename = web.capture_camera_image()
+
+    assert ok is True
+    image_path = tmp_path / filename
+    assert image_path.suffix == '.jpg'
+    assert image_path.read_bytes() == b'\xff\xd8mock-jpeg\xff\xd9'
+
+
+def test_capture_camera_image_rejects_when_no_frame_has_arrived(tmp_path):
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.capture_dir = str(tmp_path)
+    web.latest_camera_jpeg = None
+
+    ok, message = web.capture_camera_image()
+
+    assert ok is False
+    assert 'No camera frame' in message
+
+
+def _make_wired_node():
+    import time as _time
+    from sentry_mission.web_remote_node import WebRemoteNode
+    from sentry_mission.batch_recorder import BatchRecorder
+
+    node = WebRemoteNode.__new__(WebRemoteNode)
+    node.batch_recorder = BatchRecorder()
+    node.latest_plant = None
+    node.latest_plant_time = 0.0
+    node.latest_camera_jpeg = b'frame'
+    node._last_mission_state = None
+    node.lock = threading.Lock()
+    node.get_logger = mock.MagicMock()
+    return node
+
+
+def _status(state):
+    return types.SimpleNamespace(state=state, total_wps=3, current_wp_idx=0)
+
+
+def test_patrol_to_stopped_records_snapshot_with_fresh_plant():
+    import time
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+    node.latest_plant = ([0.1, 0.1, 0.5, 0.5], 0.9)
+    node.latest_plant_time = time.time()
+
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    assert len(node.batch_recorder.current.records) == 1
+
+
+def test_patrol_to_stopped_without_plant_records_nothing():
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    assert node.batch_recorder.current.records == []
+
+
+def test_stale_plant_detection_is_ignored():
+    import time
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+    node.latest_plant = ([0.1, 0.1, 0.5, 0.5], 0.9)
+    node.latest_plant_time = time.time() - 5.0
+
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    assert node.batch_recorder.current.records == []
+
+
+def test_diagnosis_sentinel_class_id_ignored():
+    import time
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+    node.latest_plant = ([0.1, 0.1, 0.5, 0.5], 0.9)
+    node.latest_plant_time = time.time()
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    node._on_diagnosis(types.SimpleNamespace(
+        class_id=254, disease_class='', confidence=0.0))
+    assert node.batch_recorder.current.records[0].disease_class is None
+
+    node._on_diagnosis(types.SimpleNamespace(
+        class_id=1, disease_class='early_blight', confidence=0.8))
+    assert node.batch_recorder.current.records[0].disease_class == 'early_blight'
+
+
+def test_get_status_includes_message_unread():
+    import time
+    node = _make_wired_node()
+    node.mode = 'MANUAL'
+    node.linear = 0.0
+    node.angular = 0.0
+    node.last_cmd_time = time.time()
+    node.TIMEOUT = 0.5
+    node.mode_srv = mock.MagicMock()
+    node.frontend_started_auto = False
+    node.completion_stop_started = False
+    node.stack_ready = False
+    node.cruise_speed = 0.18
+    node.vision_inference_mode = 'triggered'
+    node.batch_recorder.unread = 2
+
+    assert node.get_status()['message_unread'] == 2
+
+
+def test_mission_status_flips_mode_to_auto_on_patrol():
+    node = _make_wired_node()
+    node.mode = 'MANUAL'
+    node.frontend_started_auto = True
+    node.completion_stop_started = False
+
+    node.on_mission_status(_status('PATROL'))
+
+    assert node.mode == 'AUTO'
+
+
+def test_manual_status_racing_set_mode_auto_does_not_stick():
+    # set_mode_auto just ran, then a stale MANUAL status lands before
+    # PATROL starts: the following PATROL status must restore AUTO or the
+    # joystick watchdog floods /cmd_vel with zeros all cruise long.
+    node = _make_wired_node()
+    node.mode = 'AUTO'
+    node.frontend_started_auto = True
+    node.completion_stop_started = False
+
+    node.on_mission_status(_status('MANUAL'))
+    assert node.mode == 'MANUAL'
+    assert node.frontend_started_auto is False
+
+    node.on_mission_status(_status('PATROL'))
+    assert node.mode == 'AUTO'
+
+
+def test_mission_owned_states_keep_mode_auto():
+    # STOPPED/SCANNING/OBSTACLE_*: mission_control owns /cmd_vel there too.
+    node = _make_wired_node()
+    node.mode = 'MANUAL'
+    node.frontend_started_auto = True
+    node.completion_stop_started = False
+
+    for state in ('STOPPED', 'SCANNING', 'OBSTACLE_BACKUP', 'ANALYZING'):
+        node.mode = 'MANUAL'
+        node.on_mission_status(_status(state))
+        assert node.mode == 'AUTO', state

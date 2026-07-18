@@ -76,6 +76,18 @@ body {
 .status-capsule.estop  { background: rgba(239,68,68,0.1);  color: var(--red);  border-color: rgba(239,68,68,0.2); }
 
 .top-bar .spacer { flex: 1; }
+.camera-start-btn {
+  height: 28px; padding: 0 10px; border: 1px solid rgba(16,185,129,0.45);
+  border-radius: var(--radius); background: rgba(16,185,129,0.12); color: var(--green);
+  font: 600 12px var(--font); cursor: pointer;
+}
+.camera-start-btn:disabled { cursor: default; opacity: 0.58; }
+.camera-capture-btn {
+  height: 28px; padding: 0 10px; border: 1px solid rgba(59,130,246,0.5);
+  background: rgba(59,130,246,0.12); color: #bfdbfe; border-radius: 4px;
+  cursor: pointer; font-size: 12px;
+}
+.camera-capture-btn:disabled { cursor: default; opacity: 0.58; }
 
 .top-bar .ros-indicator {
   display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim);
@@ -226,6 +238,8 @@ body {
 
 /* Cruise */
 .cruise-panel { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cruise-speed-control { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
+.cruise-speed-control input { width: 54px; height: 26px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text); padding: 0 6px; font: 12px var(--font-mono); }
 .cruise-panel .cruise-label {
   font-size: 11px; color: var(--text-dim); text-transform: uppercase;
   letter-spacing: 0.05em; font-weight: 600;
@@ -486,6 +500,103 @@ body {
   font-weight: 600;
 }
 
+.hidden-tool-section {
+  opacity: 0.42;
+  transition: opacity 160ms ease;
+}
+
+.hidden-tool-section:hover {
+  opacity: 1;
+}
+
+.vision-mode-pill {
+  min-width: 84px;
+}
+
+.vision-mode-pill:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.fixed-point-stop-section {
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.fixed-point-stop-header,
+.fixed-point-stop-actions,
+.fixed-point-stop-row {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+}
+
+.fixed-point-stop-header {
+  grid-template-columns: 1fr auto;
+  margin-bottom: 6px;
+}
+
+.fixed-point-stop-actions {
+  grid-template-columns: repeat(2, auto);
+}
+
+.fixed-point-stop-row {
+  grid-template-columns: 20px minmax(66px, 90px) minmax(66px, 90px) minmax(66px, 90px) minmax(150px, 1fr) 24px;
+  min-width: 470px;
+  margin-top: 4px;
+}
+
+.fixed-point-stop-labels {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin-top: 0;
+}
+
+.fixed-point-stop-row input,
+.fixed-point-stop-row select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 4px 6px;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: 12px var(--font-mono);
+}
+
+.fixed-point-stop-row input:focus,
+.fixed-point-stop-row select:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.fixed-point-index {
+  color: var(--text-muted);
+  text-align: center;
+  font: 11px var(--font-mono);
+}
+
+.fixed-point-delete {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.fixed-point-delete:hover { color: var(--red); }
+
 /* ============ WEATHER PANEL ============ */
 .weather-card h3.weather-header { display: flex; align-items: center; gap: 6px; }
 .weather-card .collapse-arrow { font-size: 12px; color: #64748B; transition: transform 0.15s; }
@@ -500,3 +611,57 @@ body {
 .disaster-alerts { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 .disaster-tag { background: #7F1D1D; color: #FCA5A5; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
 .stale-badge { background: #78350F; color: #FBBF24; padding: 1px 6px; border-radius: 4px; font-size: 11px; margin-left: 8px; }
+
+/* ── Message center ── */
+.message-btn {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill); color: var(--text); cursor: pointer;
+}
+.msg-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  background: var(--red); color: #fff; border-radius: 8px;
+  font-size: 10px; line-height: 16px; text-align: center; font-weight: 600;
+}
+.msg-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.msg-batch { margin-bottom: 16px; }
+.msg-batch-header {
+  font-weight: 600; font-size: 13px; padding: 6px 0;
+  border-bottom: 1px solid var(--border); margin-bottom: 8px;
+}
+.msg-record {
+  display: flex; gap: 10px; padding: 6px; border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.msg-record:hover { background: var(--bg-hover); }
+.msg-thumb { width: 96px; height: 72px; object-fit: cover; border-radius: var(--radius); }
+.msg-record-info { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.msg-disease { font-weight: 600; font-size: 14px; }
+.msg-preview {
+  max-width: 90vw; max-height: 85vh; border-radius: var(--radius-pill);
+  cursor: zoom-out;
+}
+
+/* ── Weather auto-fetch toggle ── */
+.weather-toggle { position: relative; display: inline-block; width: 28px; height: 16px; }
+.weather-toggle input { opacity: 0; width: 0; height: 0; }
+.weather-toggle-slider {
+  position: absolute; inset: 0; border-radius: 16px;
+  background: var(--bg-hover); border: 1px solid var(--border);
+  transition: background 0.2s;
+}
+.weather-toggle-slider::before {
+  content: ''; position: absolute; width: 12px; height: 12px;
+  left: 1px; top: 1px; border-radius: 50%;
+  background: var(--text-dim); transition: transform 0.2s, background 0.2s;
+}
+.weather-toggle input:checked + .weather-toggle-slider {
+  background: rgba(16, 185, 129, 0.25); border-color: var(--green);
+}
+.weather-toggle input:checked + .weather-toggle-slider::before {
+  transform: translateX(12px); background: var(--green);
+}

@@ -9,6 +9,8 @@ const DiagnosisToggle = {
               @click="store.mockDiagnosisMode = 'healthy'">Healthy</button>
       <button class="diag-pill" :class="{ active: store.mockDiagnosisMode === 'early_blight' }"
               @click="store.mockDiagnosisMode = 'early_blight'">Early Blight</button>
+      <button class="diag-pill" :class="{ active: store.mockDiagnosisMode === 'leaf_mold' }"
+              @click="store.mockDiagnosisMode = 'leaf_mold'">Leaf Mold</button>
     </div>
   </div>`
 };

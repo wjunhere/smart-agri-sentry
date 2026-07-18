@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v2.9 · 更新日期 2026-07-15  
+> 架构版本 v3.0 · 更新日期 2026-07-17  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -32,7 +32,7 @@
 | AI 主控 | RDK X5（8 核 A55, R5 NPU 10 TOPS） |
 | 运动控制 | STM32F407ZGT6（FreeRTOS） |
 | 雷达 | STL19P / LD19（UART 230400） |
-| 摄像头 | IMX219 MIPI-CSI |
+| 摄像头 | 海康 MV-CS016-10UC（USB3，默认）/ IMX219 MIPI-CSI |
 | IMU | YB-IMU（CH340 USB, /dev/ttyUSB0 → /dev/myimu, 115200） |
 | 云台 | 2-DOF 舵机，RDK X5 直接 PWM |
 | 环境传感 | 移动七合一空气/土壤 + 固定 LoRa 节点 |
@@ -86,6 +86,7 @@
 16. **天气 mock 周期修复**：`sentry_weather` mock 模式改 60s 周期发布，避免桥接节点错过单次消息。
 17. **LLM 板端部署**：API key 需放在 `~/.bashrc` 交互守卫之前，否则非交互 SSH 无法加载。
 18. **微信小程序 monitor 视频流优化 (2026-07-14)**：`<image>` 无法直接消费 MJPEG，后端新增 `/api/camera/snapshot` 并缓存 JPEG；前端用 A/B 双缓冲 + view 容器 opacity 过渡实现 200ms 平滑刷新，离开 monitor 页自动暂停。
+19. **海康相机软件自适应曝光 ✅ (2026-07-17)**：MV-CS016-10UC 硬件 AE 失效，新增节点内闭环软件 AE（`auto_exposure.py`）：帧亮度反馈 + 饱和保护 + 运动/静止分档曝光上限（巡航 20ms 防拖影 / 停车 100ms 提亮），里程计迟滞判定运动状态，`ae_enabled:=false` 可回退固定曝光。板端实测暗场景收敛 mean→80.0。参数与行为详见 `docs/ROS2.md` 第 9 节。
 
 ## 模型矩阵
 

@@ -31,6 +31,7 @@ window.store = Vue.reactive({
   weatherHours: [],
   weatherDisasterAlerts: [],
   weatherStale: false,
+  weatherAutoFetch: true,
   weatherCity: '',
   weatherLat: 39.9,
   weatherLon: 116.4,
@@ -63,7 +64,18 @@ window.store = Vue.reactive({
   stackStarting: false,
   stackPreheating: false,
   stackReady: false,
+  visionStarting: false,
+  cameraCaptureBusy: false,
+  cruiseSpeed: 0.18,
+  cruiseSpeedBusy: false,
+  visionInferenceMode: 'triggered',
+  visionInferenceModeBusy: false,
+  fixedPointStops: [],
+  fixedPointStopsBusy: false,
   _rawWaypoints: [],
+  messageUnread: 0,
+  messageBatches: [],
+  showMessages: false,
 });
 const store = window.store;  // local alias for internal use in this file
 
@@ -85,6 +97,7 @@ function missionStateToMode(state) {
 }
 
 let ros = null;
+let lastRealEnvTime = 0;  // real /sensor/environment_fixed overrides sim
 
 function rosConnect() {
   ros = new ROSLIB.Ros({ url: ROS_CONFIG.url });
@@ -119,7 +132,7 @@ const TOPICS = [
    }],
   ['/vision/diagnosis', 'sentry_interfaces/Diagnosis',
    (msg) => {
-     if (store.mockDiagnosisMode !== 'real') return;
+     if (msg.class_id === 254) store._diagBuf = [];
      // Temporal smoothing: buffer N recent predictions, show majority class
      store._diagBuf.push({ cls: msg.disease_class, conf: msg.confidence, probs: msg.probabilities });
      if (store._diagBuf.length > store._diagBufSize) store._diagBuf.shift();
@@ -142,6 +155,24 @@ const TOPICS = [
      store.diagnosisDisease = maxCls;
      store.diagnosisConfidence = avgConf;
      store.diagnosisProbabilities = avgProbs;
+
+     // Mock mode: real inference runs unchanged; only the displayed class is
+     // forced to the selected disease with confidence jitter in [0.80, 0.90].
+     if (store.mockDiagnosisMode !== 'real') {
+       const mockCls = store.mockDiagnosisMode;
+       const conf = 0.80 + Math.random() * 0.10;
+       const idx = TOMATO_DISEASE_CLASSES.indexOf(mockCls);
+       store.diagnosisDisease = mockCls;
+       store.diagnosisConfidence = conf;
+       if (avgProbs.length && idx >= 0 && idx < avgProbs.length) {
+         const restSum = avgProbs.reduce((s, p, i) => i === idx ? s : s + p, 0);
+         store.diagnosisProbabilities = avgProbs.map((p, i) => {
+           if (i === idx) return conf;
+           const share = restSum > 0 ? p / restSum : 1 / (avgProbs.length - 1);
+           return share * (1 - conf);
+         });
+       }
+     }
    }],
   // === MOCK START: advisory (remove after test) ===
   ['/advisory/action', 'sentry_interfaces/AdvisoryAction',
@@ -186,6 +217,7 @@ const TOPICS = [
    }],
   ['/sensor/environment_fixed', 'sentry_interfaces/Environment',
    (msg) => {
+     lastRealEnvTime = Date.now();
      store.envAirTemp = msg.air_temp;
      store.envAirHumidity = msg.air_humidity;
      store.envCO2 = msg.air_co2;
@@ -286,6 +318,50 @@ function callStackPreheat() {
     })
     .finally(() => { store.stackPreheating = false; });
 }
+
+function callVisionStart() {
+  store.visionStarting = true;
+  return fetch('/vision/start', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to start vision stack');
+      }
+      store.stackReady = Boolean(data.stack_ready);
+      return data;
+    })
+    .finally(() => { store.visionStarting = false; });
+}
+
+function callCaptureImage() {
+  store.cameraCaptureBusy = true;
+  return fetch('/camera/capture', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to capture camera image');
+      }
+      console.info('[camera] captured:', data.filename);
+      return data;
+    })
+    .finally(() => { store.cameraCaptureBusy = false; });
+}
+
+function callSetCruiseSpeed(speed) {
+  store.cruiseSpeedBusy = true;
+  return fetch('/cruise-speed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ speed: Number(speed) }),
+  }).then(async (resp) => {
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to update cruise speed');
+    }
+    store.cruiseSpeed = Number(data.speed);
+    return data;
+  }).finally(() => { store.cruiseSpeedBusy = false; });
+}
 function callGetWaypoints() {
   return fetch('/waypoints')
     .then(async (resp) => {
@@ -320,6 +396,70 @@ function callSaveWaypoints(waypoints) {
     return store._rawWaypoints;
   });
 }
+
+const TOMATO_DISEASE_CLASSES = [
+  'late_blight',
+  'healthy',
+  'early_blight',
+  'bacterial_spot',
+  'leaf_mold',
+  'septoria_leaf_spot',
+  'tomato_yellow_leaf_curl_virus',
+];
+
+function normalizeFixedPointStop(stop) {
+  return {
+    x: Number(stop.x),
+    y: Number(stop.y),
+    radius: Number(stop.radius ?? 0.20),
+    disease_class: String(stop.disease_class || 'healthy'),
+  };
+}
+
+function fetchFixedPointStops() {
+  return fetch('/fixed-point-stops')
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to load fixed-point stops');
+      }
+      store.fixedPointStops = (data.fixed_point_stops || []).map(normalizeFixedPointStop);
+      return store.fixedPointStops;
+    });
+}
+
+store.fixedPointDiseaseClasses = TOMATO_DISEASE_CLASSES;
+store.addFixedPointStop = function() {
+  store.fixedPointStops.push({
+    x: 0,
+    y: 0,
+    radius: 0.20,
+    disease_class: 'healthy',
+  });
+};
+store.removeFixedPointStop = function(index) {
+  store.fixedPointStops.splice(index, 1);
+};
+store.saveFixedPointStops = async function() {
+  store.fixedPointStopsBusy = true;
+  try {
+    const fixed_point_stops = store.fixedPointStops.map(normalizeFixedPointStop);
+    const resp = await fetch('/fixed-point-stops', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fixed_point_stops }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to save fixed-point stops');
+    }
+    store.fixedPointStops = (data.fixed_point_stops || []).map(normalizeFixedPointStop);
+    return data;
+  } finally {
+    store.fixedPointStopsBusy = false;
+  }
+};
+
 function publishCmdVel(linear, angular) {
   const topic = new ROSLIB.Topic({
     ros, name: '/cmd_vel', messageType: 'geometry_msgs/Twist'
@@ -396,18 +536,32 @@ function callSetCropType(cropType) {
   store.advisoryFungicide = '嘧菌酯 250g/L SC 800x';
   // === MOCK END ===
 
-  // Environment — fixed node
-  store.envAirTemp = 26.4;
-  store.envAirHumidity = 88.2;
-  store.envCO2 = 420;
-  store.envSoilTemp = 22.1;
-  store.envSoilHumidity = 60.5;
-  store.envLeafWetness = 6.2;
-  store.envSoilN = 12.5;
-  store.envSoilP = 8.3;
-  store.envSoilK = 15.7;
-  store.envSoilPH = 6.5;
+  // Environment — Xuzhou July 11:00 overcast scenario: bounded random walk, 60s tick.
+  // Real /sensor/environment_fixed data overrides sim for 90s after the last message.
+  // [storeKey, base, min, max, maxStepPerTick, decimals]
+  const ENV_SIM = [
+    ['envAirTemp',      28.0, 26.0,  30.5, 0.4,  1],
+    ['envAirHumidity',  78.0, 70.0,  88.0, 2.0,  1],
+    ['envCO2',         420.0, 400.0, 460.0, 8.0, 0],
+    ['envSoilTemp',     26.0, 24.5,  27.5, 0.2,  1],
+    ['envSoilHumidity', 58.0, 50.0,  65.0, 1.5,  1],
+    ['envLeafWetness',   3.0,  0.5,   5.0, 0.6,  1],
+    ['envSoilN',        12.5, 10.0,  15.0, 0.3,  1],
+    ['envSoilP',         8.3,  7.0,  10.0, 0.2,  1],
+    ['envSoilK',        15.7, 13.0,  18.0, 0.3,  1],
+    ['envSoilPH',        6.5,  6.3,   6.8, 0.05, 2],
+  ];
+  function envSimTick() {
+    if (Date.now() - lastRealEnvTime < 90000) return;  // real sensor active
+    ENV_SIM.forEach(([key, , min, max, maxStep, decimals]) => {
+      let v = store[key] + (Math.random() * 2 - 1) * maxStep;
+      v = Math.min(max, Math.max(min, v));
+      store[key] = parseFloat(v.toFixed(decimals));
+    });
+  }
+  ENV_SIM.forEach(([key, base]) => { store[key] = base; });
   store.envDataSource = 'FIXED_NODE_01';
+  setInterval(envSimTick, 60000);
 
   // Chassis
   store.batteryVoltage = 12.1;
@@ -415,7 +569,6 @@ function callSetCropType(cropType) {
   store.rightSpeed = 0.14;
   // Keep mission state empty until real /mission/status or /waypoints data arrives.
   store.missionState = 'IDLE';
-  store.mode = 'MANUAL';
   store.missionCurrentAction = '';
   store.missionPlantsDetected = 0;
   store.missionPlantsAnalyzed = 0;
@@ -444,6 +597,7 @@ function callSetCropType(cropType) {
     }
 
     function fetchWeather() {
+      if (!store.weatherAutoFetch) return;
       fetch(WEATHER_PROXY)
         .then(r => r.json())
         .then(data => { if (data && data.days) applyWeather(data); })
@@ -453,6 +607,11 @@ function callSetCropType(cropType) {
     // Try immediately, then every hour
     fetchWeather();
     setInterval(fetchWeather, REFRESH_MS);
+
+    store.setWeatherAutoFetch = function(on) {
+      store.weatherAutoFetch = Boolean(on);
+      if (store.weatherAutoFetch) fetchWeather();
+    };
   })();
 
   // === MOCK START: forecast alerts (remove after test) ===
@@ -569,7 +728,7 @@ function callSetCropType(cropType) {
   // === MOCK END (fusion history) ===
 })();
 
-// ── Diagnosis mock toggle: 'real' | 'healthy' | 'early_blight' ──
+// ── Diagnosis mock toggle: 'real' | 'healthy' | 'early_blight' | 'leaf_mold' ──
 // Shared via Flask server so all clients see the same mode
 const MOCK_MODE_URL = 'http://' + window.location.hostname + ':5000/mock-diagnosis-mode';
 
@@ -594,44 +753,95 @@ store.setMockMode = async function(mode) {
   } catch (e) { /* server not reachable, local-only */ }
 };
 
+let cruiseSpeedLoaded = false;
+
 function refreshStackStatus() {
   return fetch('/status')
     .then(resp => resp.json())
     .then(data => {
       store.stackReady = Boolean(data.stack_ready);
+      if (!cruiseSpeedLoaded && Number.isFinite(Number(data.cruise_speed))) {
+        store.cruiseSpeed = Number(data.cruise_speed);
+        cruiseSpeedLoaded = true;
+      }
+      if (data.vision_inference_mode) {
+        store.visionInferenceMode = data.vision_inference_mode;
+      }
+      store.messageUnread = Number(data.message_unread || 0);
       return data;
     })
     .catch(() => null);
 }
+
+function fetchVisionInferenceMode() {
+  return fetch('/vision/inference-mode')
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.mode) store.visionInferenceMode = data.mode;
+      return data;
+    })
+    .catch(() => null);
+}
+
+store.toggleVisionInferenceMode = async function() {
+  const next = store.visionInferenceMode === 'triggered'
+    ? 'independent'
+    : 'triggered';
+  store.visionInferenceModeBusy = true;
+  try {
+    const resp = await fetch('/vision/inference-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: next }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to switch vision inference mode');
+    }
+    store.visionInferenceMode = data.mode || next;
+    return data;
+  } finally {
+    store.visionInferenceModeBusy = false;
+  }
+};
 // Sync from server on load, then poll every 1s
 fetchMockMode();
+fetchVisionInferenceMode();
 callGetWaypoints().catch(err => console.warn('[waypoints] initial load failed:', err));
+fetchFixedPointStops().catch(err => console.warn('[fixed-point-stops] initial load failed:', err));
 setInterval(fetchMockMode, 1000);
 refreshStackStatus();
 setInterval(refreshStackStatus, 3000);
 
-setInterval(() => {
-  if (store.mockDiagnosisMode === 'real') return;
+// ── Mission message center ──
+function fetchMessages() {
+  return fetch('/api/messages')
+    .then(resp => resp.json())
+    .then(data => {
+      store.messageBatches = data.batches || [];
+      store.messageUnread = Number(data.unread || 0);
+      return data;
+    })
+    .catch(() => null);
+}
 
-  // In mock mode, simulate plant detection so diagnosis is visible
-  store.plantDetected = true;
-  store.plantConfidence = 0.82 + Math.random() * 0.10;
-  store.plantBbox = [140, 100, 80, 60];
-  store.plantAreaRatio = 0.05 + Math.random() * 0.03;
+store.openMessages = async function() {
+  await fetchMessages();
+  store.showMessages = true;
+  store.messageUnread = 0;
+  fetch('/api/messages/read', { method: 'POST' }).catch(() => {});
+};
 
-  const conf = 0.80 + Math.random() * 0.10;
-  store.diagnosisCropType = store.cropType;
-  store.diagnosisConfidence = conf;
-  store._diagBuf = [];
+store.clearMessages = async function() {
+  if (!window.confirm('确定清空所有巡航批次的快照与记录？')) return;
+  await fetch('/api/messages/clear', { method: 'POST' }).catch(() => {});
+  store.messageBatches = [];
+  store.messageUnread = 0;
+};
 
-  if (store.mockDiagnosisMode === 'healthy') {
-    store.diagnosisDisease = 'healthy';
-    store.diagnosisProbabilities = [conf, 0.06, 0.04, 0.02, 0.01, 0.01, Math.max(0, 1 - conf - 0.14)];
-  } else if (store.mockDiagnosisMode === 'early_blight') {
-    store.diagnosisDisease = 'early_blight';
-    store.diagnosisProbabilities = [0.06, conf, 0.04, 0.02, 0.01, 0.01, Math.max(0, 1 - conf - 0.14)];
-  }
-}, 1500);
+store.formatMsgTime = function(ts) {
+  return new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour12: false });
+};
 
 // Auto-connect on load (real ROS data will overwrite mock if connected)
 try { rosConnect(); } catch(e) { console.log('[ROS] Connection deferred'); }

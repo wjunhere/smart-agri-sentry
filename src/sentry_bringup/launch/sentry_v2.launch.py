@@ -1,9 +1,10 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, Command
+from launch.substitutions import LaunchConfiguration, Command, PythonExpression
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -29,6 +30,7 @@ def generate_launch_description():
     ekf_config = os.path.join(mission_pkg, 'config', 'ekf.yaml')
     nav2_config = os.path.join(mission_pkg, 'config', 'nav2_no_map.yaml')
     waypoints_config = os.path.join(mission_pkg, 'config', 'waypoints.yaml')
+    mission_params_config = os.path.join(mission_pkg, 'config', 'mission_params.yaml')
 
     servo_config = os.path.join(
         get_package_share_directory('sentry_servo'), 'config', 'servo_config.yaml')
@@ -40,8 +42,12 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
         DeclareLaunchArgument('slam', default_value='False'),
         DeclareLaunchArgument('enable_vision', default_value='true'),
+        DeclareLaunchArgument('camera_backend', default_value='hikrobot'),
+        DeclareLaunchArgument('cruise_speed', default_value='0.18'),
+        DeclareLaunchArgument('enable_live_diagnosis', default_value='false'),
         DeclareLaunchArgument('enable_advisory', default_value='true'),
         DeclareLaunchArgument('enable_web', default_value='true'),
+        DeclareLaunchArgument('enable_servo', default_value='false'),
 
                 # Unified TF tree (URDF -> robot_state_publisher)
         Node(
@@ -76,8 +82,56 @@ def generate_launch_description():
                 'fps': 5.0,
                 'sensor_width': 1920,
                 'sensor_height': 1080,
+                'yuv_format': 'nv12',
+                'enable_color_correction': True,
+                'blue_gain': 1.0,
+                'green_gain': 0.98,
+                'red_gain': 1.0,
+                'enable_low_light_enhancement': True,
+                'denoise_h': 4.0,
+                'gamma': 1.10,
+                'saturation_scale': 0.95,
+                'sharpen_amount': 0.15,
             }],
-            condition=IfCondition(LaunchConfiguration('enable_vision')),
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('enable_vision'),
+                "' == 'true' and '", LaunchConfiguration('camera_backend'),
+                "' == 'mipi'",
+            ])),
+            output='screen',
+        ),
+        Node(
+            package='sentry_bringup',
+            executable='hikrobot_camera_node',
+            name='hikrobot_camera_node',
+            parameters=[{
+                'fps': 5.0,
+                'output_width': 640,
+                'output_height': 480,
+                'frame_id': 'camera',
+                'image_topic': '/sentry/camera/image_raw',
+                'mvs_common_runenv': '/opt/MVS/lib',
+                'mvs_python_path': '/opt/MVS/Samples/aarch64/Python/MvImport',
+                'mvs_library_path': '/opt/MVS/lib/aarch64',
+                'exposure_time_us': 20000.0,
+                'gain': 3.0,
+                'exposure_auto': False,
+                'gain_auto': False,
+                'enable_image_enhancement': True,
+                'gamma': 2.0,
+                'ae_enabled': True,
+                'ae_target_luma': 80.0,
+                'ae_exp_min_us': 2000.0,
+                'ae_exp_max_moving_us': 20000.0,
+                'ae_exp_max_still_us': 100000.0,
+                'ae_gain_min': 0.0,
+                'ae_gain_max': 12.0,
+            }],
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('enable_vision'),
+                "' == 'true' and '", LaunchConfiguration('camera_backend'),
+                "' == 'hikrobot'",
+            ])),
             output='screen',
         ),
 
@@ -104,7 +158,7 @@ def generate_launch_description():
                 'model_path': '/home/sunrise/dev_ws/models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin',
                 'input_size': 224,
             }],
-            condition=IfCondition(LaunchConfiguration('enable_vision')),
+            condition=IfCondition(LaunchConfiguration('enable_live_diagnosis')),
             output='screen',
         ),
         Node(
@@ -112,8 +166,8 @@ def generate_launch_description():
             executable='plant_detector_node',
             name='plant_detector_node',
             parameters=[{
-                'confidence_threshold': 0.5,
-                'min_area_ratio': 0.05,
+                'confidence_threshold': 0.4,
+                'min_area_ratio': 0.02,
                 'use_simulation': LaunchConfiguration('use_sim_plant'),
                 'model_path': '/home/sunrise/dev_ws/models/yolov8n_crop_weed_bayese_640x640_nv12.bin',
             }],
@@ -125,11 +179,7 @@ def generate_launch_description():
             executable='vision_pipeline_node',
             name='vision_pipeline_node',
             parameters=[{
-                'settle_sec': 0.5,
-                'timeout_sec': 15.0,
-                'edge_threshold': 0.35,
-                'step_yaw': 20,
-                'step_pitch': 15,
+                'yolo_model_path': '/home/sunrise/dev_ws/models/yolov8n_crop_weed_bayese_640x640_nv12.bin',
             }],
             condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
@@ -157,6 +207,7 @@ def generate_launch_description():
             executable='servo_driver_node',
             name='servo_driver_node',
             parameters=[{'config_path': servo_config}],
+            condition=IfCondition(LaunchConfiguration('enable_servo')),
             output='screen',
         ),
 
@@ -198,7 +249,11 @@ def generate_launch_description():
             package='nav2_controller',
             executable='controller_server',
             output='screen',
-            parameters=[nav2_config, {'use_sim_time': False}],
+            parameters=[nav2_config, {
+                'use_sim_time': False,
+                'FollowPath.desired_linear_vel': ParameterValue(
+                    LaunchConfiguration('cruise_speed'), value_type=float),
+            }],
             arguments=['--ros-args', '--log-level', 'info'],
             remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static'),
                         ('cmd_vel', 'cmd_vel_nav')],
@@ -293,12 +348,14 @@ def generate_launch_description():
             name='mission_control_node',
             parameters=[{
                 'waypoints_file': waypoints_config,
-                'cruise_speed': 0.18,
+                'mission_params_file': mission_params_config,
+                'cruise_speed': ParameterValue(
+                    LaunchConfiguration('cruise_speed'), value_type=float),
                 'wheel_base': 0.23,
                 'pulses_per_meter': 11552,
                 'crop_type': LaunchConfiguration('crop_type'),
-                'detection_confidence_threshold': 0.6,
-                'min_area_ratio': 0.1,
+                'detection_confidence_threshold': 0.4,
+                'min_area_ratio': 0.02,
                 'analyze_timeout_sec': 5.0,
                 'resume_delay_sec': 2.0,
                 'min_resume_distance': 0.5,
