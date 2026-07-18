@@ -112,7 +112,8 @@
 - [x] **T3** web_remote_node 接线 TDD（PATROL→STOPPED 边沿快照、固定点无框不记录、class_id 254 哨兵忽略、`/api/messages*` 路由、`/status.message_unread`）
 - [x] **T4** 前端：top-bar 铃铛 + 未读角标、message-center modal（批次分组、缩略图、大图预览、一键清理）
 - [x] **T5** 本地 48 测试全过 + code review 修复（BatchRecorder 加 RLock 线程安全、bbox 长度校验、批次上限 10）+ 板端部署
-- [ ] 板端巡航实测（用户验证：角标 → 快照带框 → 多批次 → 清理）
+- [x] **T6** 巡航爬行 bug 修复（26baff5）：`on_mission_status` 只单向同步 MANUAL，竞态导致 web 节点 mode 卡 MANUAL，摇杆看门狗全程向 `/cmd_vel` 发零速（实测 74% 零速），改为双向镜像任务状态
+- [ ] 板端巡航实测（用户验证：角标 → 快照带框 → 多批次 → 清理 + 巡航速度恢复 0.18 m/s）
 
 ---
 
