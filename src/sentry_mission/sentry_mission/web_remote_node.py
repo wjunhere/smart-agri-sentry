@@ -962,7 +962,7 @@ def _get_app(node: WebRemoteNode):
     def set_mock_mode():
         data = request.get_json()
         mode = data.get('mode', 'real')
-        if mode not in ('real', 'healthy', 'early_blight'):
+        if mode not in ('real', 'healthy', 'early_blight', 'leaf_mold'):
             return jsonify({'status': 'error', 'message': f'Invalid mode: {mode}'})
         _app.config['mock_diagnosis_mode'] = mode
         return jsonify({'status': 'ok', 'mode': mode})

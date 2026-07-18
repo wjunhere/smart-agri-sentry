@@ -132,7 +132,6 @@ const TOPICS = [
    }],
   ['/vision/diagnosis', 'sentry_interfaces/Diagnosis',
    (msg) => {
-     if (store.mockDiagnosisMode !== 'real') return;
      if (msg.class_id === 254) store._diagBuf = [];
      // Temporal smoothing: buffer N recent predictions, show majority class
      store._diagBuf.push({ cls: msg.disease_class, conf: msg.confidence, probs: msg.probabilities });
@@ -156,6 +155,24 @@ const TOPICS = [
      store.diagnosisDisease = maxCls;
      store.diagnosisConfidence = avgConf;
      store.diagnosisProbabilities = avgProbs;
+
+     // Mock mode: real inference runs unchanged; only the displayed class is
+     // forced to the selected disease with confidence jitter in [0.80, 0.90].
+     if (store.mockDiagnosisMode !== 'real') {
+       const mockCls = store.mockDiagnosisMode;
+       const conf = 0.80 + Math.random() * 0.10;
+       const idx = TOMATO_DISEASE_CLASSES.indexOf(mockCls);
+       store.diagnosisDisease = mockCls;
+       store.diagnosisConfidence = conf;
+       if (avgProbs.length && idx >= 0 && idx < avgProbs.length) {
+         const restSum = avgProbs.reduce((s, p, i) => i === idx ? s : s + p, 0);
+         store.diagnosisProbabilities = avgProbs.map((p, i) => {
+           if (i === idx) return conf;
+           const share = restSum > 0 ? p / restSum : 1 / (avgProbs.length - 1);
+           return share * (1 - conf);
+         });
+       }
+     }
    }],
   // === MOCK START: advisory (remove after test) ===
   ['/advisory/action', 'sentry_interfaces/AdvisoryAction',
@@ -711,7 +728,7 @@ function callSetCropType(cropType) {
   // === MOCK END (fusion history) ===
 })();
 
-// ── Diagnosis mock toggle: 'real' | 'healthy' | 'early_blight' ──
+// ── Diagnosis mock toggle: 'real' | 'healthy' | 'early_blight' | 'leaf_mold' ──
 // Shared via Flask server so all clients see the same mode
 const MOCK_MODE_URL = 'http://' + window.location.hostname + ':5000/mock-diagnosis-mode';
 
@@ -795,29 +812,6 @@ fetchFixedPointStops().catch(err => console.warn('[fixed-point-stops] initial lo
 setInterval(fetchMockMode, 1000);
 refreshStackStatus();
 setInterval(refreshStackStatus, 3000);
-
-setInterval(() => {
-  if (store.mockDiagnosisMode === 'real') return;
-
-  // In mock mode, simulate plant detection so diagnosis is visible
-  store.plantDetected = true;
-  store.plantConfidence = 0.82 + Math.random() * 0.10;
-  store.plantBbox = [140, 100, 80, 60];
-  store.plantAreaRatio = 0.05 + Math.random() * 0.03;
-
-  const conf = 0.80 + Math.random() * 0.10;
-  store.diagnosisCropType = store.cropType;
-  store.diagnosisConfidence = conf;
-  store._diagBuf = [];
-
-  if (store.mockDiagnosisMode === 'healthy') {
-    store.diagnosisDisease = 'healthy';
-    store.diagnosisProbabilities = [conf, 0.06, 0.04, 0.02, 0.01, 0.01, Math.max(0, 1 - conf - 0.14)];
-  } else if (store.mockDiagnosisMode === 'early_blight') {
-    store.diagnosisDisease = 'early_blight';
-    store.diagnosisProbabilities = [0.06, conf, 0.04, 0.02, 0.01, 0.01, Math.max(0, 1 - conf - 0.14)];
-  }
-}, 1500);
 
 // ── Mission message center ──
 function fetchMessages() {

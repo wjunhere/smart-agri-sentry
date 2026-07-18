@@ -59,6 +59,8 @@ const EnvDataBar = {
                   @click="store.setMockMode('healthy')">Healthy</button>
           <button class="diag-pill" :class="{ active: store.mockDiagnosisMode === 'early_blight' }"
                   @click="store.setMockMode('early_blight')">Early Blight</button>
+          <button class="diag-pill" :class="{ active: store.mockDiagnosisMode === 'leaf_mold' }"
+                  @click="store.setMockMode('leaf_mold')">Leaf Mold</button>
         </div>
       </div>
       <div class="diag-toggle-section hidden-tool-section">
