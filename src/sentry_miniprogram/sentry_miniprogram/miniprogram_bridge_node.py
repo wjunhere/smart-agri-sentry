@@ -74,10 +74,10 @@ class MiniProgramBridgeNode(Node):
         from sensor_msgs.msg import CompressedImage
 
         self.create_subscription(
-            Environment, '/sentry/sensor/environment_mobile',
+            Environment, '/sensor/environment_mobile',
             self._on_environment, 10)
         self.create_subscription(
-            SoilNutrition, '/sentry/sensor/soil_nutrition',
+            SoilNutrition, '/sensor/soil_nutrition',
             self._on_soil, 10)
         self.create_subscription(
             ChassisStatus, '/sentry/chassis/status',

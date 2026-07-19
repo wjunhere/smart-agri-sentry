@@ -11,10 +11,31 @@ from unittest.mock import MagicMock, patch
 
 # Build comprehensive mocks for all ROS2/fastapi imports BEFORE importing the module
 def _setup_mocks():
-    """Set up mock modules for all imports the bridge node needs."""
+    """Set up mock modules for all imports the bridge node needs.
+
+    rclpy.node.Node must be a REAL base class (not a MagicMock instance):
+    subclassing a MagicMock instance swallows every method defined in the
+    class body, so MiniProgramBridgeNode() would return a plain mock and
+    none of its real methods would exist. _FakeNode is a minimal stand-in
+    whose unknown attributes are per-instance cached MagicMocks.
+    """
+    import types
+
+    class _FakeNode:
+        def __init__(self, *args, **kwargs):
+            self.__dict__['_infra_mocks'] = {}
+
+        def __getattr__(self, name):
+            return self.__dict__['_infra_mocks'].setdefault(name, MagicMock())
+
+    rclpy_mod = types.ModuleType('rclpy')
+    node_mod = types.ModuleType('rclpy.node')
+    node_mod.Node = _FakeNode
+    rclpy_mod.node = node_mod
+    sys.modules['rclpy'] = rclpy_mod
+    sys.modules['rclpy.node'] = node_mod
+
     mocks = {
-        'rclpy': MagicMock(),
-        'rclpy.node': MagicMock(),
         'std_msgs': MagicMock(),
         'std_msgs.msg': MagicMock(),
         'std_srvs': MagicMock(),
@@ -119,3 +140,13 @@ def test_forecast_empty(client):
     data = resp.json()
     assert 'forecast' in data
     assert 'advisory' in data
+
+
+def test_sensor_topic_names():
+    """Bridge must subscribe to the topics uart_bridge actually publishes."""
+    node = MiniProgramBridgeNode()
+    subscribed = [c.args[1] for c in node.create_subscription.call_args_list]
+    assert '/sensor/environment_mobile' in subscribed
+    assert '/sensor/soil_nutrition' in subscribed
+    assert '/sentry/sensor/environment_mobile' not in subscribed
+    assert '/sentry/sensor/soil_nutrition' not in subscribed
