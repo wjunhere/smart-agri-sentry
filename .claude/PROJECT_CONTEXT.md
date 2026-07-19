@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v3.0 · 更新日期 2026-07-17  
+> 架构版本 v3.0 · 更新日期 2026-07-19  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -9,6 +9,7 @@
 
 - Stable branch work from `fix/autonomous-cruise` has been merged into `main`.
 - The robot has demonstrated three-point cruise, mission-owned short-range avoidance, frontend Preheat/Start/Pause/E-STOP, waypoint editing, and automatic stack stop after mission completion.
+- Frontend gateway autostart: systemd `sentry-bridge.service` (installed once via `scripts/rdk/install_autostart.sh`) boots the gateway layer — miniprogram bridge :8765, web panel :5000, weather, LLM. Cruise stack is started/stopped from frontend buttons (`/stack/*`), no SSH needed.
 - Details are intentionally split by topic: architecture in `docs/ARCHITECTURE.md`, ROS/HTTP interfaces in `docs/ROS2.md`, startup in `docs/SETUP.md`, decisions in `docs/DECISIONS.md`, known issues in `docs/ISSUES.md`, and remaining work in `docs/TODO.md`.
 - RDK access: `ssh rdk` or `ssh sunrise@10.66.175.106`; frontend: `http://10.66.175.106:5000/`.
 
@@ -87,6 +88,7 @@
 17. **LLM 板端部署**：API key 需放在 `~/.bashrc` 交互守卫之前，否则非交互 SSH 无法加载。
 18. **微信小程序 monitor 视频流优化 (2026-07-14)**：`<image>` 无法直接消费 MJPEG，后端新增 `/api/camera/snapshot` 并缓存 JPEG；前端用 A/B 双缓冲 + view 容器 opacity 过渡实现 200ms 平滑刷新，离开 monitor 页自动暂停。
 19. **海康相机软件自适应曝光 ✅ (2026-07-17)**：MV-CS016-10UC 硬件 AE 失效，新增节点内闭环软件 AE（`auto_exposure.py`）：帧亮度反馈 + 饱和保护 + 运动/静止分档曝光上限（巡航 20ms 防拖影 / 停车 100ms 提亮），里程计迟滞判定运动状态，`ae_enabled:=false` 可回退固定曝光。板端实测暗场景收敛 mean→80.0。参数与行为详见 `docs/ROS2.md` 第 9 节。
+20. **前端免 SSH 直连小车 ✅ (2026-07-19, PR #3)**：统一网关方案——`miniprogram_bridge_node` 新增 `/stack/preheat|start|stop|status` 编排端点（复用 `start_robot_stack.sh`，`SENTRY_PRESERVE_WEB=1` 保留控制面），WS 推送 `stack_status`。修复两个断链 bug：bridge 订阅话题名 `/sentry/sensor/*`→`/sensor/*`（环境数据此前到不了前端）、小程序 `wsConnect()` 此前从未被调用（实时通道全断）。`miniprogram_bridge.launch.py` 升级为网关层 launch（bridge + web_remote + weather_node + llm_advisor，LLM key 读 `SENTRY_LLM_API_KEY`/`DEEPSEEK_API_KEY` 环境变量）。`scripts/rdk/install_autostart.sh` 安装 systemd `sentry-bridge.service` 开机自启网关，小车上电即可被前端发现，巡航全由按钮启停。小程序 IP 配置化（`services/config.ts` + 控制页设置）。bridge mock 测试基建修复（`_FakeNode` 真实基类），13 测试通过。Spec/plan 见 `docs/superpowers/{specs,plans}/2026-07-19-local-frontend-car-connection*`。待办：板端 pull + `install_autostart.sh` + 端到端联调。
 
 ## 模型矩阵
 

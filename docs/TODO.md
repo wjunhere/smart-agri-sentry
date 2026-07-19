@@ -1,6 +1,6 @@
 # 当前任务与阻塞项
 
-> 更新日期：2026-07-15
+> 更新日期：2026-07-19
 
 ---
 
@@ -62,7 +62,8 @@
 - [ ] **验证 `nav2_bringup`、`robot_localization`、`imu_filter_madgwick` 已安装**
 - [x] **LLM + 小程序板端部署验证 (2026-07-13)**：`sentry_interfaces`/`sentry_llm`/`sentry_miniprogram` colcon build 通过，`llm_advisor_node` + `miniprogram_bridge_node` 启动正常
 - [x] **天气数据链路验证 (2026-07-13)**：`sentry_weather` mock 60s 周期，`/api/weather` 端到端通过，字段名对齐+浮点精度修复
-- [ ] **板端 `colcon test` 全通过**（bridge mock 测试因 Python 版本差异跳过）
+- [ ] **板端 `colcon test` 全通过**（bridge mock 基建已修复为 `_FakeNode` 真实基类，13 测试在开发机 venv 通过；板端全量待跑）
+- [ ] **前端免 SSH 板端联调 (PR #3, 2026-07-19)**：板端 `git pull && colcon build` → `bash scripts/rdk/install_autostart.sh` → 重启验证网关自启 → 小程序逐页端到端验证（视频/环境/天气/巡航按钮）+ Web 面板回归
 
 ---
 
@@ -81,6 +82,7 @@
 
 ## 近期已完成
 
+- [x] **前端免 SSH 直连小车 (PR #3, 2026-07-19)**：bridge 新增 `/stack/*` 巡航编排端点 + WS `stack_status` 推送；修复话题名断链（`/sentry/sensor/*`→`/sensor/*`）与 `wsConnect()` 未接线两个 bug；网关层 launch（+weather_node +web_remote）；systemd `sentry-bridge.service` 开机自启；小程序 IP 配置化 + 巡航按钮组 + 连接角标；bridge mock 测试基建修复（13 测试通过）
 - [x] **微信小程序 monitor 视频流去频闪 (2026-07-14)**：snapshot 双缓冲改为 z-index 前后层预加载，取消 opacity 过渡，避免 Skyline 硬切/黑底闪烁；刷新间隔 200ms，切 tab 暂停
 - [x] **番茄病害模型板端测试 (2026-07-13)**：MobilenetV3-Large 准确率 91.58%（healthy_threshold=0.15）
 - [x] **病害分类 healthy 阈值**：`vision_diagnosis_node` 新增参数，healthy 召回率 69.6%→84.5%
