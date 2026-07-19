@@ -1,5 +1,8 @@
 import { getStore, updateStore, onStoreChange } from '../../services/store';
-import { apiSetMode, apiControl, apiStop, apiSetCropType } from '../../services/api';
+import { apiSetMode, apiControl, apiStop, apiSetCropType,
+         apiStackPreheat, apiStackStart, apiStackStop } from '../../services/api';
+import { setCarIp } from '../../services/config';
+import { wsConnect } from '../../services/ws';
 
 Component({
   data: {
@@ -13,6 +16,10 @@ Component({
     missionCurrentWpIdx: 0,
     missionTotalWps: 0,
     missionWaypointLabels: [] as string[],
+    stackState: 'idle',
+    stackMessage: '',
+    carIp: '',
+    connected: false,
     showWaypointEditor: false,
   },
   lifetimes: {
@@ -38,6 +45,10 @@ Component({
         missionCurrentWpIdx: s.missionCurrentWpIdx,
         missionTotalWps: s.missionTotalWps,
         missionWaypointLabels: s.missionWaypointLabels,
+        stackState: s.stackState,
+        stackMessage: s.stackMessage,
+        carIp: s.carIp,
+        connected: s.connected,
       });
     },
 
@@ -64,6 +75,25 @@ Component({
       const crop = e.currentTarget.dataset.crop;
       apiSetCropType(crop);
       updateStore({ cropType: crop });
+    },
+
+    onStackPreheat() { apiStackPreheat(); },
+    onStackStart()   { apiStackStart(); },
+    onStackStop()    { apiStackStop(); },
+
+    onIpInput(e: any) {
+      this.setData({ carIp: e.detail.value });
+    },
+    onSaveIp() {
+      const ip = (this.data.carIp || '').trim();
+      if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+        wx.showToast({ title: 'IP 格式不对', icon: 'none' });
+        return;
+      }
+      setCarIp(ip);
+      updateStore({ carIp: ip });
+      wsConnect();  // reconnect with new IP
+      wx.showToast({ title: '已保存并重连', icon: 'none' });
     },
 
     onOpenWaypoints() {

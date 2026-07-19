@@ -121,6 +121,13 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
         llmLoading: false,
       });
       break;
+
+    case 'stack_status':
+      updateStore({
+        stackState: data.state,
+        stackMessage: data.message || '',
+      });
+      break;
   }
 }
 

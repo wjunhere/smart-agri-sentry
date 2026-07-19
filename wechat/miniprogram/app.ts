@@ -1,8 +1,12 @@
 // app.ts
+import { wsConnect } from './services/ws';
+import { updateStore } from './services/store';
+import { getCarIp } from './services/config';
+
 App<IAppOption>({
   globalData: {},
   onLaunch() {
-    // Global state initialized in services/store.ts
-    // WebSocket connection established per-page in onShow
+    updateStore({ carIp: getCarIp() });
+    wsConnect();
   },
 })
