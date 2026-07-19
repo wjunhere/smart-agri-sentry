@@ -1,6 +1,6 @@
 # 已知问题、硬件限制与规避方案
 
-> 更新日期：2026-07-17
+> 更新日期：2026-07-19
 
 ---
 
@@ -31,6 +31,8 @@
 | **`/cmd_vel` 多发布者冲突** | Nav2、mission_control、keyboard_control 同时发 `/cmd_vel` | ✅ 已修复：keyboard_control 仅 MANUAL 模式发布；mission_control RESUME 不发 cruise_speed（2026-07-08） |
 | **EKF 频率过高** | RDK X5 跑不动 30Hz EKF | ✅ 已修复：降至 10Hz，偶发 1-2 次 / 30s（2026-07-08） |
 | **data_logger YAML 格式** | ROS2 参数不支持顶层列表 | ✅ 已修复：加 `ros__parameters` 包装层（2026-07-08） |
+| **bridge 订阅话题名错误** | 订阅 `/sentry/sensor/*`，uart_bridge 实际发 `/sensor/*`，小程序环境数据全断 | ✅ 已修复：改为 `/sensor/*`（2026-07-19, PR #3） |
+| **小程序 WS 通道未接线** | `wsConnect()` 定义但无调用点，实时推送全断、只剩 REST 轮询 | ✅ 已修复：`app.ts onLaunch` 接线 + 断线重连（2026-07-19, PR #3） |
 
 ---
 
