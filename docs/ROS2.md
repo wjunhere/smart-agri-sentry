@@ -102,7 +102,7 @@
 | 话题名 | 类型 | 发布者 | 订阅者 | 频率 | 说明 |
 |---|---|---|---|---|---|
 | `/cmd_vel` | `geometry_msgs/Twist` | Nav2 / `mission_control` / `web_remote` / `keyboard_control` | `uart_bridge_node` | 10–20 Hz | 统一底盘速度指令；uart_bridge_node 按轮距 0.23 m 转为左右轮 mm/s 下发 |
-| `/sentry/servo_cmd` | `ServoCmd` | `servo_keyboard_node` / `mission_control`(未来) | `servo_driver_node` / `uart_bridge_node`（可选） | 事件 | 云台角度指令 |
+| `/sentry/servo_cmd` | `ServoCmd` | `servo_keyboard_node` / `mission_control`（换行自动翻转） | `servo_driver_node` / `uart_bridge_node`（可选） | 事件 | 云台角度指令 |
 | `/mission/status` | `MissionStatus` | `mission_control` | `data_logger` | 10 Hz | 巡检状态机状态 |
 | `/wheel/odom` | `nav_msgs/Odometry` | `wheel_odom_node` | EKF, Nav2 | 20 Hz | 编码器里程计 |
 | `/odom` | `nav_msgs/Odometry` | `ekf_filter` | Nav2, TF | 30 Hz | EKF 融合后的里程计 |

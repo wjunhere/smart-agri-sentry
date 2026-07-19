@@ -110,7 +110,7 @@ self.reference_x = self.odom_x; self.reference_y = self.odom_y
 self.has_scan_reference = True
 ```
 
-`_mission_start_pose` 在**每次** `_send_next_waypoint` 发送 idx=0 时记录 `(self.odom_x, self.odom_y)`（任务重跑时 odom 已被 `_prepare_autonomous_start` 重置，重记录恰是正确的起点）；`__init__` 中初始化为 `(0.0, 0.0)`（与 odom 原点一致，即使记录前被调用也安全）。
+`_mission_start_pose` 恒为 odom 原点 `(0.0, 0.0)`：`_prepare_autonomous_start` 在每次 AUTO 启动时重置 EKF 位姿，任务起点在 odom 帧下必为原点。**实现教训（v7 修正）：不要采样实时 odom 作为起点**——EKF 重置是异步传播的，目标发送时刻采到的可能是重置前的陈旧位姿（实车日志实测到 (1.58, 0)），会导致首段被误判为短航段而跳过翻转。
 
 要点：
 
