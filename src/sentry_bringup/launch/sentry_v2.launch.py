@@ -48,6 +48,10 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_advisory', default_value='true'),
         DeclareLaunchArgument('enable_web', default_value='true'),
         DeclareLaunchArgument('enable_servo', default_value='false'),
+        DeclareLaunchArgument(
+            'enable_servo_auto_flip',
+            default_value='false',
+            description='Flip servo on serpentine row switch'),
 
                 # Unified TF tree (URDF -> robot_state_publisher)
         Node(
@@ -361,6 +365,16 @@ def generate_launch_description():
                 'resume_delay_sec': 2.0,
                 'min_resume_distance': 0.5,
                 'max_scan_shots': 3,
+                'enable_servo_auto_flip': ParameterValue(
+                    LaunchConfiguration('enable_servo_auto_flip'),
+                    value_type=bool),
+                'servo_yaw_right': 0,
+                'servo_yaw_left': 180,
+                'servo_pitch_hold': 0,
+                'flip_heading_threshold': 2.09,
+                'min_row_segment_length': 0.0,
+                'servo_flip_cooldown_sec': 8.0,
+                'servo_flip_cooldown_distance': 0.8,
             }],
             output='screen',
         ),
