@@ -101,7 +101,8 @@ The current demo baseline uses mapless Nav2 with odom-frame waypoints, RPP path 
 
 Progressive flow:
 
-1. `web_remote_node` serves the operator panel at `http://<rdk-ip>:5000/`.
+0. At boot, systemd `sentry-bridge.service` (installed once via `scripts/rdk/install_autostart.sh`) starts the gateway layer — `miniprogram_bridge_node` (:8765), `web_remote_node` (:5000), `weather_node`, `llm_advisor_node`. No SSH is needed after the one-time install; heavy work nodes stay off until requested.
+1. `web_remote_node` serves the operator panel at `http://<rdk-ip>:5000/`; the WeChat mini-program talks to `miniprogram_bridge_node` at `http://<rdk-ip>:8765/` (REST + WS).
 2. The operator clicks Preheat; the backend runs `scripts/rdk/start_robot_stack.sh` to clean leftovers and start the formal launch.
 3. The operator clicks Start Cruise; `/stack/start` switches `/set_auto_mode=true`.
 4. `mission_control_node` sends the three cruise waypoints to Nav2.

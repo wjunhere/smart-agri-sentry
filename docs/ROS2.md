@@ -133,6 +133,17 @@
 | `/api/messages/read` | POST | 清除未读角标 |
 | `/api/messages/clear` | POST | 一键清空全部批次与快照 |
 
+`miniprogram_bridge_node`（FastAPI，端口 8765，微信小程序网关）同样暴露整栈编排端点，语义与上表一致（复用同一 `start_robot_stack.sh`/`stop_robot_stack.sh`，以 `SENTRY_PRESERVE_WEB=1` 保留控制面）：
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/stack/status` | GET | 状态机状态（`idle/preheating/starting/cruising/stopping/error`）+ 进程级存活检测 |
+| `/stack/preheat` | POST | 后台运行 `start_robot_stack.sh`，不切 AUTO；状态经 WS `stack_status` 推送 |
+| `/stack/start` | POST | 幂等启动主栈并切 AUTO 巡航；状态经 WS 推送 |
+| `/stack/stop` | POST | 后台运行 `stop_robot_stack.sh` |
+
+开机自启：`scripts/rdk/install_autostart.sh` 安装 `sentry-bridge.service`（systemd），开机拉起 `miniprogram_bridge.launch.py`（bridge + web_remote + weather_node + llm_advisor_node）——仅常驻网关层，相机/Nav2 等工作节点由前端 `/stack/*` 按钮按需启停。
+
 Field topics to watch during cruise/avoidance:
 
 - `/mission/status`
