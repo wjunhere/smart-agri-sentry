@@ -1,12 +1,13 @@
 // services/api.ts
 // HTTP request wrapper for low-frequency data + control commands
 
-const BASE_URL = 'http://10.101.47.106:8765';
+import { getBaseUrl } from './config';
 
-async function request<T>(method: 'GET' | 'POST', path: string, body?: any): Promise<T> {
+async function request<T>(method: 'GET' | 'POST', path: string, body?: any, timeoutMs = 3000): Promise<T> {
   return new Promise((resolve, reject) => {
     wx.request({
-      url: BASE_URL + path,
+      url: getBaseUrl() + path,
+      timeout: timeoutMs,
       method,
       header: { 'Content-Type': 'application/json' },
       data: body,
@@ -53,13 +54,30 @@ export function apiGetForecast() {
 }
 
 export function getCameraUrl(): string {
-  return BASE_URL + '/api/camera';
+  return getBaseUrl() + '/api/camera';
 }
 
 export function getCameraSnapshotUrl(): string {
-  return BASE_URL + '/api/camera/snapshot';
+  return getBaseUrl() + '/api/camera/snapshot';
 }
 
 export function apiLLMAnalyze() {
-  return request<any>('POST', '/api/llm/analyze');
+  // LLM 分析是长请求（bridge 侧最多等 65s），不能用全局 3s 超时
+  return request<any>('POST', '/api/llm/analyze', undefined, 70000);
+}
+
+export function apiStackPreheat() {
+  return request<{status: string; state: string}>('POST', '/stack/preheat');
+}
+
+export function apiStackStart() {
+  return request<{status: string; state: string}>('POST', '/stack/start');
+}
+
+export function apiStackStop() {
+  return request<{status: string; state: string}>('POST', '/stack/stop');
+}
+
+export function apiStackStatus() {
+  return request<{state: string; stack_alive: boolean; last_output: string}>('GET', '/stack/status');
 }
