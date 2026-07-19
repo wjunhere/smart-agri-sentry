@@ -495,9 +495,17 @@ class MissionControlNode(Node):
             x0 = wp[idx - 2]['x']
             y0 = wp[idx - 2]['y']
 
+        self.get_logger().info(
+            f'servo flip check: idx={idx} seg_start=({x0:.2f},{y0:.2f}) '
+            f'min_seg={self.min_row_segment_length:.2f}')
+
         dx0 = wp[idx - 1]['x'] - x0
         dy0 = wp[idx - 1]['y'] - y0
-        if math.hypot(dx0, dy0) < self.min_row_segment_length:
+        seg_done = math.hypot(dx0, dy0)
+        if seg_done < self.min_row_segment_length:
+            self.get_logger().info(
+                f'servo flip skip: completed segment {seg_done:.2f}m < '
+                f'min_row_segment_length {self.min_row_segment_length:.2f}m')
             return
 
         j = idx
@@ -506,6 +514,8 @@ class MissionControlNode(Node):
                 wp[j]['y'] - wp[j - 1]['y']) < self.min_row_segment_length:
             j += 1
         if j >= len(wp):
+            self.get_logger().info(
+                'servo flip skip: no following long segment')
             return
 
         h_done = math.atan2(dy0, dx0)
@@ -513,6 +523,10 @@ class MissionControlNode(Node):
                             wp[j]['x'] - wp[j - 1]['x'])
         delta = (h_next - h_done + math.pi) % (2.0 * math.pi) - math.pi
         if abs(delta) < self.flip_heading_threshold:
+            self.get_logger().info(
+                f'servo flip skip: heading delta '
+                f'{math.degrees(delta):.1f} deg < threshold '
+                f'{math.degrees(self.flip_heading_threshold):.1f} deg')
             return
 
         self._servo_side = 'left' if self._servo_side == 'right' else 'right'
