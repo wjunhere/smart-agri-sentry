@@ -24,7 +24,8 @@ from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from robot_localization.srv import SetPose
 from sensor_msgs.msg import Imu, LaserScan
 from sentry_interfaces.msg import (
-    PlantDetection, FusionResult, MissionStatus, Diagnosis, ObstacleInfo)
+    PlantDetection, FusionResult, MissionStatus, Diagnosis, ObstacleInfo,
+    ServoCmd)
 from sentry_interfaces.srv import PipelineTrigger, SetCropType
 from sentry_mission.autonomous_cruise import should_send_patrol_goal
 from std_msgs.msg import Bool
@@ -118,6 +119,15 @@ class MissionControlNode(Node):
         self.declare_parameter('lidar_base_y', 0.0)
         self.declare_parameter('lidar_base_yaw', -1.57079)
 
+        self.declare_parameter('enable_servo_auto_flip', False)
+        self.declare_parameter('servo_yaw_right', 0)
+        self.declare_parameter('servo_yaw_left', 180)
+        self.declare_parameter('servo_pitch_hold', 0)
+        self.declare_parameter('flip_heading_threshold', 2.09)
+        self.declare_parameter('min_row_segment_length', 0.0)
+        self.declare_parameter('servo_flip_cooldown_sec', 8.0)
+        self.declare_parameter('servo_flip_cooldown_distance', 0.8)
+
         self.cruise_speed = self.get_parameter('cruise_speed').value
         self.det_conf_th = self.get_parameter(
             'detection_confidence_threshold').value
@@ -185,6 +195,19 @@ class MissionControlNode(Node):
         self.lidar_base_x = self.get_parameter('lidar_base_x').value
         self.lidar_base_y = self.get_parameter('lidar_base_y').value
         self.lidar_base_yaw = self.get_parameter('lidar_base_yaw').value
+        self.enable_servo_auto_flip = self.get_parameter(
+            'enable_servo_auto_flip').value
+        self.servo_yaw_right = self.get_parameter('servo_yaw_right').value
+        self.servo_yaw_left = self.get_parameter('servo_yaw_left').value
+        self.servo_pitch_hold = self.get_parameter('servo_pitch_hold').value
+        self.flip_heading_threshold = self.get_parameter(
+            'flip_heading_threshold').value
+        self._min_seg_len_manual = self.get_parameter(
+            'min_row_segment_length').value
+        self.servo_flip_cooldown_sec = self.get_parameter(
+            'servo_flip_cooldown_sec').value
+        self.servo_flip_cooldown_distance = self.get_parameter(
+            'servo_flip_cooldown_distance').value
 
         # -- Waypoints --
         wp_file = self.get_parameter('waypoints_file').value
@@ -198,6 +221,8 @@ class MissionControlNode(Node):
                     f'Loaded {len(self.waypoints)} waypoints from {wp_file}')
             except Exception as e:
                 self.get_logger().error(f'Failed to load waypoints: {e}')
+
+        self.min_row_segment_length = self._derive_min_segment_length()
 
         self.current_wp_idx = 0
         self.saved_wp_idx = 0
@@ -242,6 +267,8 @@ class MissionControlNode(Node):
         self.pub_status = self.create_publisher(
             MissionStatus, '/mission/status', 10)
         self.pub_diag = self.create_publisher(Diagnosis, '/vision/diagnosis', 10)
+        self.pub_servo_cmd = self.create_publisher(
+            ServoCmd, '/sentry/servo_cmd', 10)
 
         # -- Service --
         self.srv = self.create_service(
@@ -303,6 +330,10 @@ class MissionControlNode(Node):
         self.reference_x = 0.0
         self.reference_y = 0.0
         self.has_scan_reference = False
+        self._servo_side = 'right'
+        self._servo_flip_time = None
+        self._servo_flip_position = None
+        self._mission_start_pose = (0.0, 0.0)
         self.odom_x = 0.0
         self.odom_y = 0.0
 
@@ -334,6 +365,9 @@ class MissionControlNode(Node):
             self.sending_goal = False
             self.last_goal_sent_time = 0.0
             return
+
+        if self.current_wp_idx == 0:
+            self._mission_start_pose = (self.odom_x, self.odom_y)
 
         wp = self.waypoints[self.current_wp_idx]
         yaw = wp.get('yaw', 0.0)
@@ -418,7 +452,84 @@ class MissionControlNode(Node):
         self.get_logger().info(f'Loaded {len(clean)} fixed-point stops')
         return clean
 
+    def _derive_min_segment_length(self):
+        """Effective min row segment length: manual override or auto-derived.
 
+        Auto: (shortest + longest waypoint segment) / 2, which falls inside
+        the open interval (row_spacing, row_length) for serpentine paths.
+        Returns None when fewer than 2 waypoints (auto-flip disabled).
+        """
+        if self._min_seg_len_manual > 0.0:
+            return self._min_seg_len_manual
+        segments = []
+        for i in range(1, len(self.waypoints)):
+            dx = self.waypoints[i]['x'] - self.waypoints[i - 1]['x']
+            dy = self.waypoints[i]['y'] - self.waypoints[i - 1]['y']
+            segments.append(math.hypot(dx, dy))
+        if not segments:
+            self.get_logger().warn(
+                'servo auto-flip: fewer than 2 waypoints, disabled')
+            return None
+        return (min(segments) + max(segments)) / 2.0
+
+    def _maybe_flip_servo(self, now: float) -> None:
+        """Flip the servo when a row-switch U-turn is detected.
+
+        Layout (b) only: row-end and corner must be separate waypoints.
+        The completed segment must be a long patrol segment; skip short
+        corner segments ahead and compare headings of the two long
+        segments. Anti-parallel (>= flip_heading_threshold) means the
+        next long segment is the new row traversed in reverse, so the
+        plant row is now on the other side: toggle the servo.
+        """
+        if not self.enable_servo_auto_flip:
+            return
+        if self.min_row_segment_length is None:
+            return
+        idx = self.current_wp_idx
+        wp = self.waypoints
+
+        if idx == 1:
+            x0, y0 = self._mission_start_pose
+        else:
+            x0 = wp[idx - 2]['x']
+            y0 = wp[idx - 2]['y']
+
+        dx0 = wp[idx - 1]['x'] - x0
+        dy0 = wp[idx - 1]['y'] - y0
+        if math.hypot(dx0, dy0) < self.min_row_segment_length:
+            return
+
+        j = idx
+        while j < len(wp) and math.hypot(
+                wp[j]['x'] - wp[j - 1]['x'],
+                wp[j]['y'] - wp[j - 1]['y']) < self.min_row_segment_length:
+            j += 1
+        if j >= len(wp):
+            return
+
+        h_done = math.atan2(dy0, dx0)
+        h_next = math.atan2(wp[j]['y'] - wp[j - 1]['y'],
+                            wp[j]['x'] - wp[j - 1]['x'])
+        delta = (h_next - h_done + math.pi) % (2.0 * math.pi) - math.pi
+        if abs(delta) < self.flip_heading_threshold:
+            return
+
+        self._servo_side = 'left' if self._servo_side == 'right' else 'right'
+        yaw = (self.servo_yaw_left if self._servo_side == 'left'
+               else self.servo_yaw_right)
+        msg = ServoCmd()
+        msg.yaw = int(yaw)
+        msg.pitch = int(self.servo_pitch_hold)
+        self.pub_servo_cmd.publish(msg)
+        self.get_logger().info(
+            f'Row switch detected (delta={math.degrees(delta):.1f} deg), '
+            f'servo flipped to {self._servo_side} (yaw={yaw})')
+        self._servo_flip_time = now
+        self._servo_flip_position = (self.odom_x, self.odom_y)
+        self.reference_x = self.odom_x
+        self.reference_y = self.odom_y
+        self.has_scan_reference = True
 
     # ---- Callbacks ----
 
@@ -512,6 +623,14 @@ class MissionControlNode(Node):
 
     def _should_trigger_scan(self) -> bool:
         """Check if we're far enough from the last scan position."""
+        if self._servo_flip_time is not None:
+            now = self.get_clock().now().nanoseconds / 1e9
+            if now - self._servo_flip_time < self.servo_flip_cooldown_sec:
+                dx = self.odom_x - self._servo_flip_position[0]
+                dy = self.odom_y - self._servo_flip_position[1]
+                if math.hypot(dx, dy) < self.servo_flip_cooldown_distance:
+                    return False
+            self._servo_flip_time = None
         if not self.has_scan_reference:
             return True
         if self._distance_from_reference() >= self.min_resume_distance:
@@ -817,6 +936,7 @@ class MissionControlNode(Node):
                     self.current_wp_idx += 1
                     self.get_logger().info(
                         f'Reached waypoint {self.current_wp_idx - 1}')
+                    self._maybe_flip_servo(now)
                     if self.current_wp_idx < len(self.waypoints):
                         self._send_next_waypoint()
                     else:
