@@ -176,16 +176,9 @@ def test_no_flip_when_segment_length_underivable(node):
     mock_pub.assert_not_called()
 
 
-def test_mission_start_pose_recorded_on_first_waypoint(node):
-    """_send_next_waypoint records odom as mission start pose for idx=0."""
-    node.waypoints = _serpentine()
-    node._nav2_ready = True
-    node.state = 'PATROL'
-    node.current_wp_idx = 0
-    node.odom_x = 0.3
-    node.odom_y = -0.1
-    node._send_next_waypoint()
-    assert node._mission_start_pose == (0.3, -0.1)
+def test_mission_start_pose_defaults_to_odom_origin(node):
+    """Mission start pose is the odom origin (EKF reset on AUTO start)."""
+    assert node._mission_start_pose == (0.0, 0.0)
 
 
 def test_mission_rerun_still_flips(node):

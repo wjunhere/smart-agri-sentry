@@ -366,9 +366,6 @@ class MissionControlNode(Node):
             self.last_goal_sent_time = 0.0
             return
 
-        if self.current_wp_idx == 0:
-            self._mission_start_pose = (self.odom_x, self.odom_y)
-
         wp = self.waypoints[self.current_wp_idx]
         yaw = wp.get('yaw', 0.0)
 
@@ -490,6 +487,11 @@ class MissionControlNode(Node):
         wp = self.waypoints
 
         if idx == 1:
+            # Fresh missions always start at the odom origin:
+            # _prepare_autonomous_start resets the EKF pose before the
+            # first goal is sent, so the completed first segment is
+            # (0,0) -> wp0. Sampling live odom here is unreliable
+            # (the reset propagates asynchronously).
             x0, y0 = self._mission_start_pose
         else:
             x0 = wp[idx - 2]['x']
