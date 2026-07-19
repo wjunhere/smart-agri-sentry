@@ -42,7 +42,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_plant', default_value='false'),
         DeclareLaunchArgument('slam', default_value='False'),
         DeclareLaunchArgument('enable_vision', default_value='true'),
-        DeclareLaunchArgument('camera_backend', default_value='hikrobot'),
+        DeclareLaunchArgument('camera_backend', default_value='mipi'),
         DeclareLaunchArgument('cruise_speed', default_value='0.18'),
         DeclareLaunchArgument('enable_live_diagnosis', default_value='false'),
         DeclareLaunchArgument('enable_advisory', default_value='true'),
@@ -77,6 +77,7 @@ def generate_launch_description():
             executable='mipi_camera_node',
             name='mipi_camera_node',
             parameters=[{
+                'device_id': 2,
                 'width': 640,
                 'height': 480,
                 'fps': 5.0,

@@ -184,12 +184,12 @@ def test_stack_script_env_enables_vision_and_advisory_for_cruise():
     assert env['ENABLE_ADVISORY'] == 'true'
 
 
-def test_stack_script_env_defaults_to_hikrobot_camera():
+def test_stack_script_env_defaults_to_mipi_camera():
     from sentry_mission.web_remote_node import _stack_script_env
 
     env = _stack_script_env({})
 
-    assert env['CAMERA_BACKEND'] == 'hikrobot'
+    assert env['CAMERA_BACKEND'] == 'mipi'
 
 
 def test_mission_status_complete_when_all_waypoints_reached():

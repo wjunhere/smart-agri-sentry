@@ -26,6 +26,7 @@ class MipiCameraNode(Node):
         super().__init__('mipi_camera_node')
 
         # Parameters
+        self.declare_parameter('device_id', 0)
         self.declare_parameter('width', 1920)
         self.declare_parameter('height', 1080)
         self.declare_parameter('fps', 30.0)
@@ -43,6 +44,7 @@ class MipiCameraNode(Node):
         self.declare_parameter('saturation_scale', 1.0)
         self.declare_parameter('sharpen_amount', 0.0)
 
+        self.device_id = int(self.get_parameter('device_id').value)
         self.width = self.get_parameter('width').value
         self.height = self.get_parameter('height').value
         self.fps = self.get_parameter('fps').value
@@ -99,12 +101,13 @@ class MipiCameraNode(Node):
         out_h = [512, self.height]
 
         self.get_logger().info(
-            f'Calling open_cam(0, -1, -1, out_w={out_w}, out_h={out_h}, '
-            f'sensor_h={self.sensor_height}, sensor_w={self.sensor_width})'
+            f'Calling open_cam({self.device_id}, -1, -1, out_w={out_w}, '
+            f'out_h={out_h}, sensor_h={self.sensor_height}, '
+            f'sensor_w={self.sensor_width})'
         )
 
         ret = self.cam.open_cam(
-            0,                      # device_id
+            self.device_id,         # device_id (mipi host: CAM1=0, CAM2=2)
             -1,                     # fps (auto)
             -1,                     # format (auto, usually NV12)
             out_w,                  # output width list

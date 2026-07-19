@@ -52,7 +52,7 @@ def _stack_script_env(base_env=None):
     env['ENABLE_WEB'] = 'false'
     env['ENABLE_VISION'] = 'true'
     env['ENABLE_ADVISORY'] = 'true'
-    env['CAMERA_BACKEND'] = 'hikrobot'
+    env['CAMERA_BACKEND'] = 'mipi'
     return env
 
 

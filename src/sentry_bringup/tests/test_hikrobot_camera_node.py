@@ -58,15 +58,15 @@ def test_default_topic_matches_vision_pipeline():
     assert DEFAULT_IMAGE_TOPIC == '/sentry/camera/image_raw'
 
 
-def test_hikrobot_is_the_default_launch_backend():
+def test_mipi_is_the_default_launch_backend():
     repo_root = Path(__file__).parents[2]
     launch_source = (repo_root / 'sentry_bringup' / 'launch' /
                      'sentry_v2.launch.py').read_text(encoding='utf-8')
     start_script = (repo_root.parents[0] / 'scripts' / 'rdk' /
                     'start_robot_stack.sh').read_text(encoding='utf-8')
 
-    assert "DeclareLaunchArgument('camera_backend', default_value='hikrobot')" in launch_source
-    assert 'CAMERA_BACKEND="${CAMERA_BACKEND:-hikrobot}"' in start_script
+    assert "DeclareLaunchArgument('camera_backend', default_value='mipi')" in launch_source
+    assert 'CAMERA_BACKEND="${CAMERA_BACKEND:-mipi}"' in start_script
 
 
 def test_hikrobot_launch_uses_adaptive_exposure():
