@@ -1,7 +1,24 @@
 <view class="page">
+  <view class="conn-badge {{connected ? 'conn-ok' : 'conn-bad'}}">
+    {{connected ? '已连接' : '未连接'}}
+  </view>
+
   <view class="card row-between">
     <text class="label">当前模式</text>
     <status-badge text="{{mode}}" type="{{mode === 'AUTO' ? 'green' : 'blue'}}" />
+  </view>
+
+  <view class="card">
+    <text class="card-header">整栈巡航</text>
+    <view style="font-size:22rpx;margin-bottom:12rpx">
+      状态 <text class="green">{{stackState}}</text>
+      <text class="dim" wx:if="{{stackMessage}}"> · {{stackMessage}}</text>
+    </view>
+    <view style="display:flex;gap:12rpx">
+      <button size="mini" bindtap="onStackPreheat">预热</button>
+      <button size="mini" type="primary" bindtap="onStackStart">启动巡航</button>
+      <button size="mini" type="warn" bindtap="onStackStop">停止巡航</button>
+    </view>
   </view>
 
   <view class="card" style="text-align:center">
@@ -50,6 +67,14 @@
     </view>
     <view class="card" style="flex:1;text-align:center" bindtap="onOpenWaypoints">
       <text style="font-weight:600;color:#F59E0B">📍 航点</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <text class="card-header">小车连接</text>
+    <view style="display:flex;gap:12rpx;align-items:center">
+      <input class="ip-input" value="{{carIp}}" bindinput="onIpInput" placeholder="小车 IP" />
+      <button size="mini" bindtap="onSaveIp">保存</button>
     </view>
   </view>
 </view>

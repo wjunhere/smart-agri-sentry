@@ -2,8 +2,8 @@
 // WebSocket connection manager — real-time data from miniprogram_bridge_node
 
 import { updateStore } from './store';
+import { getWsUrl } from './config';
 
-const WS_URL = 'ws://10.101.47.106:8765/ws';
 const RETRY_DELAYS = [3000, 15000, 30000];
 
 let ws: WechatMiniprogram.SocketTask | null = null;
@@ -17,7 +17,7 @@ export function wsConnect() {
   }
 
   ws = wx.connectSocket({
-    url: WS_URL,
+    url: getWsUrl(),
     header: { 'Content-Type': 'application/json' },
   });
 
@@ -119,6 +119,13 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
         llmNextCheck: data.next_check,
         llmTrigger: data.trigger,
         llmLoading: false,
+      });
+      break;
+
+    case 'stack_status':
+      updateStore({
+        stackState: data.state,
+        stackMessage: data.message || '',
       });
       break;
   }

@@ -55,6 +55,10 @@ const store = {
   missionTotalWps: 0,
   missionWaypointLabels: [] as string[],
 
+  stackState: 'idle',
+  stackMessage: '',
+  carIp: '',
+
   cropType: 'tomato',
 
   // LLM analysis

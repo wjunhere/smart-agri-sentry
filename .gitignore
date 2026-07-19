@@ -108,3 +108,5 @@ video/
 report/
 
 #the wechat mini-program
+# dependencies
+node_modules/

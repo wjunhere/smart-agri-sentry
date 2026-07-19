@@ -9,9 +9,12 @@ Serves WeChat mini-program with:
 
 import asyncio
 import json
+import os
+import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -20,8 +23,24 @@ from std_srvs.srv import SetBool
 from sentry_interfaces.srv import SetCropType
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
+
+
+def _stack_script_env():
+    """Environment for frontend-triggered stack scripts.
+
+    Mirrors web_remote_node: preserve the web control plane (web_remote +
+    rosbridge + this bridge) when the full stack starts, otherwise the
+    frontend's own button click would kill the server handling it.
+    """
+    env = dict(os.environ)
+    env['SENTRY_PRESERVE_WEB'] = '1'
+    env['ENABLE_WEB'] = 'false'
+    env['ENABLE_VISION'] = 'true'
+    env['ENABLE_ADVISORY'] = 'true'
+    env['CAMERA_BACKEND'] = 'mipi'
+    return env
 
 
 # ============ ROS2 Node ============
@@ -63,6 +82,22 @@ class MiniProgramBridgeNode(Node):
         self.ws_queues: list[asyncio.Queue] = []
         self._loop = None
 
+        # Stack orchestration (mirrors web_remote_node semantics)
+        self.declare_parameter(
+            'stack_start_script',
+            '/home/sunrise/dev_ws/scripts/rdk/start_robot_stack.sh')
+        self.declare_parameter(
+            'stack_stop_script',
+            '/home/sunrise/dev_ws/scripts/rdk/stop_robot_stack.sh')
+        self.declare_parameter('stack_script_timeout_sec', 180.0)
+        self.stack_start_script = self.get_parameter('stack_start_script').value
+        self.stack_stop_script = self.get_parameter('stack_stop_script').value
+        self.stack_script_timeout = float(
+            self.get_parameter('stack_script_timeout_sec').value)
+        self.stack_lock = threading.Lock()
+        self.stack_state = 'idle'  # idle|preheating|starting|cruising|stopping|error
+        self.last_stack_output = ''
+
         self.get_logger().info('miniprogram_bridge_node started')
 
     def _setup_subscriptions(self):
@@ -74,10 +109,10 @@ class MiniProgramBridgeNode(Node):
         from sensor_msgs.msg import CompressedImage
 
         self.create_subscription(
-            Environment, '/sentry/sensor/environment_mobile',
+            Environment, '/sensor/environment_mobile',
             self._on_environment, 10)
         self.create_subscription(
-            SoilNutrition, '/sentry/sensor/soil_nutrition',
+            SoilNutrition, '/sensor/soil_nutrition',
             self._on_soil, 10)
         self.create_subscription(
             ChassisStatus, '/sentry/chassis/status',
@@ -294,6 +329,89 @@ class MiniProgramBridgeNode(Node):
             }
         })
 
+    # --- Stack orchestration ---
+
+    def _run_stack_script(self, script_path: str):
+        path = Path(script_path)
+        if not path.exists():
+            return False, f'Script not found: {path}'
+        try:
+            result = subprocess.run(
+                ['bash', str(path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=self.stack_script_timeout,
+                env=_stack_script_env())
+        except subprocess.TimeoutExpired as exc:
+            return False, f'Script timed out: {path}\n{exc.stdout or ""}'
+        except Exception as exc:
+            return False, f'Script failed to start: {path}: {exc}'
+        output = result.stdout or ''
+        self.last_stack_output = output[-4000:]
+        if result.returncode != 0:
+            return False, output
+        return True, output
+
+    def _set_stack_state(self, state: str, message: str = ''):
+        self.stack_state = state
+        self._push_ws({
+            'type': 'stack_status',
+            'ts': self._now_ms(),
+            'data': {'state': state, 'message': message},
+        })
+
+    def _stack_alive(self) -> bool:
+        """Process-level fact: mode service only exists when main stack runs."""
+        return self.mode_srv.service_is_ready()
+
+    def stack_preheat(self):
+        def work():
+            with self.stack_lock:
+                self._set_stack_state('preheating', 'Running start_robot_stack.sh')
+                ok, output = self._run_stack_script(self.stack_start_script)
+                if ok and self._stack_alive():
+                    self._set_stack_state('idle', 'Preheated; ready to cruise')
+                else:
+                    self._set_stack_state('error', output[-500:])
+        threading.Thread(target=work, daemon=True).start()
+
+    def stack_start(self):
+        def work():
+            with self.stack_lock:
+                self._set_stack_state('starting', 'Running start_robot_stack.sh')
+                if not self._stack_alive():
+                    ok, output = self._run_stack_script(self.stack_start_script)
+                    if not ok:
+                        self._set_stack_state('error', output[-500:])
+                        return
+                if not self._stack_alive():
+                    self._set_stack_state(
+                        'error', '/set_auto_mode not available after stack start')
+                    return
+                self.set_mode(True)
+                self._set_stack_state(
+                    'cruising', 'Stack running, AUTO mode engaged')
+        threading.Thread(target=work, daemon=True).start()
+
+    def stack_stop(self):
+        def work():
+            with self.stack_lock:
+                self._set_stack_state('stopping', 'Running stop_robot_stack.sh')
+                ok, output = self._run_stack_script(self.stack_stop_script)
+                if ok:
+                    self._set_stack_state('idle', 'Stack stopped')
+                else:
+                    self._set_stack_state('error', output[-500:])
+        threading.Thread(target=work, daemon=True).start()
+
+    def get_stack_status(self) -> dict:
+        return {
+            'state': self.stack_state,
+            'stack_alive': self._stack_alive(),
+            'last_output': self.last_stack_output[-500:],
+        }
+
     def get_status(self) -> dict:
         return {
             'mode': self.mode,
@@ -382,7 +500,10 @@ def get_app() -> FastAPI:
         from sentry_interfaces.srv import LLMAnalyze
         srv = _node.create_client(LLMAnalyze, '/llm/analyze')
         if not srv.wait_for_service(timeout_sec=5.0):
-            return {'status': 'error', 'summary': 'LLM service not available'}
+            return JSONResponse(
+                status_code=503,
+                content={'status': 'error',
+                         'summary': 'LLM service not available (api_key 未配置或节点未启动)'})
         req = LLMAnalyze.Request()
         future = srv.call_async(req)
         event = threading.Event()
@@ -434,6 +555,35 @@ def get_app() -> FastAPI:
             media_type='image/jpeg',
             headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
         )
+
+    # --- Stack Orchestration Endpoints ---
+
+    @_app.get('/stack/status')
+    async def stack_status():
+        if _node is None:
+            return {'state': 'idle', 'stack_alive': False, 'last_output': ''}
+        return _node.get_stack_status()
+
+    @_app.post('/stack/preheat')
+    async def stack_preheat():
+        if _node is None:
+            return {'status': 'error', 'message': 'Bridge node not ready'}
+        _node.stack_preheat()
+        return {'status': 'accepted', 'state': _node.stack_state}
+
+    @_app.post('/stack/start')
+    async def stack_start():
+        if _node is None:
+            return {'status': 'error', 'message': 'Bridge node not ready'}
+        _node.stack_start()
+        return {'status': 'accepted', 'state': _node.stack_state}
+
+    @_app.post('/stack/stop')
+    async def stack_stop():
+        if _node is None:
+            return {'status': 'error', 'message': 'Bridge node not ready'}
+        _node.stack_stop()
+        return {'status': 'accepted', 'state': _node.stack_state}
 
     # --- WebSocket Endpoint ---
 
