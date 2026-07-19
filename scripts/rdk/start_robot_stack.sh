@@ -25,6 +25,8 @@ ENABLE_VISION="${ENABLE_VISION:-true}"
 ENABLE_ADVISORY="${ENABLE_ADVISORY:-true}"
 ENABLE_WEB="${ENABLE_WEB:-true}"
 CAMERA_BACKEND="${CAMERA_BACKEND:-mipi}"
+ENABLE_SERVO="${ENABLE_SERVO:-false}"
+ENABLE_SERVO_AUTO_FLIP="${ENABLE_SERVO_AUTO_FLIP:-false}"
 MISSION_PARAMS_FILE="${MISSION_PARAMS_FILE:-${WS_DIR}/src/sentry_mission/config/mission_params.yaml}"
 CRUISE_SPEED="${CRUISE_SPEED:-}"
 if [ -z "$CRUISE_SPEED" ] && [ -f "$MISSION_PARAMS_FILE" ]; then
@@ -270,6 +272,8 @@ main() {
     camera_backend:="${CAMERA_BACKEND}" \
     enable_advisory:="${ENABLE_ADVISORY}" \
     enable_web:="${ENABLE_WEB}" \
+    enable_servo:="${ENABLE_SERVO}" \
+    enable_servo_auto_flip:="${ENABLE_SERVO_AUTO_FLIP}" \
     >"${LAUNCH_LOG}" 2>&1 &
   echo "$!" >/tmp/sentry_v2.launch.pid
 
