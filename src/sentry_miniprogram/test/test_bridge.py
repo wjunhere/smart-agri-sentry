@@ -150,3 +150,47 @@ def test_sensor_topic_names():
     assert '/sensor/soil_nutrition' in subscribed
     assert '/sentry/sensor/environment_mobile' not in subscribed
     assert '/sentry/sensor/soil_nutrition' not in subscribed
+
+
+def test_stack_status_idle(client):
+    """GET /stack/status returns state machine state."""
+    resp = client.get('/stack/status')
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data['state'] in ('idle', 'preheating', 'starting', 'cruising', 'stopping', 'error')
+
+
+def test_stack_preheat_accepted(node, client):
+    """POST /stack/preheat runs the start script in background."""
+    node._run_stack_script = MagicMock(return_value=(True, 'ok'))
+    resp = client.post('/stack/preheat')
+    assert resp.status_code == 200
+    assert resp.json()['status'] == 'accepted'
+
+
+def test_stack_start_calls_script(node, client):
+    """POST /stack/start triggers start script."""
+    node._run_stack_script = MagicMock(return_value=(True, 'ok'))
+    node.mode_srv.service_is_ready = MagicMock(return_value=True)
+    node.mode_srv.call_async = MagicMock()
+    resp = client.post('/stack/start')
+    assert resp.status_code == 200
+    assert resp.json()['status'] == 'accepted'
+
+
+def test_stack_stop_accepted(node, client):
+    """POST /stack/stop runs the stop script."""
+    node._run_stack_script = MagicMock(return_value=(True, 'ok'))
+    resp = client.post('/stack/stop')
+    assert resp.status_code == 200
+    assert resp.json()['status'] == 'accepted'
+
+
+def test_llm_analyze_503_when_unavailable(node, client):
+    """POST /api/llm/analyze returns 503 when LLM service is absent (no key)."""
+    mock_srv = MagicMock()
+    mock_srv.wait_for_service = MagicMock(return_value=False)
+    node.create_client = MagicMock(return_value=mock_srv)
+    resp = client.post('/api/llm/analyze')
+    assert resp.status_code == 503
+    assert resp.json()['status'] == 'error'
