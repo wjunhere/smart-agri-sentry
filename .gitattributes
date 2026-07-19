@@ -1,0 +1,20 @@
+# Default: normalize all text files to LF in the repo and working tree.
+# Binary files are detected automatically by git.
+* text=auto eol=lf
+
+# Explicit binary types (never treat as text)
+*.bin binary
+*.onnx binary
+*.dtb binary
+*.dtbo binary
+*.rar binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.mp4 binary
+*.wav binary

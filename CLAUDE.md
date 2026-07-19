@@ -16,6 +16,16 @@
 
 * 本地已安装了wsl2，系统为ubuntu22.04，密码是wjun
 
+## Windows 提权 (gsudo)
+
+当需要管理员权限执行命令时（如创建软链接、修改系统配置、写机器级环境变量），使用 gsudo 提权：
+
+* gsudo 本体路径：`C:\Program Files\gsudo\2.6.1\gsudo.exe`（已加入用户级 PATH，新开的终端可直接用 `gsudo`；Git Bash 旧会话需用全路径）
+* Git Bash 中调用简单命令：`"/c/Program Files/gsudo/2.6.1/gsudo.exe" powershell -NoProfile -Command "<命令>"`
+* 复杂命令（多层引号/变量）不要内联，先写成临时 `.ps1` 脚本再执行，用完删除：`gsudo powershell -NoProfile -ExecutionPolicy Bypass -File <脚本.ps1>`（bash→gsudo→PowerShell 三层转义容易出错，此方式最稳）
+* PowerShell 脚本里调用系统程序时用全路径（如 `$env:SystemRoot\System32\whoami.exe`），避免命中 Git Bash 的 `/usr/bin` 同名 GNU 程序
+* 提权时用户桌面可能弹 UAC 确认框，需用户点"是"才能继续；未被批准时命令会失败，不要反复重试
+
 ## 板端进程管理（必须遵守）
 
 * **栈内节点只能通过 `scripts/rdk/start_robot_stack.sh` / `stop_robot_stack.sh`（或前端按钮）启停**，不要在 SSH 里用 `ros2 run` 单独拉起相机等栈内节点后不管——stop 脚本按进程名模式清理，手动拉起的进程会成为孤儿：占住 USB 相机设备（下次 launch 报 `0x80000203` 崩溃）并持续吃 CPU（Nav2 被饿到行为树超时，车速变慢）。
