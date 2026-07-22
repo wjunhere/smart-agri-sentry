@@ -1,4 +1,4 @@
-.page { padding: 16rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.page { padding: 16rpx; display: flex; flex-direction: column; gap: 16rpx; }
 
 .dg-card { border-left: 6rpx solid var(--amber); }
 .dg-name { font-size: 44rpx; font-weight: 700; margin: 4rpx 0; }
@@ -9,11 +9,6 @@
 .prob-fill { height: 8rpx; border-radius: 4rpx; }
 
 .adv-card { border-left: 6rpx solid var(--green); }
-
-.trend-placeholder {
-  height: 100rpx; background: var(--bg-input); border: 1px solid var(--border);
-  border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
-}
 
 .llm-card { border-left: 3px solid #A78BFA; }
 .llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12rpx; }
@@ -35,8 +30,13 @@
 
 .llm-suggestions { margin-bottom: 16rpx; }
 .llm-step {
-  font-size: 24rpx; color: var(--text-dim); line-height: 1.8;
-  display: block; padding-left: 8rpx;
+  display: flex; align-items: flex-start; gap: 12rpx;
+  font-size: 24rpx; color: var(--text-dim); line-height: 1.7; margin-top: 12rpx;
+}
+.step-idx {
+  flex-shrink: 0; width: 32rpx; height: 32rpx; border-radius: var(--radius);
+  background: var(--blue); color: #000; font-size: 20rpx; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
 }
 
 .llm-tags { display: flex; flex-wrap: wrap; gap: 8rpx; margin-bottom: 12rpx; }

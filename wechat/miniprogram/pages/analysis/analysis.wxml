@@ -16,6 +16,8 @@
         <view class="prob-fill" style="width:{{item.width}}%;background:{{item.color}}"></view>
       </view>
     </view>
+    <state-block wx:if="{{!probs.length}}" type="empty"
+                 text="暂无诊断数据" subtext="启动巡航并检测到植株后生成" />
   </view>
 
   <view class="card adv-card" wx:if="{{advisoryText}}">
@@ -25,13 +27,15 @@
       紧急度: <text class="amber">{{advisoryPriority}}</text>
     </view>
     <view wx:if="{{advisorySteps.length}}" style="margin-top:8rpx">
-      <text class="dim" wx:for="{{advisorySteps}}" wx:key="*this" style="font-size:20rpx;display:block">{{index+1}}. {{item}}</text>
+      <view class="llm-step" wx:for="{{advisorySteps}}" wx:key="*this">
+        <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
+      </view>
     </view>
   </view>
 
   <view class="card">
     <text class="card-header">📈 风险趋势 (3日)</text>
-    <view class="trend-placeholder mono muted">数据收集中...</view>
+    <state-block type="empty" text="数据收集中…" />
   </view>
 
   <alert-bar
@@ -61,7 +65,9 @@
       <text class="llm-summary">{{llmSummary}}</text>
       <view class="llm-suggestions" wx:if="{{llmSuggestions.length}}">
         <text class="dim" style="font-size:22rpx;font-weight:600;margin-bottom:8rpx">📋 建议</text>
-        <text class="llm-step" wx:for="{{llmSuggestions}}" wx:key="*this">{{index+1}}. {{item}}</text>
+        <view class="llm-step" wx:for="{{llmSuggestions}}" wx:key="*this">
+          <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
+        </view>
       </view>
       <view class="llm-tags" wx:if="{{llmFocusAreas.length}}">
         <text class="llm-tag" wx:for="{{llmFocusAreas}}" wx:key="*this">{{item}}</text>
