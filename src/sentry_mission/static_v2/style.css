@@ -945,3 +945,8 @@ a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
   justify-self: start;
   padding-left: 48px;
 }
+
+/* ---------- 控制栏 v2.5：作物组左移对齐巡航速度 ---------- */
+.crop-selector {
+  padding-right: 200px;
+}
