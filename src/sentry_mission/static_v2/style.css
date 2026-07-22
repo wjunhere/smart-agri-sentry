@@ -939,3 +939,9 @@ a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
   grid-column: 3;
   justify-self: end;
 }
+
+/* ---------- 控制栏 v2.4：急停略靠方向舵 ---------- */
+.estop-wrap {
+  justify-self: start;
+  padding-left: 48px;
+}
