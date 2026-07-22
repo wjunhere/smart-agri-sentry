@@ -140,9 +140,12 @@ Component({
 
           const pad = 4 * r, gap = 3 * r, n = hBars.length;
           const barW = (W - 2 * pad - (n - 1) * gap) / n;
+          // 上下留白，避免最高点曲线/圆点/光晕被画布顶边裁切
+          const topPad = 12, bottomPad = 4;
+          const usable = H - topPad - bottomPad;
           const pts = hBars.map((b: any, i: number) => ({
             x: pad + barW / 2 + i * (barW + gap),
-            y: H - (parseFloat(b.hPct) / 100) * H,
+            y: topPad + (1 - parseFloat(b.hPct) / 100) * usable,
           }));
 
           // 曲线下方面积：顶部浅蓝 → 底部透明
