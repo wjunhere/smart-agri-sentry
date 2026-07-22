@@ -12,9 +12,11 @@
       <text class="mono dim">置信度 {{plantConfidence}}%</text>
       <text class="mono dim">面积比 {{plantAreaRatio}}</text>
     </view>
-    <view wx:if="{{cameraLoading}}" class="camera-loading">
-      <view class="spinner"></view>
-      <text class="muted">视频加载中</text>
+    <view wx:if="{{!connected}}" class="camera-overlay">
+      <state-block type="offline" text="未连接到小车" subtext="请检查控制页的 IP 设置" />
+    </view>
+    <view wx:elif="{{cameraLoading}}" class="camera-overlay">
+      <state-block type="loading" text="视频连接中…" />
     </view>
   </view>
 

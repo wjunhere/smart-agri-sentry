@@ -1,8 +1,8 @@
-.page { padding: 16rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.page { padding: 16rpx; display: flex; flex-direction: column; gap: 16rpx; }
 
 .camera-wrap {
   position: relative; background: #000; border-radius: var(--radius);
-  overflow: hidden; height: 400rpx;
+  overflow: hidden; width: 100%; padding-top: 56.25%;  /* 16:9 */
 }
 .camera-frame {
   position: absolute; top: 0; left: 0;
@@ -14,20 +14,11 @@
   width: 100%; height: 100%;
   display: block;
 }
-.camera-loading {
+.camera-overlay {
   position: absolute; inset: 0; z-index: 10;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 12rpx;
+  display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,0.45);
 }
-.spinner {
-  width: 40rpx; height: 40rpx;
-  border: 4rpx solid rgba(255,255,255,0.2);
-  border-top-color: #38BDF8;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 .camera-hud {
   position: absolute; top: 12rpx; left: 16rpx; z-index: 10;
   display: flex; gap: 24rpx; font-size: 20rpx;
@@ -46,4 +37,5 @@
   font-size: 36rpx; font-weight: 700;
   font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
   color: var(--text); display: block; margin-top: 4rpx;
+  transition: color 300ms;
 }

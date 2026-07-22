@@ -10,6 +10,7 @@ Component({
     urlA: '',
     urlB: '',
     cameraLoading: true,
+    connected: false,
     plantDetected: false,
     plantConfidence: '0.0',
     plantAreaRatio: '0.00',
@@ -50,20 +51,23 @@ Component({
     _pendingB: false,
 
     sync(s: any) {
+      const ph = (v: number | null, fmt: (x: number) => string) =>
+        v == null ? (s.connected ? '·' : '--') : fmt(v);
       this.setData({
+        connected: s.connected,
         plantDetected: s.plantDetected,
         plantConfidence: s.plantConfidence ? (s.plantConfidence * 100).toFixed(1) : '0.0',
         plantAreaRatio: s.plantAreaRatio ? s.plantAreaRatio.toFixed(2) : '0.00',
-        airTemp: formatTemp(s.envAirTemp),
-        airHumidity: formatHumidity(s.envAirHumidity),
-        co2: formatCO2(s.envCO2),
-        soilTemp: formatTemp(s.envSoilTemp),
-        soilHumidity: formatHumidity(s.envSoilHumidity),
-        soilN: formatNPK(s.envSoilN),
-        soilP: formatNPK(s.envSoilP),
-        soilK: formatNPK(s.envSoilK),
-        leafWetness: formatHumidity(s.envLeafWetness),
-        dataSource: s.envDataSource || '--',
+        airTemp: ph(s.envAirTemp, formatTemp),
+        airHumidity: ph(s.envAirHumidity, formatHumidity),
+        co2: ph(s.envCO2, formatCO2),
+        soilTemp: ph(s.envSoilTemp, formatTemp),
+        soilHumidity: ph(s.envSoilHumidity, formatHumidity),
+        soilN: ph(s.envSoilN, formatNPK),
+        soilP: ph(s.envSoilP, formatNPK),
+        soilK: ph(s.envSoilK, formatNPK),
+        leafWetness: ph(s.envLeafWetness, formatHumidity),
+        dataSource: s.envDataSource || (s.connected ? '·' : '--'),
       });
     },
 
