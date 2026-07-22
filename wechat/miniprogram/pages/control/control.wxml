@@ -1,11 +1,11 @@
 <view class="page">
-  <view class="conn-badge {{connected ? 'conn-ok' : 'conn-bad'}}">
-    {{connected ? '已连接' : '未连接'}}
-  </view>
-
   <view class="card row-between">
     <text class="label">当前模式</text>
-    <status-badge text="{{mode}}" type="{{mode === 'AUTO' ? 'green' : 'blue'}}" />
+    <view class="status-right">
+      <text class="conn-dot {{connected ? 'conn-ok' : 'conn-bad'}}">●</text>
+      <text class="mono dim" style="font-size:20rpx">{{carIp}}</text>
+      <status-badge text="{{mode}}" type="{{mode === 'AUTO' ? 'green' : 'blue'}}" />
+    </view>
   </view>
 
   <view class="card">
@@ -15,9 +15,14 @@
       <text class="dim" wx:if="{{stackMessage}}"> · {{stackMessage}}</text>
     </view>
     <view style="display:flex;gap:12rpx">
-      <button size="mini" bindtap="onStackPreheat">预热</button>
-      <button size="mini" type="primary" bindtap="onStackStart">启动巡航</button>
-      <button size="mini" type="warn" bindtap="onStackStop">停止巡航</button>
+      <button size="mini" bindtap="onStackPreheat"
+              disabled="{{stackState !== 'idle' && stackState !== 'error'}}">预热</button>
+      <button size="mini" type="primary" bindtap="onStackStart"
+              loading="{{stackState === 'preheating' || stackState === 'starting'}}"
+              disabled="{{stackState !== 'idle' && stackState !== 'error'}}">启动巡航</button>
+      <button size="mini" type="warn" bindtap="onStackStop"
+              loading="{{stackState === 'stopping'}}"
+              disabled="{{stackState === 'stopping' || stackState === 'idle'}}">停止巡航</button>
     </view>
   </view>
 

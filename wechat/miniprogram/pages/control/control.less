@@ -1,14 +1,14 @@
-.page { padding: 16rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.page { padding: 16rpx; display: flex; flex-direction: column; gap: 16rpx; }
 .row-between { display: flex; justify-content: space-between; align-items: center; }
 .label { font-size: 24rpx; font-weight: 600; }
 
-.dpad { display: grid; grid-template-columns: repeat(3, 80rpx); grid-template-rows: repeat(3, 80rpx); gap: 6rpx; justify-content: center; }
+.dpad { display: grid; grid-template-columns: repeat(3, 96rpx); grid-template-rows: repeat(3, 96rpx); gap: 8rpx; justify-content: center; }
 .dpad-btn {
-  width: 80rpx; height: 80rpx; border-radius: 50%;
+  width: 96rpx; height: 96rpx; border-radius: 50%;
   border: 1px solid var(--border-hi); background: var(--bg-input); color: var(--text-dim);
   display: flex; align-items: center; justify-content: center; font-size: 32rpx;
 }
-.dpad-btn:active { background: var(--blue); color: #000; border-color: var(--blue); }
+.dpad-btn:active { background: var(--blue); color: #000; border-color: var(--blue); transform: scale(0.96); transition: transform 100ms; }
 .btn-up    { grid-column: 2; grid-row: 1; }
 .btn-left  { grid-column: 1; grid-row: 2; }
 .btn-center{ grid-column: 2; grid-row: 2; font-size: 16rpx; color: var(--text-muted); }
@@ -21,7 +21,7 @@
   color: #fff; font-size: 26rpx; font-weight: 700;
   display: flex; align-items: center; justify-content: center; margin: 0 auto;
 }
-.estop-btn:active { transform: scale(0.95); }
+.estop-btn:active { transform: scale(0.95); transition: transform 100ms; }
 
 .pills { display: flex; gap: 4rpx; justify-content: center; margin-top: 8rpx; }
 .pill {
@@ -37,12 +37,11 @@
   font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
 }
 
-.conn-badge {
-  align-self: flex-end; font-size: 20rpx; padding: 4rpx 16rpx;
-  border-radius: var(--radius-pill); border: 1px solid var(--border);
-}
-.conn-ok  { color: var(--green, #10B981); border-color: var(--green, #10B981); }
-.conn-bad { color: var(--red); border-color: var(--red); }
+.status-right { display: flex; align-items: center; gap: 12rpx; }
+.conn-dot { font-size: 20rpx; transition: opacity 200ms; }
+.conn-ok  { color: var(--green); }
+.conn-bad { color: var(--red); }
+.pill:active, .tag:active { transform: scale(0.96); transition: transform 100ms; }
 
 .ip-input {
   flex: 1; font-size: 24rpx; padding: 8rpx 16rpx;
