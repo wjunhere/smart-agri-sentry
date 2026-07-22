@@ -11,12 +11,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/config', [
-            'config/ekf.yaml',
-            'config/mission_params.yaml',
-            'config/nav2_no_map.yaml',
-            'config/waypoints.yaml',
-        ]),
+        ('share/' + package_name + '/config',
+            glob.glob('config/*.yaml')),
         ('share/' + package_name + '/static', [
             'static/index.html',
         ]),
