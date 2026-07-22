@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Safely stop the RDK robot stack and clear known ROS leftovers.
 #
-# Full-clean by default. When SENTRY_PRESERVE_WEB=1, keep web_remote_node and
-# rosbridge alive so the browser control plane can call this script safely.
+# Full-clean by default. When SENTRY_PRESERVE_WEB=1, keep web_remote_node,
+# rosbridge, and the miniprogram_bridge gateway alive so frontend control
+# planes can call this script safely.
 
 set -u
 
@@ -81,9 +82,12 @@ stop_patterns() {
   if [ "$PRESERVE_WEB" != "1" ]; then
     terminate_pattern "$signal" "web_remote_node"
     terminate_pattern "$signal" "rosbridge_websocket"
+    # miniprogram_bridge is the always-on gateway layer (systemd
+    # sentry-bridge.service) that triggers this script via /stack/*;
+    # killing it would sever the frontend control plane mid-request.
+    terminate_pattern "$signal" "miniprogram_bridge"
   fi
   terminate_pattern "$signal" "keyboard_control_node"
-  terminate_pattern "$signal" "miniprogram_bridge"
   terminate_pattern "$signal" "uart_bridge_node"
   terminate_pattern "$signal" "wheel_odom_node"
   terminate_pattern "$signal" "controller_server"
