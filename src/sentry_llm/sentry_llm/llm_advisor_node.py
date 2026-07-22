@@ -205,10 +205,10 @@ class LLMAdvisorNode(Node):
             })
         if self._weather:
             w = self._weather
-            d['weather_summary'] = w.days[0].desc if w.days else '无'
-            d['current_weather'] = f'{w.days[0].desc} {w.days[0].high}-{w.days[0].low}°C' if w.days else '无'
-            d['day7_summary'] = ', '.join(f'{day.desc}{day.high}°' for day in w.days[:7])
-            d['hour24_summary'] = ', '.join(f'{h.time}{h.temp}°{h.desc}' for h in w.hours[:24])
+            d['weather_summary'] = w.days[0].weather_desc if w.days else '无'
+            d['current_weather'] = f'{w.days[0].weather_desc} {w.days[0].temp_high:.0f}-{w.days[0].temp_low:.0f}°C' if w.days else '无'
+            d['day7_summary'] = ', '.join(f'{day.weather_desc}{day.temp_high:.0f}°' for day in w.days[:7])
+            d['hour24_summary'] = ', '.join(f'+{h.hour_offset}h {h.temp:.0f}°' for h in w.hours[:24])
             d['disaster_alerts'] = ', '.join(w.disaster_alerts) if w.disaster_alerts else '无'
         if self._forecast:
             d.update({
