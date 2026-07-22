@@ -924,3 +924,18 @@ a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
 .cruise-panel { grid-row: 2; }
 .crop-pills { padding: 6px; }
 .crop-pill { font-size: 13px; padding: 8px 22px; }
+
+/* ---------- 控制栏 v2.3：急停居中 ---------- */
+.control-panel {
+  grid-template-columns: auto 1fr auto;
+}
+.estop-wrap {
+  grid-column: 2;
+  justify-self: center;
+  border-right: none;
+  padding-right: 0;
+}
+.crop-selector {
+  grid-column: 3;
+  justify-self: end;
+}
