@@ -1,0 +1,6 @@
+<view class="sb sb-{{type}}">
+  <view wx:if="{{type === 'loading'}}" class="sb-spinner"></view>
+  <text wx:elif="{{type === 'empty'}}" class="sb-icon">◌</text>
+  <text class="sb-text">{{text}}</text>
+  <text wx:if="{{subtext}}" class="sb-sub">{{subtext}}</text>
+</view>
