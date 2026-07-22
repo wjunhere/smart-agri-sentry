@@ -41,12 +41,7 @@
           <view class="spark-col" wx:for="{{hBars}}" wx:key="index"
                 style="height:{{item.hPct}}%;flex:1;background:{{item.color}}"></view>
         </view>
-        <view class="line-layer">
-          <view wx:for="{{lineSegs}}" wx:key="index" wx:for-item="sg" class="line-seg"
-                style="left:{{sg.x}}px;bottom:{{sg.y}}px;width:{{sg.len}}px;transform:rotate({{sg.deg}}deg)"></view>
-          <view wx:for="{{lineDots}}" wx:key="index" wx:for-item="d" class="line-dot"
-                style="left:{{d.x}}px;bottom:{{d.y}}px"></view>
-        </view>
+        <canvas type="2d" id="tempLineCanvas" class="line-canvas" wx:if="{{lineReady}}"></canvas>
         <view class="spark-xlabels">
           <text class="dim" style="font-size:16rpx">+0h</text>
           <text class="dim" style="font-size:16rpx">+6h</text>

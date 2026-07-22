@@ -65,8 +65,7 @@ Component({
     dayBars: [] as any[],
     hBars: [] as any[],
     hMax: 40, hMin: 0,
-    lineSegs: [] as any[],
-    lineDots: [] as any[],
+    lineReady: false,
   },
   lifetimes: {
     attached() {
@@ -82,6 +81,8 @@ Component({
     },
   },
   methods: {
+    _lineTimer: null as any,
+
     sync(s: any) {
       const day0 = s.weatherDays && s.weatherDays[0];
       const days = s.weatherDays || [];
@@ -101,42 +102,100 @@ Component({
         hMax: chart.hMax,
         hMin: chart.hMin,
       });
-      this._renderTempLine(chart.hBars);
+      this._scheduleLineRender(chart.hBars);
     },
 
-    // 在柱状图上叠加温度折线：连接各柱顶点
-    _renderTempLine(hBars: any[]) {
-      if (!hBars || hBars.length < 2) {
-        this.setData({ lineSegs: [], lineDots: [] });
+    // 原生 canvas 定位在布局稳定后才可靠：先销毁，延迟重建再绘制
+    _scheduleLineRender(hBars: any[]) {
+      if (!hBars || hBars.length < 2) return;
+      if (this._lineTimer) clearTimeout(this._lineTimer as number);
+      if (this.data.lineReady) {
+        this._renderTempLine(hBars);
         return;
       }
+      this._lineTimer = setTimeout(() => {
+        this.setData({ lineReady: true });
+        wx.nextTick(() => this._renderTempLine(hBars));
+      }, 400);
+    },
+
+    // 在柱状图上叠加温度曲线：Canvas 平滑样条 + 渐变面积填充
+    _renderTempLine(hBars: any[]) {
+      if (!hBars || hBars.length < 2) return;
       const r = wx.getSystemInfoSync().windowWidth / 750;  // rpx → px
       this.createSelectorQuery()
-        .select('.spark-track')
-        .boundingClientRect((rect: any) => {
-          if (!rect) return;
+        .select('.spark-track').boundingClientRect()
+        .select('#tempLineCanvas').fields({ node: true, size: true })
+        .exec((res: any[]) => {
+          const rect = res[0];
+          const info = res[1];
+          if (!rect || !info || !info.node) return;
+          const canvas = info.node;
+          const ctx = canvas.getContext('2d');
+          const dpr = wx.getSystemInfoSync().pixelRatio;
           const W = rect.width, H = rect.height;
-          const pad = 4 * r, gap = 3 * r;
-          const n = hBars.length;
+          canvas.width = W * dpr;   // 设置 width 会重置上下文状态
+          canvas.height = H * dpr;
+          ctx.scale(dpr, dpr);
+
+          const pad = 4 * r, gap = 3 * r, n = hBars.length;
           const barW = (W - 2 * pad - (n - 1) * gap) / n;
           const pts = hBars.map((b: any, i: number) => ({
             x: pad + barW / 2 + i * (barW + gap),
-            y: (parseFloat(b.hPct) / 100) * H,
+            y: H - (parseFloat(b.hPct) / 100) * H,
           }));
-          const segs = [];
-          for (let i = 0; i < n - 1; i++) {
-            const dx = pts[i + 1].x - pts[i].x;
-            const dy = pts[i + 1].y - pts[i].y;
-            segs.push({
-              x: pts[i].x,
-              y: pts[i].y,
-              len: Math.sqrt(dx * dx + dy * dy),
-              deg: (-Math.atan2(dy, dx) * 180 / Math.PI).toFixed(2),
-            });
+
+          // 曲线下方面积：顶部浅蓝 → 底部透明
+          const grad = ctx.createLinearGradient(0, 0, 0, H);
+          grad.addColorStop(0, 'rgba(125,211,252,0.28)');
+          grad.addColorStop(1, 'rgba(125,211,252,0)');
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, H);
+          ctx.lineTo(pts[0].x, pts[0].y);
+          this._spline(ctx, pts);
+          ctx.lineTo(pts[n - 1].x, H);
+          ctx.closePath();
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // 平滑曲线 + 柔光
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          this._spline(ctx, pts);
+          ctx.strokeStyle = '#7DD3FC';
+          ctx.lineWidth = 2;
+          ctx.lineJoin = 'round';
+          ctx.lineCap = 'round';
+          ctx.shadowColor = 'rgba(125,211,252,0.5)';
+          ctx.shadowBlur = 6;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // 数据点
+          ctx.fillStyle = '#0B1120';
+          ctx.lineWidth = 1.5;
+          for (const p of pts) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
           }
-          this.setData({ lineSegs: segs, lineDots: pts });
-        })
-        .exec();
+        });
+    },
+
+    // Catmull-Rom 样条转三次贝塞尔（不含 moveTo，从 pts[1] 开始画）
+    _spline(ctx: any, pts: Array<{x: number, y: number}>) {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[Math.max(0, i - 1)];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = pts[Math.min(pts.length - 1, i + 2)];
+        const c1x = p1.x + (p2.x - p0.x) / 6;
+        const c1y = p1.y + (p2.y - p0.y) / 6;
+        const c2x = p2.x - (p3.x - p1.x) / 6;
+        const c2y = p2.y - (p3.y - p1.y) / 6;
+        ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
+      }
     },
 
     async fetchWeather() {
