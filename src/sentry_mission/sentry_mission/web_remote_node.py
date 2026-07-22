@@ -711,6 +711,21 @@ def _get_app(node: WebRemoteNode):
     from flask import Flask, request, jsonify, send_from_directory
     from ament_index_python.packages import get_package_share_directory
     _app = Flask(__name__)
+
+    # CORS：允许本地开发模式（页面由 localhost 静态服务托管）跨域调用。
+    # 仅限局域网使用，放开到 * 可接受；板端托管同源访问不受影响。
+    @_app.after_request
+    def _add_cors_headers(resp):
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return resp
+
+    @_app.route('/', defaults={'_path': ''}, methods=['OPTIONS'])
+    @_app.route('/<path:_path>', methods=['OPTIONS'])
+    def _cors_preflight(_path):
+        return ('', 204)
+
     SHARE_DIR = Path(get_package_share_directory('sentry_mission'))
     STATIC_DIR = SHARE_DIR / 'static'
     STATIC_V2_DIR = SHARE_DIR / 'static_v2'

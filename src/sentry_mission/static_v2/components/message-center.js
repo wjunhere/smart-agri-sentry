@@ -17,8 +17,8 @@ const MessageCenter = {
           {{ batch.name }} · {{ batch.records.length }} 株
         </div>
         <div v-for="rec in batch.records" :key="rec.seq" class="msg-record"
-             @click="preview = rec.snapshot_url">
-          <img class="msg-thumb" :src="rec.snapshot_url" loading="lazy" />
+             @click="preview = apiFullUrl(rec.snapshot_url)">
+          <img class="msg-thumb" :src="apiFullUrl(rec.snapshot_url)" loading="lazy" />
           <div class="msg-record-info">
             <div class="msg-disease">{{ rec.disease_class || '未知' }}</div>
             <div class="muted">

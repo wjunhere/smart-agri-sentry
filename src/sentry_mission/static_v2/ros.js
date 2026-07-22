@@ -1,6 +1,24 @@
 // ros.js — roslibjs connection wrapper and reactive state store
+//
+// Local dev mode（本地开发模式）:
+//   本地起静态服务打开页面，用 ?car=<小车IP> 指定小车，例如
+//     python -m http.server 8899  →  http://localhost:8899/?car=10.66.175.213
+//   IP 会存入 localStorage，之后不带参数也会记住。
+//   板端托管（http://<car>:5000/）时一切保持同源，行为不变。
+const CAR_HOST = (() => {
+  const q = new URLSearchParams(window.location.search).get('car');
+  if (q) { localStorage.setItem('sentry_car_ip', q); return q; }
+  return localStorage.getItem('sentry_car_ip') || window.location.hostname;
+})();
+const API_BASE = (CAR_HOST === window.location.hostname) ? '' : ('http://' + CAR_HOST + ':5000');
+// 把后端相对路径（如 snapshot_url）补全为完整 URL
+function apiFullUrl(path) {
+  if (!path || path.startsWith('http')) return path;
+  return API_BASE + path;
+}
+
 const ROS_CONFIG = {
-  url: 'ws://' + window.location.hostname + ':9090'
+  url: 'ws://' + CAR_HOST + ':9090'
 };
 
 // Reactive global state — on window so Vue templates can access it
@@ -277,7 +295,7 @@ function callSetAutoMode(auto) {
 
 function callStackStart() {
   store.stackStarting = true;
-  return fetch('/stack/start', { method: 'POST' })
+  return fetch(API_BASE + '/stack/start', { method: 'POST' })
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
@@ -292,7 +310,7 @@ function callStackStart() {
 
 function callStackStop() {
   store.stackStarting = false;
-  return fetch('/stack/stop', { method: 'POST' })
+  return fetch(API_BASE + '/stack/stop', { method: 'POST' })
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
@@ -306,7 +324,7 @@ function callStackStop() {
 
 function callStackPreheat() {
   store.stackPreheating = true;
-  return fetch('/stack/preheat', { method: 'POST' })
+  return fetch(API_BASE + '/stack/preheat', { method: 'POST' })
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
@@ -321,7 +339,7 @@ function callStackPreheat() {
 
 function callVisionStart() {
   store.visionStarting = true;
-  return fetch('/vision/start', { method: 'POST' })
+  return fetch(API_BASE + '/vision/start', { method: 'POST' })
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
@@ -335,7 +353,7 @@ function callVisionStart() {
 
 function callCaptureImage() {
   store.cameraCaptureBusy = true;
-  return fetch('/camera/capture', { method: 'POST' })
+  return fetch(API_BASE + '/camera/capture', { method: 'POST' })
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
@@ -349,7 +367,7 @@ function callCaptureImage() {
 
 function callSetCruiseSpeed(speed) {
   store.cruiseSpeedBusy = true;
-  return fetch('/cruise-speed', {
+  return fetch(API_BASE + '/cruise-speed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ speed: Number(speed) }),
@@ -363,7 +381,7 @@ function callSetCruiseSpeed(speed) {
   }).finally(() => { store.cruiseSpeedBusy = false; });
 }
 function callGetWaypoints() {
-  return fetch('/waypoints')
+  return fetch(API_BASE + '/waypoints')
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
@@ -379,7 +397,7 @@ function callGetWaypoints() {
 }
 
 function callSaveWaypoints(waypoints) {
-  return fetch('/waypoints', {
+  return fetch(API_BASE + '/waypoints', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ waypoints })
@@ -417,7 +435,7 @@ function normalizeFixedPointStop(stop) {
 }
 
 function fetchFixedPointStops() {
-  return fetch('/fixed-point-stops')
+  return fetch(API_BASE + '/fixed-point-stops')
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
@@ -444,7 +462,7 @@ store.saveFixedPointStops = async function() {
   store.fixedPointStopsBusy = true;
   try {
     const fixed_point_stops = store.fixedPointStops.map(normalizeFixedPointStop);
-    const resp = await fetch('/fixed-point-stops', {
+    const resp = await fetch(API_BASE + '/fixed-point-stops', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fixed_point_stops }),
@@ -756,7 +774,7 @@ store.setMockMode = async function(mode) {
 let cruiseSpeedLoaded = false;
 
 function refreshStackStatus() {
-  return fetch('/status')
+  return fetch(API_BASE + '/status')
     .then(resp => resp.json())
     .then(data => {
       store.stackReady = Boolean(data.stack_ready);
@@ -774,7 +792,7 @@ function refreshStackStatus() {
 }
 
 function fetchVisionInferenceMode() {
-  return fetch('/vision/inference-mode')
+  return fetch(API_BASE + '/vision/inference-mode')
     .then(resp => resp.json())
     .then(data => {
       if (data.mode) store.visionInferenceMode = data.mode;
@@ -789,7 +807,7 @@ store.toggleVisionInferenceMode = async function() {
     : 'triggered';
   store.visionInferenceModeBusy = true;
   try {
-    const resp = await fetch('/vision/inference-mode', {
+    const resp = await fetch(API_BASE + '/vision/inference-mode', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: next }),
@@ -815,7 +833,7 @@ setInterval(refreshStackStatus, 3000);
 
 // ── Mission message center ──
 function fetchMessages() {
-  return fetch('/api/messages')
+  return fetch(API_BASE + '/api/messages')
     .then(resp => resp.json())
     .then(data => {
       store.messageBatches = data.batches || [];
@@ -829,12 +847,12 @@ store.openMessages = async function() {
   await fetchMessages();
   store.showMessages = true;
   store.messageUnread = 0;
-  fetch('/api/messages/read', { method: 'POST' }).catch(() => {});
+  fetch(API_BASE + '/api/messages/read', { method: 'POST' }).catch(() => {});
 };
 
 store.clearMessages = async function() {
   if (!window.confirm('确定清空所有巡航批次的快照与记录？')) return;
-  await fetch('/api/messages/clear', { method: 'POST' }).catch(() => {});
+  await fetch(API_BASE + '/api/messages/clear', { method: 'POST' }).catch(() => {});
   store.messageBatches = [];
   store.messageUnread = 0;
 };
