@@ -1,69 +1,86 @@
-<view class="page">
-  <view class="camera-wrap">
-    <view class="camera-frame {{active === 'A' ? 'back' : 'front'}}">
-      <image class="camera" src="{{urlB}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="B" />
-    </view>
-    <view class="camera-frame {{active === 'A' ? 'front' : 'back'}}">
-      <image class="camera" src="{{urlA}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="A" />
-    </view>
-    <view class="camera-hud">
-      <text wx:if="{{plantDetected}}" class="green">● 植株检测</text>
-      <text wx:else class="muted">○ 未检测</text>
-      <text class="mono dim">置信度 {{plantConfidence}}%</text>
-      <text class="mono dim">面积比 {{plantAreaRatio}}</text>
-    </view>
-    <view wx:if="{{cameraLoading}}" class="camera-loading">
-      <view class="spinner"></view>
-      <text class="muted">视频加载中</text>
-    </view>
-  </view>
-
-  <view class="sensor-grid">
-    <view class="sensor-item">
-      <text class="s-label">🌡 空气温度</text>
-      <text class="s-val">{{airTemp}}</text>
-    </view>
-    <view class="sensor-item">
-      <text class="s-label">💧 空气湿度</text>
-      <text class="s-val">{{airHumidity}}</text>
-    </view>
-    <view class="sensor-item">
-      <text class="s-label">🫧 CO₂</text>
-      <text class="s-val">{{co2}}</text>
-    </view>
-    <view class="sensor-item">
-      <text class="s-label">🌱 土壤温度</text>
-      <text class="s-val">{{soilTemp}}</text>
-    </view>
-  </view>
-
-  <view class="card">
-    <text class="card-header">土壤 NPK</text>
-    <view class="sensor-grid sensor-grid-3col">
-      <view class="sensor-item">
-        <text class="s-label">N 氮</text>
-        <text class="s-val">{{soilN}}</text>
+<view class="v2-page">
+  <!-- 视频区 -->
+  <view class="cam-shell">
+    <view class="camera-wrap">
+      <view class="camera-frame {{active === 'A' ? 'back' : 'front'}}">
+        <image class="camera" src="{{urlB}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="B" />
       </view>
-      <view class="sensor-item">
-        <text class="s-label">P 磷</text>
-        <text class="s-val">{{soilP}}</text>
+      <view class="camera-frame {{active === 'A' ? 'front' : 'back'}}">
+        <image class="camera" src="{{urlA}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="A" />
       </view>
-      <view class="sensor-item">
-        <text class="s-label">K 钾</text>
-        <text class="s-val">{{soilK}}</text>
+      <view class="camera-hud">
+        <text wx:if="{{plantDetected}}" class="green">● 植株检测</text>
+        <text wx:else class="muted">○ 未检测</text>
+        <text class="mono dim">置信度 {{plantConfidence}}%</text>
+        <text class="mono dim">面积比 {{plantAreaRatio}}</text>
+      </view>
+      <view wx:if="{{!connected}}" class="camera-overlay">
+        <state-block type="offline" text="未连接到小车" subtext="请检查控制页的 IP 设置" />
+      </view>
+      <view wx:elif="{{cameraLoading}}" class="camera-overlay">
+        <state-block type="loading" text="视频连接中…" />
       </view>
     </view>
   </view>
 
-  <view class="card">
-    <text class="card-header">叶面传感器</text>
-    <view class="sensor-item">
-      <text class="s-label">💧 湿度</text>
-      <text class="s-val blue">{{leafWetness}}</text>
+  <!-- 环境 -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">ENV · 环境</text>
+      <view class="sensor-grid">
+        <view class="sensor-item">
+          <text class="s-label">🌡 空气温度</text>
+          <text class="s-val">{{airTemp}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">💧 空气湿度</text>
+          <text class="s-val">{{airHumidity}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">🫧 CO₂</text>
+          <text class="s-val">{{co2}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">🌱 土壤温度</text>
+          <text class="s-val">{{soilTemp}}</text>
+        </view>
+      </view>
     </view>
   </view>
 
-  <view class="muted" style="text-align:right;font-size:20rpx">
-    数据源: {{dataSource}} · <text class="green">实时</text>
+  <!-- 土壤 NPK -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">SOIL · 土壤 NPK</text>
+      <view class="sensor-grid sensor-grid-3col">
+        <view class="sensor-item">
+          <text class="s-label">N 氮</text>
+          <text class="s-val">{{soilN}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">P 磷</text>
+          <text class="s-val">{{soilP}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">K 钾</text>
+          <text class="s-val">{{soilK}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 叶面传感器 -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">LEAF · 叶面传感器</text>
+      <view class="sensor-item">
+        <text class="s-label">💧 湿度</text>
+        <text class="s-val blue">{{leafWetness}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="src-footer">
+    数据源 · {{dataSource}} <text class="green">实时</text>
   </view>
 </view>

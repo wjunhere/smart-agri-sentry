@@ -1,1 +1,1 @@
-{ "usingComponents": {} }
+{ "usingComponents": { "state-block": "/components/state-block/state-block" } }

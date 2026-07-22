@@ -1,19 +1,11 @@
 # CLAUDE.md
 
 * 项目上下文请看 .claude\PROJECT\_CONTEXT .md，并且要求更新上下文的时候，一定要按照PROJECT\_CONTEXT .md要求渐进式披露，不同的内容放到/docs下不同模块的文档中，当完成一项功能或修复什么问题时要更新上下文
-
 * ros2开发例程放到了example\，RDKX5资料放到了docs\hardware\_refs\RDK\_X5，STM32F103RCT6资料放到了docs\hardware\_refs\stm32f103rct6，STM32F407ZGT6的资料放到了docs\hardware\_refs\stm32f407zgt6，Lora模块的资料放到了docs\hardware\_refs\lora\_E22\_400TBH\_SC，传感器资料放到docs\sensors,资料我都转化为md文档,HAL库我放到了E:\stm32cubeMXrepository
-
 * 项目的github仓库是wjunhere/smart-agri-sentry
-
-* 如果要完成某个复杂的任务时，需要先开一个分支，按照 Superpowers 完整流程，先 brainstorm，再 write-plan，最后 execute-plan，必须做 TDD 和 code review
-
 * 可以通过ssh连接到RDKX5板端 ，板端环境是Ubuntu22.04，ssh rdk ，密码是sunrise，pc端设置为无密登录，项目放在了\~\dev\_ws,项目从本项目克隆而来，只是文件夹名重命名为dev\_ws， 通过git进行版本管理
-
 * 上位机RDK代码优先先在本地进行开发，本地没有ros2运行的环境，先提交到远程仓库，再在RDK板端拉取仓库，进行测试
-
 * 对于STM32开发，系统已经安装好了STM3CubeMX，STM32CubeCLT,STM32\_Programmer\_CLI等cli工具,优先GCC编译stm32文件
-
 * 本地已安装了wsl2，系统为ubuntu22.04，密码是wjun
 
 ## Windows 提权 (gsudo)

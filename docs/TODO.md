@@ -82,6 +82,8 @@
 
 ## 近期已完成
 
+- [x] **小程序 UI 优化 (2026-07-22)**：state-block 三态组件 + 四页排版/布局/微交互优化（风格不变）；控制页状态条合并、监测页 16:9+三态、分析页序号色块、天气页湿度真实映射；错误 IP offline 实测通过
+- [x] **前端免 SSH 板端联调 (rdk1, 2026-07-22)**：修复 sentry_weather setup.cfg、weather 真实模式 60s 重发、stop 脚本误杀网关、llm 气象字段名；补装 flask/imu_filter_madgwick；网关自启 + /stack/* 全周期 + 四页 UI + DeepSeek 分析全部验证通过
 - [x] **前端免 SSH 直连小车 (PR #3, 2026-07-19)**：bridge 新增 `/stack/*` 巡航编排端点 + WS `stack_status` 推送；修复话题名断链（`/sentry/sensor/*`→`/sensor/*`）与 `wsConnect()` 未接线两个 bug；网关层 launch（+weather_node +web_remote）；systemd `sentry-bridge.service` 开机自启；小程序 IP 配置化 + 巡航按钮组 + 连接角标；bridge mock 测试基建修复（13 测试通过）
 - [x] **微信小程序 monitor 视频流去频闪 (2026-07-14)**：snapshot 双缓冲改为 z-index 前后层预加载，取消 opacity 过渡，避免 Skyline 硬切/黑底闪烁；刷新间隔 200ms，切 tab 暂停
 - [x] **番茄病害模型板端测试 (2026-07-13)**：MobilenetV3-Large 准确率 91.58%（healthy_threshold=0.15）

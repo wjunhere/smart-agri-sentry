@@ -665,3 +665,288 @@ body {
 .weather-toggle input:checked + .weather-toggle-slider::before {
   transform: translateX(12px); background: var(--green);
 }
+
+/* ============================================================
+   v2 深色精致化 Reskin（覆盖层，2026-07-22）
+   Ethereal Glass：OLED 深底 + 微光晕 + 机械质感卡片 + 弹簧动效
+   ============================================================ */
+
+:root {
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --hairline: rgba(255,255,255,0.08);
+  --hairline-soft: rgba(255,255,255,0.06);
+  --core: #0C1322;
+}
+
+body {
+  background:
+    radial-gradient(ellipse 60% 40% at 20% -10%, rgba(56,189,248,0.09), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 95% 110%, rgba(16,185,129,0.07), transparent 70%),
+    #05070D;
+}
+
+/* ---------- 卡片：机械内芯质感 ---------- */
+.card {
+  background: var(--core);
+  border: 1px solid var(--hairline-soft);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.05);
+  transition: border-color 250ms var(--ease-spring), box-shadow 250ms var(--ease-spring);
+}
+.card:hover {
+  border-color: rgba(255,255,255,0.14);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.35);
+}
+.card h3 {
+  font-size: 10px; letter-spacing: 0.16em; color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+/* ---------- 顶栏：深玻璃 ---------- */
+.top-bar {
+  background: rgba(5,7,13,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--hairline-soft);
+  height: 52px;
+}
+:root { --topbar-h: 52px; }
+.status-capsule { border-radius: 999px; padding: 3px 12px; }
+
+/* ---------- 主区间距 ---------- */
+.main-layout { gap: 14px; padding: 14px; }
+.left-panel, .right-panel { gap: 14px; }
+
+/* ---------- 相机面板 ---------- */
+.camera-panel .panel-header {
+  background: var(--core);
+  border: 1px solid var(--hairline-soft); border-bottom: none;
+  border-radius: 18px 18px 0 0;
+  font-size: 10px; letter-spacing: 0.16em; color: var(--text-muted);
+  padding: 10px 14px;
+}
+.camera-container {
+  border: 1px solid var(--hairline-soft); border-top: none;
+  border-radius: 0 0 18px 18px;
+}
+.camera-container.online {
+  border-color: rgba(16,185,129,0.45);
+  box-shadow: 0 0 24px rgba(16,185,129,0.10);
+}
+.camera-hud { border-radius: 999px; padding: 4px 12px; background: rgba(5,7,13,0.65); border: 1px solid var(--hairline-soft); }
+.detection-badge { border-radius: 999px; }
+
+/* ---------- 控制面板 ---------- */
+.control-panel {
+  background: var(--core);
+  border: 1px solid var(--hairline-soft);
+  border-radius: 18px;
+  padding: 12px 16px;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.05);
+}
+
+/* D-Pad：机械圆钮 + 按压辉光 */
+.dpad { grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(3, 52px); gap: 6px; }
+.dpad button {
+  width: 52px; height: 52px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.06);
+  color: var(--text-dim);
+  transition: all 140ms var(--ease-spring);
+}
+.dpad button:hover { border-color: rgba(56,189,248,0.5); color: var(--text); }
+.dpad button:active {
+  background: var(--blue); color: #04121F; border-color: var(--blue);
+  transform: scale(0.94);
+  box-shadow: 0 0 20px rgba(56,189,248,0.35);
+}
+
+/* 急停：渐变红 + 光环 */
+.estop-btn {
+  background: linear-gradient(160deg, #F87171, #DC2626);
+  border: none;
+  box-shadow: 0 0 0 4px rgba(239,68,68,0.12), 0 8px 20px rgba(239,68,68,0.28);
+  transition: all 140ms var(--ease-spring);
+}
+.estop-btn:hover  { transform: scale(1.05); box-shadow: 0 0 0 4px rgba(239,68,68,0.16), 0 8px 24px rgba(239,68,68,0.4); }
+.estop-btn:active { transform: scale(0.93); }
+
+/* 作物/诊断 pill */
+.crop-pill, .diag-pill {
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+  transition: all 140ms var(--ease-spring);
+}
+.crop-pill.active, .diag-pill.active {
+  background: var(--blue); border-color: var(--blue); color: #04121F;
+  box-shadow: 0 4px 14px rgba(56,189,248,0.25);
+}
+
+/* ---------- 巡航按钮：岛屿药丸 ---------- */
+.btn {
+  border-radius: 999px; padding: 7px 18px;
+  letter-spacing: 0.08em;
+  transition: all 160ms var(--ease-spring);
+}
+.btn:active { transform: scale(0.95); filter: none; }
+.btn-go {
+  background: linear-gradient(135deg, #10B981, #38BDF8);
+  color: #04121F;
+  box-shadow: 0 6px 18px rgba(56,189,248,0.20);
+}
+.btn-pause  { background: rgba(245,158,11,0.14); color: var(--amber); border: 1px solid rgba(245,158,11,0.35); }
+.btn-resume { background: rgba(56,189,248,0.12); color: var(--blue); border: 1px solid rgba(56,189,248,0.35); }
+.cruise-panel .wp-item { border-radius: 999px; transition: all 140ms var(--ease-spring); }
+
+/* ---------- 环境条 ---------- */
+.env-bar {
+  background: rgba(5,7,13,0.9);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--hairline-soft);
+}
+.env-item {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--hairline-soft);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.04);
+  transition: border-color 200ms var(--ease-spring);
+}
+.env-item:hover { border-color: rgba(56,189,248,0.4); }
+
+/* ---------- 状态条 ---------- */
+.status-bar {
+  background: var(--core);
+  border: 1px solid var(--hairline-soft);
+  border-radius: 999px;
+  padding: 8px 16px;
+}
+.status-bar .progress-track { border-radius: 999px; background: rgba(255,255,255,0.08); }
+.status-bar .progress-fill { border-radius: 999px; background: linear-gradient(90deg, #10B981, #38BDF8); }
+
+/* ---------- 弹窗 ---------- */
+.modal {
+  background: var(--core);
+  border: 1px solid var(--hairline);
+  border-radius: 24px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.06);
+}
+
+/* ---------- 天气/消息小件 ---------- */
+.disaster-tag { border-radius: 999px; }
+.stale-badge { border-radius: 999px; }
+.msg-thumb { border-radius: 12px; }
+.msg-record { border-radius: 14px; }
+.wp-table input { border-radius: 8px; }
+
+/* ---------- 全局交互过渡 ---------- */
+a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
+  transition-timing-function: var(--ease-spring);
+}
+
+/* ---------- 控制栏布局重组（四分区） ---------- */
+.control-panel {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 20px;
+}
+.control-panel > div[style*="flex:1"] { display: none; }  /* 移除占位 spacer */
+
+/* 分区之间细分割线 */
+.estop-wrap {
+  padding-right: 20px;
+  border-right: 1px solid var(--hairline-soft);
+}
+.crop-selector {
+  justify-self: center;
+  padding-right: 20px;
+  border-right: 1px solid var(--hairline-soft);
+}
+.cruise-panel {
+  justify-self: end;
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; justify-content: flex-end;
+}
+.cruise-label {
+  font-size: 10px; letter-spacing: 0.16em;
+  color: var(--text-muted); text-transform: uppercase;
+}
+
+/* ---------- 作物选择：分段胶囊组 ---------- */
+.crop-selector { gap: 12px; }
+.crop-selector label {
+  font-size: 10px; letter-spacing: 0.16em;
+  color: var(--text-muted); text-transform: uppercase;
+}
+.crop-pills {
+  display: flex; gap: 2px; padding: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--hairline-soft);
+  border-radius: 999px;
+}
+.crop-pill {
+  font-size: 12px; padding: 6px 16px;
+  border: none; background: transparent;
+  border-radius: 999px; color: var(--text-muted);
+  transition: all 140ms var(--ease-spring);
+}
+.crop-pill:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.crop-pill.active {
+  background: var(--blue); color: #04121F; font-weight: 700;
+  box-shadow: 0 2px 10px rgba(56,189,248,0.30);
+}
+
+/* ---------- 控制栏 v2.1：巡航独立整行 ---------- */
+.control-panel {
+  grid-template-columns: auto auto 1fr;
+}
+.cruise-panel {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  border-top: 1px solid var(--hairline-soft);
+  padding-top: 14px;
+  gap: 12px;
+}
+.cruise-panel .wp-list { flex: 1; }
+.cruise-speed-control input { width: 64px; }
+
+/* ---------- 控制栏 v2.2：作物上移填补右区 ---------- */
+.crop-selector {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  justify-self: center;
+  border-right: none;
+  padding-right: 0;
+}
+.cruise-panel { grid-row: 2; }
+.crop-pills { padding: 6px; }
+.crop-pill { font-size: 13px; padding: 8px 22px; }
+
+/* ---------- 控制栏 v2.3：急停居中 ---------- */
+.control-panel {
+  grid-template-columns: auto 1fr auto;
+}
+.estop-wrap {
+  grid-column: 2;
+  justify-self: center;
+  border-right: none;
+  padding-right: 0;
+}
+.crop-selector {
+  grid-column: 3;
+  justify-self: end;
+}
+
+/* ---------- 控制栏 v2.4：急停略靠方向舵 ---------- */
+.estop-wrap {
+  justify-self: start;
+  padding-left: 48px;
+}
+
+/* ---------- 控制栏 v2.5：作物组左移对齐巡航速度 ---------- */
+.crop-selector {
+  padding-right: 200px;
+}

@@ -1,22 +1,29 @@
-.page { padding: 16rpx; display: flex; flex-direction: column; gap: 12rpx; }
+/* 分析页 · 深色精致化 v2 */
 
-.dg-card { border-left: 6rpx solid var(--amber); }
-.dg-name { font-size: 44rpx; font-weight: 700; margin: 4rpx 0; }
+/* 卡片左侧强调色（用外壳渐变边实现） */
+.accent-amber  { background: linear-gradient(90deg, rgba(245,158,11,0.35), rgba(255,255,255,0.03) 30%); }
+.accent-green  { background: linear-gradient(90deg, rgba(16,185,129,0.35), rgba(255,255,255,0.03) 30%); }
+.accent-purple { background: linear-gradient(90deg, rgba(167,139,250,0.35), rgba(255,255,255,0.03) 30%); }
 
-.prob-row { margin-bottom: 12rpx; }
-.prob-label { display: flex; justify-content: space-between; font-size: 20rpx; margin-bottom: 2rpx; }
-.prob-bar { height: 8rpx; background: var(--border); border-radius: 4rpx; overflow: hidden; }
-.prob-fill { height: 8rpx; border-radius: 4rpx; }
+/* 诊断 */
+.dg-name { font-size: 48rpx; font-weight: 800; letter-spacing: 0.02em; display: block; margin: 4rpx 0 12rpx; }
+.dg-conf { font-size: 22rpx; color: var(--text-muted); }
 
-.adv-card { border-left: 6rpx solid var(--green); }
-
-.trend-placeholder {
-  height: 100rpx; background: var(--bg-input); border: 1px solid var(--border);
-  border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
+/* 概率条 */
+.prob-row { margin-bottom: 16rpx; }
+.prob-label { display: flex; justify-content: space-between; font-size: 20rpx; margin-bottom: 4rpx; }
+.prob-bar {
+  height: 10rpx; border-radius: 999rpx; overflow: hidden;
+  background: rgba(255,255,255,0.06);
 }
+.prob-fill { height: 10rpx; border-radius: 999rpx; }
 
-.llm-card { border-left: 3px solid #A78BFA; }
-.llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12rpx; }
+/* 建议卡 */
+.adv-text { font-size: 26rpx; color: var(--text); line-height: 1.7; }
+.adv-prio { font-size: 20rpx; color: var(--text-muted); margin-top: 12rpx; }
+
+/* LLM 卡 */
+.llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20rpx; }
 .llm-status { display: flex; align-items: center; gap: 8rpx; font-size: 20rpx; }
 .llm-dot { width: 12rpx; height: 12rpx; border-radius: 50%; }
 .llm-dot-ok { background: var(--green); }
@@ -27,33 +34,38 @@
   display: flex; align-items: center; justify-content: center;
   padding: 40rpx; font-size: 24rpx;
 }
-
 .llm-summary {
   font-size: 26rpx; line-height: 1.7; color: var(--text);
-  display: block; margin-bottom: 16rpx;
+  display: block; margin-bottom: 20rpx;
 }
-
-.llm-suggestions { margin-bottom: 16rpx; }
+.llm-suggestions { margin-bottom: 20rpx; }
 .llm-step {
-  font-size: 24rpx; color: var(--text-dim); line-height: 1.8;
-  display: block; padding-left: 8rpx;
+  display: flex; align-items: flex-start; gap: 12rpx;
+  font-size: 24rpx; color: var(--text-dim); line-height: 1.7; margin-top: 12rpx;
 }
-
+.step-idx {
+  flex-shrink: 0; width: 32rpx; height: 32rpx; border-radius: 999rpx;
+  background: var(--blue); color: #04121F; font-size: 20rpx; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
 .llm-tags { display: flex; flex-wrap: wrap; gap: 8rpx; margin-bottom: 12rpx; }
 .llm-tag {
-  font-size: 18rpx; padding: 4rpx 12rpx; border-radius: var(--radius-pill);
-  background: rgba(167,139,250,0.1); color: var(--purple);
+  font-size: 18rpx; padding: 6rpx 16rpx; border-radius: 999rpx;
+  background: rgba(167,139,250,0.10); color: var(--purple);
+  border: 1rpx solid rgba(167,139,250,0.25);
 }
-
 .llm-footer { margin-bottom: 8rpx; }
-.llm-retry { padding: 16rpx; text-align: center; }
+.llm-retry { margin-top: 16rpx; }
 
-.llm-action { text-align: center; margin-top: 16rpx; }
+.btn-deep-wrap { display: flex; justify-content: center; margin-top: 8rpx; }
 .btn-deep {
-  display: inline-block; padding: 16rpx 48rpx;
-  background: rgba(167,139,250,0.1); border: 1px solid var(--purple);
-  border-radius: var(--radius); color: var(--purple);
+  padding: 18rpx 56rpx; border-radius: 999rpx;
+  background: rgba(167,139,250,0.10);
+  border: 1rpx solid rgba(167,139,250,0.40);
+  color: var(--purple); font-size: 26rpx;
+  transition: transform 160ms cubic-bezier(0.32,0.72,0,1);
 }
+.btn-deep:active { transform: scale(0.96); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }

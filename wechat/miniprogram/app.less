@@ -58,3 +58,67 @@ page {
 .purple { color: var(--purple); }
 .dim    { color: var(--text-dim); }
 .muted  { color: var(--text-muted); }
+
+/* ================= v2 深色精致化 · 共享块 ================= */
+
+/* 页面底：OLED 黑 + 微光晕 */
+.v2-page {
+  padding: 20rpx 20rpx 32rpx;
+  display: flex; flex-direction: column; gap: 20rpx;
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 80% 32% at 50% -6%, rgba(56,189,248,0.10), transparent 70%),
+    radial-gradient(ellipse 60% 26% at 90% 108%, rgba(16,185,129,0.07), transparent 70%),
+    #05070D;
+}
+
+/* Double-Bezel 卡片：外壳 + 内芯 */
+.shell {
+  background: rgba(255,255,255,0.03);
+  border: 1rpx solid rgba(255,255,255,0.06);
+  border-radius: 36rpx;
+  padding: 4rpx;
+}
+.core {
+  background: #0C1322;
+  border-radius: 32rpx;
+  padding: 28rpx;
+  box-shadow: inset 0 2rpx 2rpx rgba(255,255,255,0.05);
+}
+.core-center { display: flex; flex-direction: column; align-items: center; }
+
+/* 眉眼标题 */
+.eyebrow {
+  font-size: 18rpx; font-weight: 600; letter-spacing: 0.16em;
+  color: var(--text-muted); text-transform: uppercase;
+  margin-bottom: 20rpx;
+}
+.core-center .eyebrow { align-self: flex-start; }
+
+/* 岛屿按钮 */
+.btn-primary {
+  flex: 1.2; display: flex; align-items: center; justify-content: center;
+  padding: 20rpx 0; border-radius: 999rpx;
+  background: linear-gradient(135deg, #10B981, #38BDF8);
+  color: #04121F; font-size: 26rpx; font-weight: 700;
+  box-shadow: 0 8rpx 24rpx rgba(56,189,248,0.18);
+  transition: transform 160ms cubic-bezier(0.32,0.72,0,1), opacity 160ms;
+}
+.btn-ghost {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 20rpx 0; border-radius: 999rpx;
+  background: rgba(255,255,255,0.04);
+  border: 1rpx solid rgba(255,255,255,0.10);
+  color: var(--text-dim); font-size: 26rpx; font-weight: 600;
+  transition: transform 160ms cubic-bezier(0.32,0.72,0,1), opacity 160ms;
+}
+.btn-danger {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 20rpx 0; border-radius: 999rpx;
+  background: rgba(239,68,68,0.10);
+  border: 1rpx solid rgba(239,68,68,0.35);
+  color: var(--red); font-size: 26rpx; font-weight: 600;
+  transition: transform 160ms cubic-bezier(0.32,0.72,0,1), opacity 160ms;
+}
+.btn-primary:active, .btn-ghost:active, .btn-danger:active { transform: scale(0.96); }
+.btn-disabled { opacity: 0.35; pointer-events: none; }
