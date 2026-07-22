@@ -1,4 +1,7 @@
 <view class="page">
+  <state-block wx:if="{{loadFailed}}" type="offline"
+               text="天气数据获取失败" subtext="检查小车连接后自动重试" />
+
   <view class="wx-now">
     <text class="card-header">当前 · {{city}}</text>
     <text class="wx-temp">{{currentTemp}}</text>

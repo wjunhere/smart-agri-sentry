@@ -1,1 +1,1 @@
-{ "usingComponents": { "alert-bar": "/components/alert-bar/alert-bar" } }
+{ "usingComponents": { "alert-bar": "/components/alert-bar/alert-bar", "state-block": "/components/state-block/state-block" } }

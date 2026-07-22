@@ -56,7 +56,8 @@ Component({
     city: '--',
     currentTemp: '--',
     currentDesc: '--',
-    humidity: '--',
+    humidity: '·',
+    loadFailed: false,
     days: [] as any[],
     hours: [] as any[],
     disasterAlerts: [] as string[],
@@ -88,7 +89,7 @@ Component({
         city: s.weatherCity || '--',
         currentTemp: day0 ? day0.temp_high + '°' : '--',
         currentDesc: day0 ? day0.weather_desc : '--',
-        humidity: '--',
+        humidity: day0 && day0.humidity != null ? day0.humidity + '%' : '·',
         days: days,
         hours: hours,
         disasterAlerts: s.weatherDisasterAlerts || [],
@@ -111,8 +112,11 @@ Component({
             weatherDisasterAlerts: data.disaster_alerts || [],
             weatherStale: data.stale || false,
           });
+          this.setData({ loadFailed: false });
         }
-      } catch (_) {}
+      } catch (_) {
+        this.setData({ loadFailed: true });
+      }
     },
   },
 })
