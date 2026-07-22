@@ -144,6 +144,8 @@
 
 开机自启：`scripts/rdk/install_autostart.sh` 安装 `sentry-bridge.service`（systemd），开机拉起 `miniprogram_bridge.launch.py`（bridge + web_remote + weather_node + llm_advisor_node）——仅常驻网关层，相机/Nav2 等工作节点由前端 `/stack/*` 按钮按需启停。
 
+**本地开发模式（2026-07-23）**：Web 面板可在本地运行、像小程序一样连接小车。在 `src/sentry_mission/static_v2/` 起任意静态服务（如 `python -m http.server 8899`），打开 `http://localhost:8899/?car=<小车IP>`。`?car=` 参数会存入 localStorage（之后可省略）；rosbridge 与全部 REST 改指向 `<car>:9090` / `<car>:5000`，Flask 已带 CORS 头。板端托管（`http://<car>:5000/`）同源行为不变。注意 rosbridge :9090 随主栈启停，idle 状态下页面显示 ROS OFFLINE 但 REST 控制仍可用。
+
 Field topics to watch during cruise/avoidance:
 
 - `/mission/status`
