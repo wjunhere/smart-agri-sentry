@@ -911,3 +911,16 @@ a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
 }
 .cruise-panel .wp-list { flex: 1; }
 .cruise-speed-control input { width: 64px; }
+
+/* ---------- 控制栏 v2.2：作物上移填补右区 ---------- */
+.crop-selector {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  justify-self: center;
+  border-right: none;
+  padding-right: 0;
+}
+.cruise-panel { grid-row: 2; }
+.crop-pills { padding: 6px; }
+.crop-pill { font-size: 13px; padding: 8px 22px; }
