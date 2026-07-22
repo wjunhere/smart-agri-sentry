@@ -29,15 +29,10 @@
   border-radius: 999rpx;
 }
 
-/* Hourly sparkline */
+/* Hourly chart：纯曲线（.spark-track 仅作几何尺寸容器） */
 .sparkline-wrap { margin: 8rpx 0; position: relative; }
 .spark-track {
-  display: flex; align-items: flex-end; gap: 3rpx;
-  height: 120rpx; padding: 0 4rpx;
-}
-.spark-col {
-  min-width: 4rpx;
-  border-radius: 999rpx 999rpx 0 0;
+  height: 120rpx; padding: 0 4rpx; box-sizing: border-box;
 }
 
 /* 温度曲线覆盖层（Canvas，文档流内负 margin 上拉覆盖柱状图） */

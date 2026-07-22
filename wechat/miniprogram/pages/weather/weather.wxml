@@ -37,10 +37,7 @@
     <view class="core">
       <text class="eyebrow">HOURS · 逐时预报</text>
       <view class="sparkline-wrap">
-        <view class="spark-track">
-          <view class="spark-col" wx:for="{{hBars}}" wx:key="index"
-                style="height:{{item.hPct}}%;flex:1;background:{{item.color}}"></view>
-        </view>
+        <view class="spark-track"></view>
         <canvas type="2d" id="tempLineCanvas" class="line-canvas" wx:if="{{lineReady}}"></canvas>
         <view class="spark-xlabels">
           <text class="dim" style="font-size:16rpx">+0h</text>
