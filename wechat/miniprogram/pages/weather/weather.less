@@ -30,7 +30,7 @@
 }
 
 /* Hourly sparkline */
-.sparkline-wrap { margin: 8rpx 0; }
+.sparkline-wrap { margin: 8rpx 0; position: relative; }
 .spark-track {
   display: flex; align-items: flex-end; gap: 3rpx;
   height: 120rpx; padding: 0 4rpx;
@@ -38,6 +38,23 @@
 .spark-col {
   min-width: 4rpx;
   border-radius: 999rpx 999rpx 0 0;
+}
+
+/* 温度折线覆盖层 */
+.line-layer {
+  position: absolute; left: 0; right: 0; top: 0; height: 120rpx;
+  pointer-events: none; z-index: 2;
+}
+.line-seg {
+  position: absolute; height: 3rpx; border-radius: 999rpx;
+  background: rgba(125,211,252,0.95);
+  box-shadow: 0 0 8rpx rgba(125,211,252,0.45);
+  transform-origin: left center;
+}
+.line-dot {
+  position: absolute; width: 10rpx; height: 10rpx; border-radius: 50%;
+  background: #05070D; border: 2rpx solid #7DD3FC;
+  transform: translate(-50%, 50%);
 }
 .spark-xlabels {
   display: flex; justify-content: space-between;

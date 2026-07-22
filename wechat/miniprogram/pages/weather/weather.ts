@@ -65,6 +65,8 @@ Component({
     dayBars: [] as any[],
     hBars: [] as any[],
     hMax: 40, hMin: 0,
+    lineSegs: [] as any[],
+    lineDots: [] as any[],
   },
   lifetimes: {
     attached() {
@@ -99,6 +101,42 @@ Component({
         hMax: chart.hMax,
         hMin: chart.hMin,
       });
+      this._renderTempLine(chart.hBars);
+    },
+
+    // 在柱状图上叠加温度折线：连接各柱顶点
+    _renderTempLine(hBars: any[]) {
+      if (!hBars || hBars.length < 2) {
+        this.setData({ lineSegs: [], lineDots: [] });
+        return;
+      }
+      const r = wx.getSystemInfoSync().windowWidth / 750;  // rpx → px
+      this.createSelectorQuery()
+        .select('.spark-track')
+        .boundingClientRect((rect: any) => {
+          if (!rect) return;
+          const W = rect.width, H = rect.height;
+          const pad = 4 * r, gap = 3 * r;
+          const n = hBars.length;
+          const barW = (W - 2 * pad - (n - 1) * gap) / n;
+          const pts = hBars.map((b: any, i: number) => ({
+            x: pad + barW / 2 + i * (barW + gap),
+            y: (parseFloat(b.hPct) / 100) * H,
+          }));
+          const segs = [];
+          for (let i = 0; i < n - 1; i++) {
+            const dx = pts[i + 1].x - pts[i].x;
+            const dy = pts[i + 1].y - pts[i].y;
+            segs.push({
+              x: pts[i].x,
+              y: pts[i].y,
+              len: Math.sqrt(dx * dx + dy * dy),
+              deg: (-Math.atan2(dy, dx) * 180 / Math.PI).toFixed(2),
+            });
+          }
+          this.setData({ lineSegs: segs, lineDots: pts });
+        })
+        .exec();
     },
 
     async fetchWeather() {
