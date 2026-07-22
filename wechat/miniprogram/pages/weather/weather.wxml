@@ -1,52 +1,61 @@
-<view class="page">
+<view class="v2-page">
   <state-block wx:if="{{loadFailed}}" type="offline"
                text="天气数据获取失败" subtext="检查小车连接后自动重试" />
 
-  <view class="wx-now">
-    <text class="card-header">当前 · {{city}}</text>
-    <text class="wx-temp">{{currentTemp}}</text>
-    <text style="font-size:28rpx;color:var(--text)">{{currentDesc}}</text>
-    <view class="muted" style="font-size:20rpx;margin-top:8rpx">
-      湿度 {{humidity}} · 东风 3级
+  <!-- 当前天气 hero -->
+  <view class="shell">
+    <view class="core wx-now">
+      <text class="eyebrow">NOW · 当前 {{city}}</text>
+      <view class="wx-hero">
+        <text class="wx-temp">{{currentTemp}}</text>
+        <text class="wx-desc">{{currentDesc}}</text>
+      </view>
+      <view class="wx-meta">湿度 {{humidity}} · 东风 3级</view>
     </view>
   </view>
 
-  <view class="card">
-    <text class="card-header">📅 7日预报</text>
-    <view class="day-chart">
-      <view class="day-col" wx:for="{{dayBars}}" wx:key="index">
-        <text class="day-icon">{{item.icon}}</text>
-        <text class="mono dim" style="font-size:18rpx">{{item.temp_high}}°</text>
-        <view class="day-bar-track">
-          <view class="day-bar-fill" style="bottom:{{item.barLow}}%;height:{{item.barHeight}}%"></view>
+  <!-- 7日预报 -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">WEEK · 7日预报</text>
+      <view class="day-chart">
+        <view class="day-col" wx:for="{{dayBars}}" wx:key="index">
+          <text class="day-icon">{{item.icon}}</text>
+          <text class="mono dim" style="font-size:18rpx">{{item.temp_high}}°</text>
+          <view class="day-bar-track">
+            <view class="day-bar-fill" style="bottom:{{item.barLow}}%;height:{{item.barHeight}}%"></view>
+          </view>
+          <text class="mono dim" style="font-size:18rpx">{{item.temp_low}}°</text>
+          <text class="dim" style="font-size:18rpx">D+{{item.day_offset||index}}</text>
         </view>
-        <text class="mono dim" style="font-size:18rpx">{{item.temp_low}}°</text>
-        <text class="dim" style="font-size:18rpx">D+{{item.day_offset||index}}</text>
       </view>
     </view>
   </view>
 
-  <view class="card">
-    <text class="card-header">🕐 逐时预报</text>
-    <view class="sparkline-wrap">
-      <view class="spark-track">
-        <view class="spark-col" wx:for="{{hBars}}" wx:key="index"
-              style="height:{{item.hPct}}%;flex:1;background:{{item.color}}"></view>
+  <!-- 逐时预报 -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">HOURS · 逐时预报</text>
+      <view class="sparkline-wrap">
+        <view class="spark-track">
+          <view class="spark-col" wx:for="{{hBars}}" wx:key="index"
+                style="height:{{item.hPct}}%;flex:1;background:{{item.color}}"></view>
+        </view>
+        <view class="spark-xlabels">
+          <text class="dim" style="font-size:16rpx">+0h</text>
+          <text class="dim" style="font-size:16rpx">+6h</text>
+          <text class="dim" style="font-size:16rpx">+12h</text>
+          <text class="dim" style="font-size:16rpx">+18h</text>
+          <text class="dim" style="font-size:16rpx">+24h</text>
+        </view>
       </view>
-      <view class="spark-xlabels">
-        <text class="dim" style="font-size:16rpx">+0h</text>
-        <text class="dim" style="font-size:16rpx">+6h</text>
-        <text class="dim" style="font-size:16rpx">+12h</text>
-        <text class="dim" style="font-size:16rpx">+18h</text>
-        <text class="dim" style="font-size:16rpx">+24h</text>
-      </view>
+      <scroll-view class="fc-scroll" scroll-x style="margin-top:12rpx">
+        <view class="fc-item" wx:for="{{hours}}" wx:key="index">
+          <text class="dim" style="font-size:18rpx">+{{item.hour_offset}}h</text>
+          <text class="mono" style="font-weight:600">{{item.temp}}°</text>
+        </view>
+      </scroll-view>
     </view>
-    <scroll-view class="fc-scroll" scroll-x style="margin-top:8rpx">
-      <view class="fc-item" wx:for="{{hours}}" wx:key="index">
-        <text class="dim" style="font-size:18rpx">+{{item.hour_offset}}h</text>
-        <text class="mono" style="font-weight:600">{{item.temp}}°</text>
-      </view>
-    </scroll-view>
   </view>
 
   <alert-bar
@@ -57,20 +66,23 @@
     message="{{item}}"
   />
 
-  <view class="card">
-    <text class="card-header">农业气象指标</text>
-    <view class="ag-grid">
-      <view class="ag-item">
-        <text class="dim" style="font-size:18rpx">🌡 积温</text>
-        <text class="mono" style="font-weight:600">320°D</text>
-      </view>
-      <view class="ag-item">
-        <text class="dim" style="font-size:18rpx">💧 降雨</text>
-        <text class="mono" style="font-weight:600">12mm</text>
-      </view>
-      <view class="ag-item">
-        <text class="dim" style="font-size:18rpx">💨 风速</text>
-        <text class="mono" style="font-weight:600">3级</text>
+  <!-- 农业气象指标 -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">AGRI · 农业气象指标</text>
+      <view class="ag-grid">
+        <view class="ag-item">
+          <text class="ag-label">🌡 积温</text>
+          <text class="mono ag-val">320°D</text>
+        </view>
+        <view class="ag-item">
+          <text class="ag-label">💧 降雨</text>
+          <text class="mono ag-val">12mm</text>
+        </view>
+        <view class="ag-item">
+          <text class="ag-label">💨 风速</text>
+          <text class="mono ag-val">3级</text>
+        </view>
       </view>
     </view>
   </view>

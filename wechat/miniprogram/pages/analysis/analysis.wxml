@@ -1,41 +1,53 @@
-<view class="page">
-  <view class="card dg-card">
-    <text class="card-header">病害诊断 · {{cropType}}</text>
-    <text class="dg-name amber">{{disease}}</text>
-    <text class="muted" style="font-size:22rpx">置信度 <text class="mono amber">{{confidence}}%</text></text>
-  </view>
-
-  <view class="card">
-    <text class="card-header">分类概率</text>
-    <view class="prob-row" wx:for="{{probs}}" wx:key="name">
-      <view class="prob-label">
-        <text class="mono dim" style="font-size:20rpx">{{item.name}}</text>
-        <text class="mono">{{item.pct}}%</text>
-      </view>
-      <view class="prob-bar">
-        <view class="prob-fill" style="width:{{item.width}}%;background:{{item.color}}"></view>
-      </view>
-    </view>
-    <state-block wx:if="{{!probs.length}}" type="empty"
-                 text="暂无诊断数据" subtext="启动巡航并检测到植株后生成" />
-  </view>
-
-  <view class="card adv-card" wx:if="{{advisoryText}}">
-    <text class="card-header">💡 农艺建议</text>
-    <text style="font-size:26rpx;color:var(--text)">{{advisoryText}}</text>
-    <view class="muted" style="font-size:20rpx;margin-top:8rpx" wx:if="{{advisoryPriority}}">
-      紧急度: <text class="amber">{{advisoryPriority}}</text>
-    </view>
-    <view wx:if="{{advisorySteps.length}}" style="margin-top:8rpx">
-      <view class="llm-step" wx:for="{{advisorySteps}}" wx:key="*this">
-        <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
-      </view>
+<view class="v2-page">
+  <!-- 病害诊断 -->
+  <view class="shell accent-amber">
+    <view class="core">
+      <text class="eyebrow">DIAGNOSIS · 病害诊断 · {{cropType}}</text>
+      <text class="dg-name amber">{{disease}}</text>
+      <text class="dg-conf">置信度 <text class="mono amber">{{confidence}}%</text></text>
     </view>
   </view>
 
-  <view class="card">
-    <text class="card-header">📈 风险趋势 (3日)</text>
-    <state-block type="empty" text="数据收集中…" />
+  <!-- 分类概率 -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">PROBS · 分类概率</text>
+      <view class="prob-row" wx:for="{{probs}}" wx:key="name">
+        <view class="prob-label">
+          <text class="mono dim" style="font-size:20rpx">{{item.name}}</text>
+          <text class="mono">{{item.pct}}%</text>
+        </view>
+        <view class="prob-bar">
+          <view class="prob-fill" style="width:{{item.width}}%;background:{{item.color}}"></view>
+        </view>
+      </view>
+      <state-block wx:if="{{!probs.length}}" type="empty"
+                   text="暂无诊断数据" subtext="启动巡航并检测到植株后生成" />
+    </view>
+  </view>
+
+  <!-- 农艺建议 -->
+  <view class="shell accent-green" wx:if="{{advisoryText}}">
+    <view class="core">
+      <text class="eyebrow">ADVISORY · 农艺建议</text>
+      <text class="adv-text">{{advisoryText}}</text>
+      <view class="adv-prio" wx:if="{{advisoryPriority}}">
+        紧急度 <text class="amber">{{advisoryPriority}}</text>
+      </view>
+      <view wx:if="{{advisorySteps.length}}" style="margin-top:12rpx">
+        <view class="llm-step" wx:for="{{advisorySteps}}" wx:key="*this">
+          <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 风险趋势 -->
+  <view class="shell">
+    <view class="core">
+      <text class="eyebrow">TREND · 风险趋势 (3日)</text>
+      <state-block type="empty" text="数据收集中…" />
+    </view>
   </view>
 
   <alert-bar
@@ -45,46 +57,49 @@
     message="未来{{forecastHoursAhead}}h内: {{forecastDescription}}"
   />
 
-  <view class="card llm-card" wx:if="{{llmSummary || llmLoading}}">
-    <view class="llm-header">
-      <text class="card-header">🤖 AI 综合分析</text>
-      <view class="llm-status">
-        <view class="llm-dot {{llmLoading ? 'llm-dot-loading' : (llmStatus === 'ok' ? 'llm-dot-ok' : 'llm-dot-err')}}"></view>
-        <text wx:if="{{llmLoading}}" class="amber">分析中...</text>
-        <text wx:elif="{{llmStatus === 'ok'}}" class="green">最新分析</text>
-        <text wx:else class="red">分析失败</text>
-        <text wx:if="{{llmTrigger}}" class="muted" style="margin-left:8rpx">· {{llmTrigger === 'auto' ? '自动' : '手动'}}</text>
-      </view>
-    </view>
-    <block wx:if="{{llmLoading}}">
-      <view class="llm-loading">
-        <text class="mono dim">AI 分析中，请稍候...</text>
-      </view>
-    </block>
-    <block wx:elif="{{llmStatus === 'ok'}}">
-      <text class="llm-summary">{{llmSummary}}</text>
-      <view class="llm-suggestions" wx:if="{{llmSuggestions.length}}">
-        <text class="dim" style="font-size:22rpx;font-weight:600;margin-bottom:8rpx">📋 建议</text>
-        <view class="llm-step" wx:for="{{llmSuggestions}}" wx:key="*this">
-          <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
+  <!-- AI 综合分析 -->
+  <view class="shell accent-purple" wx:if="{{llmSummary || llmLoading}}">
+    <view class="core">
+      <view class="llm-header">
+        <text class="eyebrow" style="margin-bottom:0">AI · 综合分析</text>
+        <view class="llm-status">
+          <view class="llm-dot {{llmLoading ? 'llm-dot-loading' : (llmStatus === 'ok' ? 'llm-dot-ok' : 'llm-dot-err')}}"></view>
+          <text wx:if="{{llmLoading}}" class="amber">分析中…</text>
+          <text wx:elif="{{llmStatus === 'ok'}}" class="green">最新分析</text>
+          <text wx:else class="red">分析失败</text>
+          <text wx:if="{{llmTrigger}}" class="muted" style="margin-left:8rpx">· {{llmTrigger === 'auto' ? '自动' : '手动'}}</text>
         </view>
       </view>
-      <view class="llm-tags" wx:if="{{llmFocusAreas.length}}">
-        <text class="llm-tag" wx:for="{{llmFocusAreas}}" wx:key="*this">{{item}}</text>
-      </view>
-      <view class="llm-footer" wx:if="{{llmNextCheck}}">
-        <text class="muted" style="font-size:20rpx">⏰ {{llmNextCheck}}</text>
-      </view>
-    </block>
-    <block wx:else>
-      <text class="muted" style="font-size:22rpx">{{llmSummary}}</text>
-      <view class="llm-retry" bindtap="onDeepAnalysis">
-        <text class="blue" style="font-size:22rpx">🔄 点击重试</text>
-      </view>
-    </block>
-    <view class="llm-action" wx:if="{{!llmLoading && llmStatus === 'ok'}}">
-      <view class="btn-deep" bindtap="onDeepAnalysis">
-        <text style="font-weight:600">🔍 深度分析</text>
+      <block wx:if="{{llmLoading}}">
+        <view class="llm-loading">
+          <text class="mono dim">AI 分析中，请稍候…</text>
+        </view>
+      </block>
+      <block wx:elif="{{llmStatus === 'ok'}}">
+        <text class="llm-summary">{{llmSummary}}</text>
+        <view class="llm-suggestions" wx:if="{{llmSuggestions.length}}">
+          <text class="dim" style="font-size:22rpx;font-weight:600">📋 建议</text>
+          <view class="llm-step" wx:for="{{llmSuggestions}}" wx:key="*this">
+            <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
+          </view>
+        </view>
+        <view class="llm-tags" wx:if="{{llmFocusAreas.length}}">
+          <text class="llm-tag" wx:for="{{llmFocusAreas}}" wx:key="*this">{{item}}</text>
+        </view>
+        <view class="llm-footer" wx:if="{{llmNextCheck}}">
+          <text class="muted" style="font-size:20rpx">⏰ {{llmNextCheck}}</text>
+        </view>
+      </block>
+      <block wx:else>
+        <text class="muted" style="font-size:22rpx">{{llmSummary}}</text>
+        <view class="btn-ghost llm-retry" bindtap="onDeepAnalysis">
+          <text class="blue">🔄 点击重试</text>
+        </view>
+      </block>
+      <view class="btn-deep-wrap" wx:if="{{!llmLoading && llmStatus === 'ok'}}">
+        <view class="btn-deep" bindtap="onDeepAnalysis">
+          <text style="font-weight:700">🔍 深度分析</text>
+        </view>
       </view>
     </view>
   </view>

@@ -1,38 +1,32 @@
-.page { padding: 16rpx; display: flex; flex-direction: column; gap: 16rpx; }
+/* 天气页 · 深色精致化 v2 */
 
-.wx-now {
-  background: linear-gradient(135deg, #1e293b, #0f172a);
-  border: 1px solid var(--border);
-  border-radius: 12rpx; padding: 32rpx; text-align: center;
-}
+/* 当前天气 hero */
+.wx-now { text-align: center; padding: 36rpx 28rpx; }
+.wx-hero { display: flex; align-items: baseline; justify-content: center; gap: 20rpx; }
 .wx-temp {
-  font-size: 80rpx; font-weight: 700;
+  font-size: 96rpx; font-weight: 800; line-height: 1.1;
   font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
-  color: var(--text); margin: 8rpx 0;
+  color: var(--text);
 }
-
-.fc-scroll { display: flex; gap: 16rpx; white-space: nowrap; }
-.fc-item {
-  display: inline-flex; flex-direction: column; align-items: center;
-  min-width: 80rpx; font-size: 22rpx; gap: 4rpx;
-}
+.wx-desc { font-size: 30rpx; color: var(--text); }
+.wx-meta { font-size: 20rpx; color: var(--text-muted); margin-top: 12rpx; }
 
 /* 7-day chart */
 .day-chart { display: flex; justify-content: space-around; padding: 8rpx 0; }
 .day-col {
-  display: flex; flex-direction: column; align-items: center; gap: 4rpx;
+  display: flex; flex-direction: column; align-items: center; gap: 6rpx;
   flex: 1; min-width: 72rpx;
 }
 .day-icon { font-size: 36rpx; }
 .day-bar-track {
   position: relative; width: 16rpx; height: 120rpx;
-  background: var(--bg-input); border-radius: 8rpx;
+  background: rgba(255,255,255,0.06); border-radius: 999rpx;
   overflow: hidden; margin: 4rpx 0;
 }
 .day-bar-fill {
   position: absolute; left: 0; right: 0;
   background: linear-gradient(180deg, var(--amber), var(--green));
-  border-radius: 8rpx;
+  border-radius: 999rpx;
 }
 
 /* Hourly sparkline */
@@ -43,15 +37,26 @@
 }
 .spark-col {
   min-width: 4rpx;
-  border-radius: 3rpx 3rpx 0 0;
+  border-radius: 999rpx 999rpx 0 0;
 }
 .spark-xlabels {
   display: flex; justify-content: space-between;
-  padding: 4rpx 4rpx 0; margin-top: 4rpx;
+  padding: 4rpx 4rpx 0; margin-top: 6rpx;
 }
 
-.ag-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8rpx; }
-.ag-item {
-  background: var(--bg-input); border: 1px solid var(--border);
-  border-radius: 4rpx; padding: 12rpx 16rpx; text-align: center;
+.fc-scroll { display: flex; gap: 16rpx; white-space: nowrap; }
+.fc-item {
+  display: inline-flex; flex-direction: column; align-items: center;
+  min-width: 80rpx; font-size: 22rpx; gap: 6rpx;
 }
+
+/* 农业气象指标 */
+.ag-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12rpx; }
+.ag-item {
+  background: rgba(255,255,255,0.03);
+  border: 1rpx solid rgba(255,255,255,0.07);
+  box-shadow: inset 0 2rpx 2rpx rgba(255,255,255,0.04);
+  border-radius: 24rpx; padding: 20rpx 16rpx; text-align: center;
+}
+.ag-label { font-size: 18rpx; color: var(--text-muted); letter-spacing: 0.06em; display: block; }
+.ag-val { font-size: 30rpx; font-weight: 700; display: block; margin-top: 8rpx; }
