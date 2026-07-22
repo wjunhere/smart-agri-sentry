@@ -57,10 +57,18 @@ class WeatherNode(Node):
 
         interval = 60.0 if self.mock_mode else float(self.fetch_interval_sec)
         self.timer = self.create_timer(interval, self._on_timer)
+        # Republish the last forecast every 60s so late subscribers (e.g. the
+        # miniprogram bridge started after this node) still receive data even
+        # when the real-mode fetch interval is hours long.
+        self.repub_timer = self.create_timer(60.0, self._on_republish)
         self.get_logger().info(f'Weather node ready (mock={self.mock_mode})')
 
     def _on_timer(self):
         self._fetch_and_publish()
+
+    def _on_republish(self):
+        if self.last_published is not None:
+            self.pub.publish(self.last_published)
 
     def _fetch_and_publish(self):
         raw = self.client.fetch_grid_forecast(self.lat, self.lon)
