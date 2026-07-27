@@ -1,10 +1,11 @@
-"""Plant detector node using YOLOv8n BPU inference (crop/weed)."""
+"""Plant detector node using YOLO BPU inference (single-class plant)."""
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_srvs.srv import SetBool
 from sentry_interfaces.msg import PlantDetection
 from cv_bridge import CvBridge
+from collections import deque
 import signal
 import sys
 
@@ -18,11 +19,17 @@ class PlantDetectorNode(Node):
         self.declare_parameter('min_area_ratio', 0.05)
         self.declare_parameter('use_simulation', False)
         self.declare_parameter('model_path', '')
+        self.declare_parameter('vote_window', 3)
+        self.declare_parameter('vote_min', 2)
 
         self.conf_threshold = self.get_parameter('confidence_threshold').value
         self.min_area_ratio = self.get_parameter('min_area_ratio').value
         self.use_simulation = self.get_parameter('use_simulation').value
         model_path = self.get_parameter('model_path').value
+        self.vote_window = max(1, int(self.get_parameter('vote_window').value))
+        self.vote_min = max(1, int(self.get_parameter('vote_min').value))
+        self._votes = deque(maxlen=self.vote_window)
+        self._last_hit = None  # (bbox, confidence, area_ratio) of latest raw hit
 
         self._model = None
         self._dnn = None
@@ -105,6 +112,9 @@ class PlantDetectorNode(Node):
         else:
             detected, bbox, confidence, area_ratio = self._detect(cv_image)
 
+        detected, bbox, confidence, area_ratio = self._vote(
+            detected, bbox, confidence, area_ratio)
+
         out = PlantDetection()
         out.header.stamp = self.get_clock().now().to_msg()
         out.header.frame_id = 'camera'
@@ -113,6 +123,21 @@ class PlantDetectorNode(Node):
         out.confidence = confidence
         out.area_ratio = area_ratio
         self.pub.publish(out)
+
+    def _vote(self, detected, bbox, confidence, area_ratio):
+        """Temporal voting: report detection only when at least vote_min of
+        the last vote_window frames fired. Suppresses single-frame false
+        positives; the last real hit's bbox is republished during a
+        single-frame miss so the overlay stays stable."""
+        if self.vote_window <= 1:
+            return detected, bbox, confidence, area_ratio
+        self._votes.append(bool(detected))
+        if detected:
+            self._last_hit = (bbox, confidence, area_ratio)
+        if sum(self._votes) >= self.vote_min and self._last_hit is not None:
+            hb, hc, ha = self._last_hit
+            return True, hb, hc, ha
+        return False, [0.0, 0.0, 0.0, 0.0], 0.0, 0.0
 
     def _detect(self, image):
         """Run YOLOv8n BPU inference."""

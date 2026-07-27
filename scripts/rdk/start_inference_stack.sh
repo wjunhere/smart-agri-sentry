@@ -11,8 +11,8 @@ set -u
 ROS_DISTRO_NAME="${ROS_DISTRO:-humble}"
 WS_DIR="${SENTRY_WS:-/home/sunrise/dev_ws}"
 LOG_DIR="${SENTRY_LOG_DIR:-/tmp}"
-YOLO_MODEL="${SENTRY_YOLO_MODEL:-${WS_DIR}/models/best_plant_finetune_bayese_640x640_nv12.bin}"
-CONF_THRES="${SENTRY_YOLO_CONF:-0.25}"
+YOLO_MODEL="${SENTRY_YOLO_MODEL:-${WS_DIR}/models/best_plant_r2_bayese_640x640_nv12.bin}"
+CONF_THRES="${SENTRY_YOLO_CONF:-0.35}"
 MIN_AREA="${SENTRY_YOLO_MIN_AREA:-0.01}"
 
 log() { printf '[start_inference_stack] %s\n' "$*"; }
