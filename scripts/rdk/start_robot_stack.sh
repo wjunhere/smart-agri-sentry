@@ -24,7 +24,16 @@ CROP_TYPE="${CROP_TYPE:-tomato}"
 ENABLE_VISION="${ENABLE_VISION:-true}"
 ENABLE_ADVISORY="${ENABLE_ADVISORY:-true}"
 ENABLE_WEB="${ENABLE_WEB:-true}"
-CAMERA_BACKEND="${CAMERA_BACKEND:-mipi}"
+CAMERA_BACKEND="${CAMERA_BACKEND:-hikrobot}"
+MISSION_PARAMS_FILE="${MISSION_PARAMS_FILE:-${WS_DIR}/src/sentry_mission/config/mission_params.yaml}"
+CRUISE_SPEED="${CRUISE_SPEED:-}"
+if [ -z "$CRUISE_SPEED" ] && [ -f "$MISSION_PARAMS_FILE" ]; then
+  CRUISE_SPEED="$(awk -F: '/^[[:space:]]*cruise_speed[[:space:]]*:/ {gsub(/[[:space:]]/, "", $2); print $2; exit}' "$MISSION_PARAMS_FILE")"
+fi
+CRUISE_SPEED="${CRUISE_SPEED:-0.18}"
+if ! awk -v speed="$CRUISE_SPEED" 'BEGIN { exit !(speed >= 0.05 && speed <= 0.35) }'; then
+  fail "Invalid cruise speed ${CRUISE_SPEED}; expected 0.05 to 0.35 m/s"
+fi
 if [ "$PRESERVE_WEB" = "1" ]; then
   ENABLE_WEB="false"
 fi
@@ -190,27 +199,29 @@ EOF
 }
 
 check_cmd_vel_route() {
-  local info
-  info="$(ros2 topic info /cmd_vel -v 2>&1 || true)"
-  printf '%s\n' "$info" | grep -E 'Publisher count|Subscription count|Node name' || true
+  local info attempt expected_publishers
   if control_web_expected; then
-    if ! printf '%s' "$info" | grep -q "Publisher count: 2"; then
-      fail "/cmd_vel should have mission_control_node and web_remote_node publishers when web control is active"
-    fi
-    if ! printf '%s' "$info" | grep -q "web_remote_node"; then
-      fail "/cmd_vel publisher should include web_remote_node when web control is active"
-    fi
+    expected_publishers=2
   else
-    if ! printf '%s' "$info" | grep -q "Publisher count: 1"; then
-      fail "/cmd_vel should have exactly one publisher when web is disabled"
+    expected_publishers=1
+  fi
+
+  for attempt in $(seq 1 10); do
+    info="$(ros2 topic info /cmd_vel -v 2>&1 || true)"
+    if printf '%s' "$info" | grep -q "Publisher count: ${expected_publishers}" \
+      && printf '%s' "$info" | grep -q "mission_control_node" \
+      && printf '%s' "$info" | grep -q "uart_bridge_node"; then
+      if ! control_web_expected || printf '%s' "$info" | grep -q "web_remote_node"; then
+        printf '%s\n' "$info" | grep -E 'Publisher count|Subscription count|Node name' || true
+        return
+      fi
     fi
-  fi
-  if ! printf '%s' "$info" | grep -q "mission_control_node"; then
-    fail "/cmd_vel publisher should include mission_control_node"
-  fi
-  if ! printf '%s' "$info" | grep -q "uart_bridge_node"; then
-    fail "/cmd_vel subscriber should include uart_bridge_node"
-  fi
+    warn "Waiting for /cmd_vel publishers to reach ROS graph (${attempt}/10)..."
+    sleep 2
+  done
+
+  printf '%s\n' "$info" | grep -E 'Publisher count|Subscription count|Node name' || true
+  fail "/cmd_vel route did not reach expected publishers/subscribers within 20 seconds"
 }
 
 ensure_preserved_rosbridge() {
@@ -254,6 +265,7 @@ main() {
   log "Starting sentry_v2.launch.py; log: ${LAUNCH_LOG}"
   setsid ros2 launch sentry_bringup sentry_v2.launch.py \
     crop_type:="${CROP_TYPE}" \
+    cruise_speed:="${CRUISE_SPEED}" \
     enable_vision:="${ENABLE_VISION}" \
     camera_backend:="${CAMERA_BACKEND}" \
     enable_advisory:="${ENABLE_ADVISORY}" \

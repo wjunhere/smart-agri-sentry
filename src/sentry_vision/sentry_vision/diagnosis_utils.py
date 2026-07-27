@@ -82,6 +82,7 @@ def resolve_model_path(crop_type: str, model_path: str, input_size: int) -> str:
         return model_path
 
     candidates = []
+    candidates.append(os.path.join('/home/sunrise/dev_ws', model_path))
     colcon_prefix = os.environ.get('COLCON_PREFIX_PATH')
     if colcon_prefix:
         # COLCON_PREFIX_PATH points to install/<pkg>; workspace root is two

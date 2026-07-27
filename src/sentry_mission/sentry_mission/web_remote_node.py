@@ -6,6 +6,7 @@ start/stop orchestration. Serves the v2 remote control page at port 5000.
 """
 
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -16,12 +17,26 @@ import rclpy
 import yaml
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import CompressedImage
 from sentry_interfaces.msg import MissionStatus
 from sentry_interfaces.srv import SetCropType
 from std_srvs.srv import SetBool
 
 # Defer Flask import to avoid import issues when not running
 _app = None
+CRUISE_SPEED_MIN = 0.05
+CRUISE_SPEED_MAX = 0.35
+DEFAULT_CRUISE_SPEED = 0.18
+DEFAULT_FIXED_POINT_RADIUS = 0.20
+TOMATO_DISEASE_CLASSES = frozenset((
+    'late_blight',
+    'healthy',
+    'early_blight',
+    'bacterial_spot',
+    'leaf_mold',
+    'septoria_leaf_spot',
+    'tomato_yellow_leaf_curl_virus',
+))
 
 
 def _stack_script_env(base_env=None):
@@ -36,6 +51,7 @@ def _stack_script_env(base_env=None):
     env['ENABLE_WEB'] = 'false'
     env['ENABLE_VISION'] = 'true'
     env['ENABLE_ADVISORY'] = 'true'
+    env['CAMERA_BACKEND'] = 'hikrobot'
     return env
 
 
@@ -51,6 +67,99 @@ def _validate_vision_inference_mode(mode: str) -> str:
     if mode not in ('triggered', 'independent'):
         raise ValueError(f'Invalid vision inference mode: {mode}')
     return mode
+
+
+def _validate_cruise_speed(speed) -> float:
+    speed = float(speed)
+    if not CRUISE_SPEED_MIN <= speed <= CRUISE_SPEED_MAX:
+        raise ValueError(
+            f'Cruise speed must be between {CRUISE_SPEED_MIN:.2f} and '
+            f'{CRUISE_SPEED_MAX:.2f} m/s')
+    return speed
+
+
+def _validate_fixed_point_stops(stops) -> list:
+    if not isinstance(stops, list):
+        raise ValueError('fixed_point_stops must be a list')
+
+    clean = []
+    for index, stop in enumerate(stops):
+        if not isinstance(stop, dict):
+            raise ValueError(f'fixed_point_stops[{index}] must be an object')
+        try:
+            x = float(stop['x'])
+            y = float(stop['y'])
+            radius = float(stop.get('radius', DEFAULT_FIXED_POINT_RADIUS))
+            disease_class = str(stop['disease_class'])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f'fixed_point_stops[{index}] must contain x, y, radius, and disease_class'
+            ) from exc
+        if not all(math.isfinite(value) for value in (x, y, radius)) or radius <= 0.0:
+            raise ValueError(
+                f'fixed_point_stops[{index}] has invalid coordinates or radius')
+        if disease_class not in TOMATO_DISEASE_CLASSES:
+            raise ValueError(f'fixed_point_stops[{index}] has invalid disease_class')
+        clean.append({
+            'x': x,
+            'y': y,
+            'radius': radius,
+            'disease_class': disease_class,
+        })
+    return clean
+
+
+def _read_mission_params(path: Path) -> dict:
+    with path.open('r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError('mission parameters must be an object')
+    return {
+        **data,
+        'cruise_speed': _validate_cruise_speed(
+            data.get('cruise_speed', DEFAULT_CRUISE_SPEED)),
+        'fixed_point_stops': _validate_fixed_point_stops(
+            data.get('fixed_point_stops', [])),
+    }
+
+
+def _write_mission_params(path: Path, params: dict) -> None:
+    normalized = {
+        **params,
+        'cruise_speed': _validate_cruise_speed(
+            params.get('cruise_speed', DEFAULT_CRUISE_SPEED)),
+        'fixed_point_stops': _validate_fixed_point_stops(
+            params.get('fixed_point_stops', [])),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        '# Mission parameters saved from web frontend and loaded during preheat\n'
+        + yaml.safe_dump(normalized, allow_unicode=False, sort_keys=False),
+        encoding='utf-8')
+
+
+def _read_cruise_speed_file(path: Path) -> float:
+    return _read_mission_params(path)['cruise_speed']
+
+
+def _write_cruise_speed_file(path: Path, speed) -> None:
+    try:
+        params = _read_mission_params(path)
+    except FileNotFoundError:
+        params = {}
+    params['cruise_speed'] = speed
+    _write_mission_params(path, params)
+
+
+def _write_fixed_point_stops_file(path: Path, stops) -> list:
+    clean_stops = _validate_fixed_point_stops(stops)
+    try:
+        params = _read_mission_params(path)
+    except FileNotFoundError:
+        params = {}
+    params['fixed_point_stops'] = clean_stops
+    _write_mission_params(path, params)
+    return clean_stops
 
 
 
@@ -109,12 +218,14 @@ class WebRemoteNode(Node):
             'stack_stop_script',
             '/home/sunrise/dev_ws/scripts/rdk/stop_robot_stack.sh')
         self.declare_parameter('stack_script_timeout_sec', 180.0)
+        self.declare_parameter('capture_dir', '/home/sunrise/dev_ws/images')
         self.max_linear = self.get_parameter('max_linear').value
         self.max_angular = self.get_parameter('max_angular').value
         self.stack_start_script = self.get_parameter('stack_start_script').value
         self.stack_stop_script = self.get_parameter('stack_stop_script').value
         self.stack_script_timeout = float(
             self.get_parameter('stack_script_timeout_sec').value)
+        self.capture_dir = self.get_parameter('capture_dir').value
 
         # Mission control starts in MANUAL; keep the web state aligned.
         self.mode = 'MANUAL'
@@ -127,11 +238,33 @@ class WebRemoteNode(Node):
         self.frontend_started_auto = False
         self.completion_stop_started = False
         self.stack_ready = False
+        self.cruise_speed = 0.18
         self.last_stack_output = ''
         self.vision_inference_mode = 'triggered'
         self.vision_diagnosis_proc = None
         self.vision_diagnosis_log = None
+        self.latest_camera_jpeg = None
+        self.camera_image_sub = self.create_subscription(
+            CompressedImage, '/out/compressed', self._on_camera_image, 1)
         self.timer = self.create_timer(0.05, self.timer_cb)
+
+    def _on_camera_image(self, msg: CompressedImage):
+        with self.lock:
+            self.latest_camera_jpeg = bytes(msg.data)
+
+    def capture_camera_image(self):
+        with self.lock:
+            image_data = self.latest_camera_jpeg
+        if not image_data:
+            return False, 'No camera frame is available yet.'
+
+        capture_dir = Path(self.capture_dir)
+        capture_dir.mkdir(parents=True, exist_ok=True)
+        timestamp_ms = int(time.time() * 1000)
+        filename = f'capture_{timestamp_ms}.jpg'
+        (capture_dir / filename).write_bytes(image_data)
+        self.get_logger().info(f'Captured camera frame: {capture_dir / filename}')
+        return True, filename
 
     def timer_cb(self):
         with self.lock:
@@ -147,6 +280,14 @@ class WebRemoteNode(Node):
             # AUTO: do not publish, Nav2 owns /cmd_vel
 
     def on_mission_status(self, msg: MissionStatus):
+        # The mission mode may also be changed by an operator or recovery
+        # script that calls /set_auto_mode directly. Keep the web control
+        # plane aligned so it does not leave the UI locked in AUTO.
+        if getattr(msg, 'state', '') == 'MANUAL':
+            with self.lock:
+                self.mode = 'MANUAL'
+                self.frontend_started_auto = False
+                self.completion_stop_started = False
         if not _mission_status_is_complete(msg):
             return
         with self.lock:
@@ -262,6 +403,69 @@ class WebRemoteNode(Node):
                 return True
             time.sleep(0.1)
         return False
+
+    def start_vision_stack(self):
+        """Start visual services while keeping manual motion ownership."""
+        with self.lock:
+            if self.stack_ready:
+                return True, 'Vision stack already running.'
+        return self.preheat_stack()
+
+    def _set_remote_parameter(self, node_name: str, parameter_name: str,
+                              value: float):
+        from rclpy.parameter import Parameter
+        from rclpy.parameter_client import AsyncParameterClient
+
+        client = AsyncParameterClient(self, node_name)
+        if not client.wait_for_services(timeout_sec=1.0):
+            return False, f'{node_name} parameter service unavailable'
+
+        future = client.set_parameters([
+            Parameter(parameter_name, value=value),
+        ])
+        done = threading.Event()
+        result = {}
+
+        def on_done(completed):
+            try:
+                result['response'] = completed.result()
+            except Exception as exc:
+                result['error'] = str(exc)
+            finally:
+                done.set()
+
+        future.add_done_callback(on_done)
+        if not done.wait(timeout=2.0):
+            return False, f'{node_name} parameter update timed out'
+        if result.get('error'):
+            return False, result['error']
+        responses = result.get('response') or []
+        if not responses or not all(item.successful for item in responses):
+            reason = next((item.reason for item in responses
+                           if not item.successful), 'rejected')
+            return False, f'{node_name} rejected {parameter_name}: {reason}'
+        return True, 'ok'
+
+    def set_cruise_speed(self, speed):
+        speed = _validate_cruise_speed(speed)
+        with self.lock:
+            stack_ready = self.stack_ready
+
+        if not stack_ready:
+            with self.lock:
+                self.cruise_speed = speed
+            return True, f'Cruise speed saved for preheat: {speed:.2f} m/s'
+
+        for node_name, parameter_name in (
+                ('/mission_control_node', 'cruise_speed'),
+                ('/controller_server', 'FollowPath.desired_linear_vel')):
+            ok, message = self._set_remote_parameter(
+                node_name, parameter_name, speed)
+            if not ok:
+                return False, message
+        with self.lock:
+            self.cruise_speed = speed
+        return True, f'Cruise speed set to {speed:.2f} m/s'
 
     def start_stack_and_auto(self):
         with self.stack_lock:
@@ -388,14 +592,6 @@ class WebRemoteNode(Node):
                     proc.kill()
                 proc.wait(timeout=2.0)
             self.get_logger().info('Stopped independent vision diagnosis node')
-        # ros2 run may leave the Python entry-point child alive after the
-        # wrapper exits; clean that exact independent diagnosis command too.
-        pattern = '/sentry_vision/lib/sentry_vision/vision_diagnosis_node --ros-args'
-        subprocess.run(
-            ['pkill', '-TERM', '-f', pattern],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=2.0)
         self.vision_diagnosis_proc = None
         if self.vision_diagnosis_log is not None:
             self.vision_diagnosis_log.close()
@@ -415,6 +611,7 @@ class WebRemoteNode(Node):
                 'frontend_started_auto': self.frontend_started_auto,
                 'completion_stop_started': self.completion_stop_started,
                 'stack_ready': self.stack_ready,
+                'cruise_speed': self.cruise_speed,
                 'vision_inference_mode': self.vision_inference_mode,
             }
 
@@ -438,6 +635,12 @@ def _get_app(node: WebRemoteNode):
     STATIC_V2_DIR = SHARE_DIR / 'static_v2'
     WAYPOINTS_FILE = SHARE_DIR / 'config' / 'waypoints.yaml'
     SOURCE_WAYPOINTS_FILE = Path('/home/sunrise/dev_ws/src/sentry_mission/config/waypoints.yaml')
+    CRUISE_SPEED_FILE = SHARE_DIR / 'config' / 'mission_params.yaml'
+    SOURCE_CRUISE_SPEED_FILE = Path('/home/sunrise/dev_ws/src/sentry_mission/config/mission_params.yaml')
+    try:
+        node.cruise_speed = _read_cruise_speed_file(CRUISE_SPEED_FILE)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        node.get_logger().warning(f'Using default cruise speed: {exc}')
 
     @_app.route('/')
     def index():
@@ -481,6 +684,16 @@ def _get_app(node: WebRemoteNode):
             'message': output[-2000:],
         }), 200 if ok else 500
 
+    @_app.route('/vision/start', methods=['POST'])
+    def start_vision():
+        ok, output = node.start_vision_stack()
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': node.mode,
+            'stack_ready': node.stack_ready,
+            'message': output[-2000:],
+        }), 200 if ok else 500
+
     @_app.route('/stack/stop', methods=['POST'])
     def stack_stop():
         ok, output = node.stop_stack(reason='frontend')
@@ -507,6 +720,61 @@ def _get_app(node: WebRemoteNode):
     @_app.route('/status', methods=['GET'])
     def status():
         return jsonify(node.get_status())
+
+    @_app.route('/camera/capture', methods=['POST'])
+    def capture_camera():
+        try:
+            ok, message = node.capture_camera_image()
+        except OSError as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 500
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'filename': message if ok else None,
+            'message': message,
+        }), 200 if ok else 503
+
+    @_app.route('/cruise-speed', methods=['POST'])
+    def set_cruise_speed():
+        data = request.get_json() or {}
+        try:
+            speed = _validate_cruise_speed(data.get('speed'))
+            _write_cruise_speed_file(CRUISE_SPEED_FILE, speed)
+            if SOURCE_CRUISE_SPEED_FILE.exists() and SOURCE_CRUISE_SPEED_FILE != CRUISE_SPEED_FILE:
+                _write_cruise_speed_file(SOURCE_CRUISE_SPEED_FILE, speed)
+            ok, message = node.set_cruise_speed(speed)
+        except (TypeError, ValueError) as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 400
+        except OSError as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 500
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'speed': node.get_status()['cruise_speed'],
+            'message': message,
+        }), 200 if ok else 500
+
+    @_app.route('/fixed-point-stops', methods=['GET'])
+    def get_fixed_point_stops():
+        try:
+            params = _read_mission_params(CRUISE_SPEED_FILE)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 500
+        return jsonify({
+            'status': 'ok',
+            'fixed_point_stops': params['fixed_point_stops'],
+        })
+
+    @_app.route('/fixed-point-stops', methods=['POST'])
+    def set_fixed_point_stops():
+        data = request.get_json() or {}
+        try:
+            stops = _write_fixed_point_stops_file(
+                CRUISE_SPEED_FILE, data.get('fixed_point_stops'))
+            if (SOURCE_CRUISE_SPEED_FILE.exists()
+                    and SOURCE_CRUISE_SPEED_FILE != CRUISE_SPEED_FILE):
+                _write_fixed_point_stops_file(SOURCE_CRUISE_SPEED_FILE, stops)
+        except (TypeError, ValueError, OSError, yaml.YAMLError) as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 400
+        return jsonify({'status': 'ok', 'fixed_point_stops': stops})
 
     @_app.route('/vision/inference-mode', methods=['GET'])
     def get_vision_inference_mode():

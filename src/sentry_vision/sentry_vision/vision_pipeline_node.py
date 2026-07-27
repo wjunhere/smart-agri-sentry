@@ -4,10 +4,13 @@ Provides a synchronous service /vision/pipeline/trigger that executes a complete
 multi-frame scan-and-diagnose cycle without moving the gimbal. Loads BPU models
 on-demand during scan and unloads them before returning.
 """
+import threading
 import time
 import numpy as np
 
 import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from sentry_interfaces.msg import Diagnosis
@@ -20,63 +23,73 @@ from .diagnosis_utils import get_labels, resolve_model_path, get_input_format
 
 # Scan limits
 SCAN_TIMEOUT_SEC = 15.0
+DEFAULT_YOLO_MODEL_PATH = '/home/sunrise/dev_ws/models/yolov8n_crop_weed_bayese_640x640_nv12.bin'
 
 
 class VisionPipelineNode(Node):
     def __init__(self):
         super().__init__('vision_pipeline_node')
         self.declare_parameter('timeout_sec', SCAN_TIMEOUT_SEC)
+        self.declare_parameter('yolo_model_path', DEFAULT_YOLO_MODEL_PATH)
         self.timeout_sec = self.get_parameter('timeout_sec').value
+        self.yolo_model_path = self.get_parameter('yolo_model_path').value
         self.bridge = CvBridge()
         self._latest_frame = None
-        self._frame_received = False
+        self._frame_sequence = 0
+        self._frame_condition = threading.Condition()
+        self._callback_group = ReentrantCallbackGroup()
 
         self.sub = self.create_subscription(
-            Image, '/sentry/camera/image_raw', self._on_frame, 1)
+            Image, '/sentry/camera/image_raw', self._on_frame, 1,
+            callback_group=self._callback_group)
         self.srv = self.create_service(
-            PipelineTrigger, '/vision/pipeline/trigger', self.on_trigger)
+            PipelineTrigger, '/vision/pipeline/trigger', self.on_trigger,
+            callback_group=self._callback_group)
 
         self.get_logger().info('Vision pipeline node ready')
 
     def _on_frame(self, msg: Image):
-        self._latest_frame = msg
-        self._frame_received = True
+        with self._frame_condition:
+            self._latest_frame = msg
+            self._frame_sequence += 1
+            self._frame_condition.notify_all()
 
     # ── frame wait helper ───────────────────────────────────────────
 
-    def _wait_for_frame(self, timeout: float = 2.0) -> Image | None:
-        """Spin until a fresh frame arrives or timeout."""
-        self._frame_received = False
-        start = time.monotonic()
-        while rclpy.ok() and not self._frame_received:
-            rclpy.spin_once(self, timeout_sec=0.05)
-            if time.monotonic() - start > timeout:
-                self.get_logger().warn('Frame wait timeout')
-                return None
-        return self._latest_frame
+    def _wait_for_frame(self, after_sequence: int,
+                        timeout: float = 2.0) -> Image | None:
+        """Wait for a camera callback newer than ``after_sequence``."""
+        deadline = time.monotonic() + timeout
+        with self._frame_condition:
+            while self._frame_sequence <= after_sequence:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    self.get_logger().warn('Frame wait timeout')
+                    return None
+                self._frame_condition.wait(timeout=remaining)
+            return self._latest_frame
 
     # ── model helpers ───────────────────────────────────────────────
 
     def _load_yolo(self):
-        import os
         from hobot_dnn import pyeasy_dnn as dnn
-        candidates = [
-            os.path.join(os.getcwd(), 'models',
-                         'yolov8n_crop_weed_bayese_640x640_nv12.bin'),
-            os.path.join(os.path.dirname(__file__), '..', '..', '..',
-                         'models', 'yolov8n_crop_weed_bayese_640x640_nv12.bin'),
-        ]
-        for c in candidates:
-            if os.path.exists(c):
-                self.get_logger().info(f'Loading YOLO: {c}')
-                return dnn.load(c)[0]
-        return None
+        self.get_logger().info(f'Loading YOLO: {self.yolo_model_path}')
+        try:
+            return dnn.load(self.yolo_model_path)[0]
+        except Exception as exc:
+            self.get_logger().error(
+                f'Failed to load YOLO model {self.yolo_model_path}: {exc}')
+            return None
 
     def _load_mobilenet(self, crop_type: str):
         from hobot_dnn import pyeasy_dnn as dnn
         path = resolve_model_path(crop_type, '', 224)
         self.get_logger().info(f'Loading MobileNet: {path}')
-        return dnn.load(path)[0]
+        try:
+            return dnn.load(path)[0]
+        except Exception as exc:
+            self.get_logger().error(f'Failed to load MobileNet {path}: {exc}')
+            return None
 
     def _unload_models(self):
         pass  # Python GC handles; models go out of scope after trigger returns
@@ -123,8 +136,10 @@ class VisionPipelineNode(Node):
                 self.get_logger().warn('Scan timeout')
                 break
 
-            # Wait for frame
-            frame_msg = self._wait_for_frame()
+            # Wait for a frame that arrived after this scan shot started.
+            with self._frame_condition:
+                frame_sequence = self._frame_sequence
+            frame_msg = self._wait_for_frame(frame_sequence)
             if frame_msg is None:
                 self.get_logger().warn(f'Shot {shot}: no frame, skipping')
                 continue
@@ -143,7 +158,7 @@ class VisionPipelineNode(Node):
 
             if not detected:
                 self.get_logger().info(f'Shot {shot}: no crop detected')
-                break
+                continue
 
             # MobileNet classify
             mb_input = self._preprocess_mobilenet(cv_image, crop_type)
@@ -202,10 +217,13 @@ class VisionPipelineNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = VisionPipelineNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()

@@ -46,7 +46,7 @@ def test_frontend_defaults_manual_and_syncs_mode_from_mission_status():
     assert "store.mode = missionStateToMode(msg.state);" in text
 
 
-def test_launch_uses_navigation_stack_without_map_argument():
+def test_launch_uses_explicit_mapless_navigation_stack():
     launch_file = (
         REPO_ROOT
         / "src"
@@ -56,10 +56,104 @@ def test_launch_uses_navigation_stack_without_map_argument():
     )
     text = launch_file.read_text(encoding="utf-8")
 
-    assert "navigation_launch.py" in text
+    assert "navigation_launch.py" not in text
     assert "bringup_launch.py" not in text
     assert "'map': ''" not in text
-    assert "mission_params.yaml" not in text
+    assert "DeclareLaunchArgument('cruise_speed'" in text
+    assert "executable='controller_server'" in text
+    assert "executable='planner_server'" in text
+    assert "executable='bt_navigator'" in text
+    assert "executable='velocity_smoother'" in text
+
+
+def test_frontend_exposes_camera_start_and_cruise_speed_controls():
+    top_bar = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'components' / 'top-bar.js'
+    cruise_panel = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'components' / 'cruise-panel.js'
+    ros_js = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'ros.js'
+
+    assert '开启摄像头' in top_bar.read_text(encoding='utf-8')
+    assert 'callVisionStart' in top_bar.read_text(encoding='utf-8')
+    assert '拍摄' in top_bar.read_text(encoding='utf-8')
+    assert 'callCaptureImage' in top_bar.read_text(encoding='utf-8')
+    assert '巡航速度' in cruise_panel.read_text(encoding='utf-8')
+    assert 'callSetCruiseSpeed' in cruise_panel.read_text(encoding='utf-8')
+    assert "'/vision/start'" in ros_js.read_text(encoding='utf-8')
+    assert "'/cruise-speed'" in ros_js.read_text(encoding='utf-8')
+    assert "'/camera/capture'" in ros_js.read_text(encoding='utf-8')
+    assert ':disabled="store.cruiseSpeedBusy"' in cruise_panel.read_text(encoding='utf-8')
+    assert 'let cruiseSpeedLoaded = false;' in ros_js.read_text(encoding='utf-8')
+    assert 'if (!cruiseSpeedLoaded && Number.isFinite(Number(data.cruise_speed)))' in ros_js.read_text(encoding='utf-8')
+
+
+def test_bottom_bar_exposes_scrollable_fixed_point_stop_editor():
+    env_bar = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'components' / 'env-data-bar.js'
+    ros_js = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'ros.js'
+    style = REPO_ROOT / 'src' / 'sentry_mission' / 'static_v2' / 'style.css'
+
+    component_text = env_bar.read_text(encoding='utf-8')
+    assert '固定点停车' in component_text
+    assert 'store.fixedPointStops' in component_text
+    assert 'store.addFixedPointStop()' in component_text
+    assert 'store.saveFixedPointStops()' in component_text
+    assert component_text.index('固定点停车') > component_text.index('视觉逻辑')
+    assert "'/fixed-point-stops'" in ros_js.read_text(encoding='utf-8')
+    assert '.env-bar-inner' in style.read_text(encoding='utf-8')
+    assert 'overflow-y: auto' in style.read_text(encoding='utf-8')
+
+
+def test_start_script_loads_saved_cruise_speed_before_launch():
+    start_script = REPO_ROOT / 'scripts' / 'rdk' / 'start_robot_stack.sh'
+    text = start_script.read_text(encoding='utf-8')
+
+    assert 'MISSION_PARAMS_FILE' in text
+    assert 'cruise_speed:="${CRUISE_SPEED}"' in text
+
+
+def test_preheat_passes_saved_cruise_speed_to_nav2_controller():
+    launch_file = REPO_ROOT / 'src' / 'sentry_bringup' / 'launch' / 'sentry_v2.launch.py'
+
+    text = launch_file.read_text(encoding='utf-8')
+
+    assert "'FollowPath.desired_linear_vel': ParameterValue(" in text
+    assert "LaunchConfiguration('cruise_speed'), value_type=float" in text
+
+
+def test_preheat_passes_mission_params_file_to_mission_control():
+    launch_file = REPO_ROOT / 'src' / 'sentry_bringup' / 'launch' / 'sentry_v2.launch.py'
+
+    text = launch_file.read_text(encoding='utf-8')
+
+    assert "mission_params_config = os.path.join(mission_pkg, 'config', 'mission_params.yaml')" in text
+    assert "'mission_params_file': mission_params_config" in text
+
+
+def test_plant_stop_thresholds_match_yolo_detector_thresholds():
+    launch_file = REPO_ROOT / 'src' / 'sentry_bringup' / 'launch' / 'sentry_v2.launch.py'
+    text = launch_file.read_text(encoding='utf-8')
+
+    assert "'confidence_threshold': 0.4" in text
+    assert "'min_area_ratio': 0.02" in text
+    assert (
+        "'detection_confidence_threshold': 0.4,\n"
+        "                'min_area_ratio': 0.02,"
+    ) in text
+
+
+def test_servo_driver_is_disabled_by_default_in_robot_launch():
+    launch_file = REPO_ROOT / 'src' / 'sentry_bringup' / 'launch' / 'sentry_v2.launch.py'
+    text = launch_file.read_text(encoding='utf-8')
+
+    assert "DeclareLaunchArgument('enable_servo', default_value='false')" in text
+    assert "executable='servo_driver_node'" in text
+    assert "condition=IfCondition(LaunchConfiguration('enable_servo'))" in text
+
+
+def test_start_script_waits_for_cmd_vel_publishers_to_reach_ros_graph():
+    start_script = REPO_ROOT / 'scripts' / 'rdk' / 'start_robot_stack.sh'
+    text = start_script.read_text(encoding='utf-8')
+
+    assert 'Waiting for /cmd_vel publishers to reach ROS graph' in text
+    assert 'for attempt in $(seq 1 10); do' in text
 
 
 def test_bringup_declares_autonomous_cruise_runtime_dependencies():

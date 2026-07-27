@@ -63,8 +63,14 @@ window.store = Vue.reactive({
   stackStarting: false,
   stackPreheating: false,
   stackReady: false,
+  visionStarting: false,
+  cameraCaptureBusy: false,
+  cruiseSpeed: 0.18,
+  cruiseSpeedBusy: false,
   visionInferenceMode: 'triggered',
   visionInferenceModeBusy: false,
+  fixedPointStops: [],
+  fixedPointStopsBusy: false,
   _rawWaypoints: [],
 });
 const store = window.store;  // local alias for internal use in this file
@@ -122,6 +128,7 @@ const TOPICS = [
   ['/vision/diagnosis', 'sentry_interfaces/Diagnosis',
    (msg) => {
      if (store.mockDiagnosisMode !== 'real') return;
+     if (msg.class_id === 254) store._diagBuf = [];
      // Temporal smoothing: buffer N recent predictions, show majority class
      store._diagBuf.push({ cls: msg.disease_class, conf: msg.confidence, probs: msg.probabilities });
      if (store._diagBuf.length > store._diagBufSize) store._diagBuf.shift();
@@ -288,6 +295,50 @@ function callStackPreheat() {
     })
     .finally(() => { store.stackPreheating = false; });
 }
+
+function callVisionStart() {
+  store.visionStarting = true;
+  return fetch('/vision/start', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to start vision stack');
+      }
+      store.stackReady = Boolean(data.stack_ready);
+      return data;
+    })
+    .finally(() => { store.visionStarting = false; });
+}
+
+function callCaptureImage() {
+  store.cameraCaptureBusy = true;
+  return fetch('/camera/capture', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to capture camera image');
+      }
+      console.info('[camera] captured:', data.filename);
+      return data;
+    })
+    .finally(() => { store.cameraCaptureBusy = false; });
+}
+
+function callSetCruiseSpeed(speed) {
+  store.cruiseSpeedBusy = true;
+  return fetch('/cruise-speed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ speed: Number(speed) }),
+  }).then(async (resp) => {
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to update cruise speed');
+    }
+    store.cruiseSpeed = Number(data.speed);
+    return data;
+  }).finally(() => { store.cruiseSpeedBusy = false; });
+}
 function callGetWaypoints() {
   return fetch('/waypoints')
     .then(async (resp) => {
@@ -322,6 +373,70 @@ function callSaveWaypoints(waypoints) {
     return store._rawWaypoints;
   });
 }
+
+const TOMATO_DISEASE_CLASSES = [
+  'late_blight',
+  'healthy',
+  'early_blight',
+  'bacterial_spot',
+  'leaf_mold',
+  'septoria_leaf_spot',
+  'tomato_yellow_leaf_curl_virus',
+];
+
+function normalizeFixedPointStop(stop) {
+  return {
+    x: Number(stop.x),
+    y: Number(stop.y),
+    radius: Number(stop.radius ?? 0.20),
+    disease_class: String(stop.disease_class || 'healthy'),
+  };
+}
+
+function fetchFixedPointStops() {
+  return fetch('/fixed-point-stops')
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to load fixed-point stops');
+      }
+      store.fixedPointStops = (data.fixed_point_stops || []).map(normalizeFixedPointStop);
+      return store.fixedPointStops;
+    });
+}
+
+store.fixedPointDiseaseClasses = TOMATO_DISEASE_CLASSES;
+store.addFixedPointStop = function() {
+  store.fixedPointStops.push({
+    x: 0,
+    y: 0,
+    radius: 0.20,
+    disease_class: 'healthy',
+  });
+};
+store.removeFixedPointStop = function(index) {
+  store.fixedPointStops.splice(index, 1);
+};
+store.saveFixedPointStops = async function() {
+  store.fixedPointStopsBusy = true;
+  try {
+    const fixed_point_stops = store.fixedPointStops.map(normalizeFixedPointStop);
+    const resp = await fetch('/fixed-point-stops', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fixed_point_stops }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to save fixed-point stops');
+    }
+    store.fixedPointStops = (data.fixed_point_stops || []).map(normalizeFixedPointStop);
+    return data;
+  } finally {
+    store.fixedPointStopsBusy = false;
+  }
+};
+
 function publishCmdVel(linear, angular) {
   const topic = new ROSLIB.Topic({
     ros, name: '/cmd_vel', messageType: 'geometry_msgs/Twist'
@@ -417,7 +532,6 @@ function callSetCropType(cropType) {
   store.rightSpeed = 0.14;
   // Keep mission state empty until real /mission/status or /waypoints data arrives.
   store.missionState = 'IDLE';
-  store.mode = 'MANUAL';
   store.missionCurrentAction = '';
   store.missionPlantsDetected = 0;
   store.missionPlantsAnalyzed = 0;
@@ -596,11 +710,17 @@ store.setMockMode = async function(mode) {
   } catch (e) { /* server not reachable, local-only */ }
 };
 
+let cruiseSpeedLoaded = false;
+
 function refreshStackStatus() {
   return fetch('/status')
     .then(resp => resp.json())
     .then(data => {
       store.stackReady = Boolean(data.stack_ready);
+      if (!cruiseSpeedLoaded && Number.isFinite(Number(data.cruise_speed))) {
+        store.cruiseSpeed = Number(data.cruise_speed);
+        cruiseSpeedLoaded = true;
+      }
       if (data.vision_inference_mode) {
         store.visionInferenceMode = data.vision_inference_mode;
       }
@@ -644,6 +764,7 @@ store.toggleVisionInferenceMode = async function() {
 fetchMockMode();
 fetchVisionInferenceMode();
 callGetWaypoints().catch(err => console.warn('[waypoints] initial load failed:', err));
+fetchFixedPointStops().catch(err => console.warn('[fixed-point-stops] initial load failed:', err));
 setInterval(fetchMockMode, 1000);
 refreshStackStatus();
 setInterval(refreshStackStatus, 3000);

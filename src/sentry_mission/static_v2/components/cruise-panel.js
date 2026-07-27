@@ -12,6 +12,14 @@ const CruisePanel = {
       <div v-if="store.missionWaypointLabels.length === 0" class="muted">无航点</div>
     </div>
     <button class="btn btn-resume" @click="store.showWpEditor = true">编辑航点</button>
+    <label class="cruise-speed-control">
+      <span>巡航速度</span>
+      <input v-model.number="store.cruiseSpeed" type="number" min="0.05" max="0.35" step="0.01"
+             :disabled="store.cruiseSpeedBusy">
+      <span>m/s</span>
+      <button class="btn btn-resume" @click="applyCruiseSpeed"
+              :disabled="store.cruiseSpeedBusy">应用</button>
+    </label>
     <button class="btn btn-resume" @click="preheatCruise" :disabled="store.mode === 'AUTO' || store.stackPreheating || store.stackStarting || store.stackReady">{{ preheatLabel }}</button>
     <button v-if="store.mode !== 'AUTO'" class="btn btn-go" @click="startCruise" :disabled="store.stackStarting || store.stackPreheating">{{ store.stackStarting ? '启动中...' : '启动巡航' }}</button>
     <button v-if="store.mode === 'AUTO'" class="btn btn-pause" @click="pauseCruise">暂停</button>
@@ -19,7 +27,7 @@ const CruisePanel = {
   computed: {
     preheatLabel() {
       if (store.stackPreheating) return '预热中...';
-      if (store.mode === 'AUTO' || store.stackReady) return '正常运行中';
+      if (store.mode === 'AUTO' || store.stackReady) return '已预热';
       return '预热模式';
     }
   },
@@ -27,6 +35,7 @@ const CruisePanel = {
     preheatCruise() { callStackPreheat().catch(err => console.error(err)); },
     startCruise() { callStackStart().catch(err => console.error(err)); },
     pauseCruise() { callStackStop().catch(err => console.error(err)); },
+    applyCruiseSpeed() { callSetCruiseSpeed(store.cruiseSpeed).catch(err => console.error(err)); },
     toggleWp(idx) {
       // UI only - backend doesn't support per-waypoint skipping yet
     }

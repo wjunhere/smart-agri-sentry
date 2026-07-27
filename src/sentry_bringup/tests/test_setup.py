@@ -53,3 +53,8 @@ def test_legacy_nodes_files_removed():
     pkg_dir = Path(__file__).parent.parent / 'sentry_bringup'
     assert not (pkg_dir / 'ai_inference_node.py').exists()
     assert not (pkg_dir / 'uart_bridge_node.py').exists()
+
+
+def test_legacy_uart_protocol_test_is_removed():
+    tests_dir = Path(__file__).parent
+    assert not (tests_dir / 'test_protocol.py').exists()

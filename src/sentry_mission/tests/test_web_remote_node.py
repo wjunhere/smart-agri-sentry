@@ -3,6 +3,7 @@
 import sys
 import threading
 import types
+import signal
 from pathlib import Path
 from unittest import mock
 
@@ -26,6 +27,8 @@ def mock_ros2():
         'sentry_interfaces': types.ModuleType('sentry_interfaces'),
         'sentry_interfaces.srv': types.ModuleType('sentry_interfaces.srv'),
         'sentry_interfaces.msg': types.ModuleType('sentry_interfaces.msg'),
+        'sensor_msgs': types.ModuleType('sensor_msgs'),
+        'sensor_msgs.msg': types.ModuleType('sensor_msgs.msg'),
     }
 
     modules['rclpy'].init = mock.MagicMock()
@@ -46,6 +49,8 @@ def mock_ros2():
     modules['sentry_interfaces.srv'].SetCropType = SetCropType
     MissionStatus = type('MissionStatus', (), {})
     modules['sentry_interfaces.msg'].MissionStatus = MissionStatus
+    CompressedImage = type('CompressedImage', (), {})
+    modules['sensor_msgs.msg'].CompressedImage = CompressedImage
 
 
     for name, mod in modules.items():
@@ -173,6 +178,14 @@ def test_stack_script_env_enables_vision_and_advisory_for_cruise():
     assert env['ENABLE_ADVISORY'] == 'true'
 
 
+def test_stack_script_env_defaults_to_hikrobot_camera():
+    from sentry_mission.web_remote_node import _stack_script_env
+
+    env = _stack_script_env({})
+
+    assert env['CAMERA_BACKEND'] == 'hikrobot'
+
+
 def test_mission_status_complete_when_all_waypoints_reached():
     from sentry_mission.web_remote_node import _mission_status_is_complete
 
@@ -195,6 +208,25 @@ def test_mission_status_not_complete_before_last_waypoint():
     )
 
     assert _mission_status_is_complete(msg) is False
+
+
+def test_mission_status_syncs_manual_mode_after_external_stop():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.mode = 'AUTO'
+    web.frontend_started_auto = True
+    web.completion_stop_started = True
+
+    WebRemoteNode.on_mission_status(
+        web,
+        types.SimpleNamespace(state='MANUAL', current_wp_idx=2, total_wps=3),
+    )
+
+    assert web.mode == 'MANUAL'
+    assert web.frontend_started_auto is False
+    assert web.completion_stop_started is False
 
 
 def test_validate_vision_inference_mode_accepts_known_modes():
@@ -227,3 +259,193 @@ def test_set_vision_inference_mode_updates_mode_on_success():
     assert ok is True
     assert message == 'started'
     assert web.vision_inference_mode == 'independent'
+
+
+def test_stop_independent_diagnosis_only_terminates_owned_process_group():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.vision_diagnosis_proc = mock.MagicMock(pid=42)
+    web.vision_diagnosis_proc.poll.return_value = None
+    web.vision_diagnosis_log = None
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+
+    with mock.patch('sentry_mission.web_remote_node.os.getpgid', return_value=42,
+                    create=True), \
+         mock.patch('sentry_mission.web_remote_node.os.killpg', create=True) as killpg, \
+         mock.patch('sentry_mission.web_remote_node.subprocess.run') as run:
+        ok, _ = web._stop_independent_diagnosis_locked()
+
+    assert ok is True
+    killpg.assert_called_once_with(42, signal.SIGTERM)
+    run.assert_not_called()
+
+
+def test_start_vision_stack_reuses_manual_preheat():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.preheat_stack = mock.MagicMock(return_value=(True, 'ready'))
+    web.lock = threading.Lock()
+    web.stack_ready = False
+
+    assert web.start_vision_stack() == (True, 'ready')
+    web.preheat_stack.assert_called_once()
+
+
+def test_validate_cruise_speed_limits_value():
+    from sentry_mission.web_remote_node import _validate_cruise_speed
+
+    assert _validate_cruise_speed(0.18) == 0.18
+    with pytest.raises(ValueError):
+        _validate_cruise_speed(0.04)
+    with pytest.raises(ValueError):
+        _validate_cruise_speed(0.36)
+
+
+def test_cruise_speed_config_round_trip(tmp_path):
+    from sentry_mission.web_remote_node import (
+        _read_cruise_speed_file,
+        _write_cruise_speed_file,
+    )
+
+    config_path = tmp_path / 'mission_params.yaml'
+    _write_cruise_speed_file(config_path, 0.22)
+
+    assert _read_cruise_speed_file(config_path) == 0.22
+    assert 'cruise_speed: 0.22' in config_path.read_text(encoding='utf-8')
+
+
+def test_set_cruise_speed_before_preheat_saves_requested_value():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.stack_ready = False
+    web.lock = threading.Lock()
+    web.cruise_speed = 0.18
+    web._set_remote_parameter = mock.MagicMock()
+
+    ok, message = web.set_cruise_speed(0.22)
+
+    assert ok is True
+    assert web.cruise_speed == 0.22
+    assert 'saved for preheat' in message
+    web._set_remote_parameter.assert_not_called()
+
+
+def test_set_cruise_speed_updates_mission_and_nav_controller():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.stack_ready = True
+    web.lock = threading.Lock()
+    web.cruise_speed = 0.18
+    web._set_remote_parameter = mock.MagicMock(return_value=(True, 'ok'))
+
+    ok, _ = web.set_cruise_speed(0.22)
+
+    assert ok is True
+    assert web.cruise_speed == 0.22
+    assert web._set_remote_parameter.call_args_list == [
+        mock.call('/mission_control_node', 'cruise_speed', 0.22),
+        mock.call('/controller_server', 'FollowPath.desired_linear_vel', 0.22),
+    ]
+
+
+def test_fixed_point_stops_round_trip_preserves_cruise_speed(tmp_path):
+    from sentry_mission.web_remote_node import (
+        _read_mission_params,
+        _write_mission_params,
+    )
+
+    config_path = tmp_path / 'mission_params.yaml'
+    _write_mission_params(config_path, {
+        'cruise_speed': 0.22,
+        'fixed_point_stops': [{
+            'x': 1.2,
+            'y': -0.5,
+            'radius': 0.2,
+            'disease_class': 'early_blight',
+        }],
+    })
+
+    params = _read_mission_params(config_path)
+
+    assert params['cruise_speed'] == 0.22
+    assert params['fixed_point_stops'] == [{
+        'x': 1.2,
+        'y': -0.5,
+        'radius': 0.2,
+        'disease_class': 'early_blight',
+    }]
+
+
+def test_validate_fixed_point_stops_rejects_unknown_tomato_disease():
+    from sentry_mission.web_remote_node import _validate_fixed_point_stops
+
+    with pytest.raises(ValueError, match='disease_class'):
+        _validate_fixed_point_stops([{
+            'x': 0,
+            'y': 0,
+            'radius': 0.2,
+            'disease_class': 'unknown',
+        }])
+
+
+def test_write_fixed_point_stops_preserves_existing_mission_params(tmp_path):
+    from sentry_mission.web_remote_node import (
+        _read_mission_params,
+        _write_fixed_point_stops_file,
+        _write_mission_params,
+    )
+
+    config_path = tmp_path / 'mission_params.yaml'
+    _write_mission_params(config_path, {'cruise_speed': 0.23})
+
+    _write_fixed_point_stops_file(config_path, [{
+        'x': 0.0,
+        'y': 1.0,
+        'radius': 0.25,
+        'disease_class': 'healthy',
+    }])
+
+    assert _read_mission_params(config_path) == {
+        'cruise_speed': 0.23,
+        'fixed_point_stops': [{
+            'x': 0.0,
+            'y': 1.0,
+            'radius': 0.25,
+            'disease_class': 'healthy',
+        }],
+    }
+
+
+def test_capture_camera_image_saves_latest_jpeg_to_configured_directory(tmp_path):
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.capture_dir = str(tmp_path)
+    web.latest_camera_jpeg = b'\xff\xd8mock-jpeg\xff\xd9'
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+
+    ok, filename = web.capture_camera_image()
+
+    assert ok is True
+    image_path = tmp_path / filename
+    assert image_path.suffix == '.jpg'
+    assert image_path.read_bytes() == b'\xff\xd8mock-jpeg\xff\xd9'
+
+
+def test_capture_camera_image_rejects_when_no_frame_has_arrived(tmp_path):
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.capture_dir = str(tmp_path)
+    web.latest_camera_jpeg = None
+
+    ok, message = web.capture_camera_image()
+
+    assert ok is False
+    assert 'No camera frame' in message

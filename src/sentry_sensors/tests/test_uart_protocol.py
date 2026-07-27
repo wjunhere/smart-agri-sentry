@@ -1,5 +1,12 @@
-import pytest
-from sentry_bringup.uart_bridge_node import crc16_ccitt, encode_frame, decode_sensor_frame
+"""Protocol-level tests for the UART sensor bridge."""
+
+import struct
+
+from sentry_sensors.uart_bridge_node import (
+    crc16_ccitt,
+    decode_sensor_frame,
+    encode_frame,
+)
 
 
 def test_crc16_ccitt_known():
@@ -18,12 +25,11 @@ def test_encode_frame_structure():
 
 
 def test_decode_sensor_frame_valid():
-    import struct
-    payload = struct.pack('<IhHHhHHHHHH',
-                          1000, 250, 600, 400,
-                          200, 550, 100, 50, 30, 40, 65)
-    frame = encode_frame(0x01, payload)
-    result = decode_sensor_frame(frame)
+    payload = struct.pack(
+        '<IhHHhHHHHHH',
+        1000, 250, 600, 400, 200, 550, 100, 50, 30, 40, 65,
+    )
+    result = decode_sensor_frame(encode_frame(0x01, payload))
     assert result is not None
     assert result['timestamp_ms'] == 1000
     assert abs(result['air_temp'] - 25.0) < 0.01
@@ -33,5 +39,4 @@ def test_decode_sensor_frame_valid():
 def test_decode_sensor_frame_bad_crc():
     frame = bytearray(encode_frame(0x01, bytes([0x00] * 24)))
     frame[-1] ^= 0xFF
-    result = decode_sensor_frame(bytes(frame))
-    assert result is None
+    assert decode_sensor_frame(bytes(frame)) is None
