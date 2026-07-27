@@ -300,6 +300,38 @@ def test_start_inference_stack_runs_inference_script():
     assert web.inference_ready is True
 
 
+def test_stop_vision_stack_runs_camera_stop_script():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.stack_lock = threading.Lock()
+    web.camera_ready = True
+    web.camera_stop_script = '/tmp/stop_camera_stack.sh'
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+    web._run_stack_script = mock.MagicMock(return_value=(True, 'camera down'))
+
+    assert web.stop_vision_stack() == (True, 'camera down')
+    web._run_stack_script.assert_called_once_with('/tmp/stop_camera_stack.sh')
+    assert web.camera_ready is False
+
+
+def test_stop_inference_stack_runs_inference_stop_script():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.stack_lock = threading.Lock()
+    web.inference_ready = True
+    web.inference_stop_script = '/tmp/stop_inference_stack.sh'
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+    web._run_stack_script = mock.MagicMock(return_value=(True, 'inference down'))
+
+    assert web.stop_inference_stack() == (True, 'inference down')
+    web._run_stack_script.assert_called_once_with('/tmp/stop_inference_stack.sh')
+    assert web.inference_ready is False
+
+
 def test_validate_cruise_speed_limits_value():
     from sentry_mission.web_remote_node import _validate_cruise_speed
 

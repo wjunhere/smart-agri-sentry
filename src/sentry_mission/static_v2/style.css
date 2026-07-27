@@ -82,6 +82,10 @@ body {
   font: 600 12px var(--font); cursor: pointer;
 }
 .camera-start-btn:disabled { cursor: default; opacity: 0.58; }
+.camera-start-btn.active {
+  background: rgba(16,185,129,0.28); border-color: var(--green);
+  box-shadow: 0 0 8px rgba(16,185,129,0.25);
+}
 .camera-capture-btn {
   height: 28px; padding: 0 10px; border: 1px solid rgba(59,130,246,0.5);
   background: rgba(59,130,246,0.12); color: #bfdbfe; border-radius: 4px;

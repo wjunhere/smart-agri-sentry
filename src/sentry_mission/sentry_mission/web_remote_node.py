@@ -222,8 +222,14 @@ class WebRemoteNode(Node):
             'camera_start_script',
             '/home/sunrise/dev_ws/scripts/rdk/start_camera_stack.sh')
         self.declare_parameter(
+            'camera_stop_script',
+            '/home/sunrise/dev_ws/scripts/rdk/stop_camera_stack.sh')
+        self.declare_parameter(
             'inference_start_script',
             '/home/sunrise/dev_ws/scripts/rdk/start_inference_stack.sh')
+        self.declare_parameter(
+            'inference_stop_script',
+            '/home/sunrise/dev_ws/scripts/rdk/stop_inference_stack.sh')
         self.declare_parameter('stack_script_timeout_sec', 180.0)
         self.declare_parameter('capture_dir', '/home/sunrise/dev_ws/images')
         self.max_linear = self.get_parameter('max_linear').value
@@ -232,8 +238,12 @@ class WebRemoteNode(Node):
         self.stack_stop_script = self.get_parameter('stack_stop_script').value
         self.camera_start_script = self.get_parameter(
             'camera_start_script').value
+        self.camera_stop_script = self.get_parameter(
+            'camera_stop_script').value
         self.inference_start_script = self.get_parameter(
             'inference_start_script').value
+        self.inference_stop_script = self.get_parameter(
+            'inference_stop_script').value
         self.stack_script_timeout = float(
             self.get_parameter('stack_script_timeout_sec').value)
         self.capture_dir = self.get_parameter('capture_dir').value
@@ -494,6 +504,28 @@ class WebRemoteNode(Node):
                 self.inference_ready = ok
             if not ok:
                 self.get_logger().error(f'start_inference_stack failed: {output[-1000:]}')
+            return ok, output
+
+    def stop_vision_stack(self):
+        """Stop the camera stack (mipi node + republisher)."""
+        with self.stack_lock:
+            self.get_logger().info('Frontend requested camera stack stop')
+            ok, output = self._run_stack_script(self.camera_stop_script)
+            with self.lock:
+                self.camera_ready = False
+            if not ok:
+                self.get_logger().error(f'stop_camera_stack failed: {output[-1000:]}')
+            return ok, output
+
+    def stop_inference_stack(self):
+        """Stop model inference nodes (YOLO detector + pipeline)."""
+        with self.stack_lock:
+            self.get_logger().info('Frontend requested inference stack stop')
+            ok, output = self._run_stack_script(self.inference_stop_script)
+            with self.lock:
+                self.inference_ready = False
+            if not ok:
+                self.get_logger().error(f'stop_inference_stack failed: {output[-1000:]}')
             return ok, output
 
     def _set_remote_parameter(self, node_name: str, parameter_name: str,
@@ -846,6 +878,26 @@ def _get_app(node: WebRemoteNode):
     @_app.route('/inference/start', methods=['POST'])
     def start_inference():
         ok, output = node.start_inference_stack()
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': node.mode,
+            'inference_ready': node.inference_ready,
+            'message': output[-2000:],
+        }), 200 if ok else 500
+
+    @_app.route('/vision/stop', methods=['POST'])
+    def stop_vision():
+        ok, output = node.stop_vision_stack()
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': node.mode,
+            'camera_ready': node.camera_ready,
+            'message': output[-2000:],
+        }), 200 if ok else 500
+
+    @_app.route('/inference/stop', methods=['POST'])
+    def stop_inference():
+        ok, output = node.stop_inference_stack()
         return jsonify({
             'status': 'ok' if ok else 'error',
             'mode': node.mode,

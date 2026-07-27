@@ -83,8 +83,10 @@ window.store = Vue.reactive({
   stackPreheating: false,
   stackReady: false,
   visionStarting: false,
+  visionStopping: false,
   cameraReady: false,
   inferenceStarting: false,
+  inferenceStopping: false,
   inferenceReady: false,
   cameraCaptureBusy: false,
   cruiseSpeed: 0.18,
@@ -382,6 +384,34 @@ function callInferenceStart() {
       return data;
     })
     .finally(() => { store.inferenceStarting = false; });
+}
+
+function callVisionStop() {
+  store.visionStopping = true;
+  return fetch(API_BASE + '/vision/stop', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to stop camera stack');
+      }
+      store.cameraReady = false;
+      return data;
+    })
+    .finally(() => { store.visionStopping = false; });
+}
+
+function callInferenceStop() {
+  store.inferenceStopping = true;
+  return fetch(API_BASE + '/inference/stop', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to stop inference stack');
+      }
+      store.inferenceReady = false;
+      return data;
+    })
+    .finally(() => { store.inferenceStopping = false; });
 }
 
 function callCaptureImage() {
