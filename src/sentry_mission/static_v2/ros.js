@@ -140,10 +140,26 @@ function rosConnect() {
   });
 }
 
+// Camera frames: always render only the LATEST frame. After sleep/background
+// throttling, rosbridge delivers a backlog of queued frames; decoding every
+// one causes a "fast-forward replay". Coalesce bursts via requestAnimationFrame
+// so stale frames are skipped and the view jumps straight to live.
+let _latestFrameSrc = null;
+let _frameFlushScheduled = false;
+
 // Topic definitions: [topic_name, message_type, callback]
 const TOPICS = [
   ['/out/compressed', 'sensor_msgs/CompressedImage',
-   (msg) => { store.cameraFrame = 'data:image/jpeg;base64,' + msg.data; }],
+   (msg) => {
+     _latestFrameSrc = 'data:image/jpeg;base64,' + msg.data;
+     if (!_frameFlushScheduled) {
+       _frameFlushScheduled = true;
+       requestAnimationFrame(() => {
+         _frameFlushScheduled = false;
+         store.cameraFrame = _latestFrameSrc;
+       });
+     }
+   }],
   ['/vision/plant_detected', 'sentry_interfaces/PlantDetection',
    (msg) => {
      store.plantDetected = msg.detected;
