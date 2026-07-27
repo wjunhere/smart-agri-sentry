@@ -218,12 +218,22 @@ class WebRemoteNode(Node):
         self.declare_parameter(
             'stack_stop_script',
             '/home/sunrise/dev_ws/scripts/rdk/stop_robot_stack.sh')
+        self.declare_parameter(
+            'camera_start_script',
+            '/home/sunrise/dev_ws/scripts/rdk/start_camera_stack.sh')
+        self.declare_parameter(
+            'inference_start_script',
+            '/home/sunrise/dev_ws/scripts/rdk/start_inference_stack.sh')
         self.declare_parameter('stack_script_timeout_sec', 180.0)
         self.declare_parameter('capture_dir', '/home/sunrise/dev_ws/images')
         self.max_linear = self.get_parameter('max_linear').value
         self.max_angular = self.get_parameter('max_angular').value
         self.stack_start_script = self.get_parameter('stack_start_script').value
         self.stack_stop_script = self.get_parameter('stack_stop_script').value
+        self.camera_start_script = self.get_parameter(
+            'camera_start_script').value
+        self.inference_start_script = self.get_parameter(
+            'inference_start_script').value
         self.stack_script_timeout = float(
             self.get_parameter('stack_script_timeout_sec').value)
         self.capture_dir = self.get_parameter('capture_dir').value
@@ -239,6 +249,8 @@ class WebRemoteNode(Node):
         self.frontend_started_auto = False
         self.completion_stop_started = False
         self.stack_ready = False
+        self.camera_ready = False
+        self.inference_ready = False
         self.cruise_speed = 0.18
         self.last_stack_output = ''
         self.vision_inference_mode = 'triggered'
@@ -460,11 +472,29 @@ class WebRemoteNode(Node):
         return False
 
     def start_vision_stack(self):
-        """Start visual services while keeping manual motion ownership."""
-        with self.lock:
-            if self.stack_ready:
-                return True, 'Vision stack already running.'
-        return self.preheat_stack()
+        """Clean-restart the camera stack (kill duplicates, then start fresh).
+
+        Keeps manual motion ownership; does not touch the robot/cruise stack.
+        """
+        with self.stack_lock:
+            self.get_logger().info('Frontend requested camera stack (re)start')
+            ok, output = self._run_stack_script(self.camera_start_script)
+            with self.lock:
+                self.camera_ready = ok
+            if not ok:
+                self.get_logger().error(f'start_camera_stack failed: {output[-1000:]}')
+            return ok, output
+
+    def start_inference_stack(self):
+        """Clean-restart model inference nodes (YOLO detector + pipeline)."""
+        with self.stack_lock:
+            self.get_logger().info('Frontend requested inference stack (re)start')
+            ok, output = self._run_stack_script(self.inference_start_script)
+            with self.lock:
+                self.inference_ready = ok
+            if not ok:
+                self.get_logger().error(f'start_inference_stack failed: {output[-1000:]}')
+            return ok, output
 
     def _set_remote_parameter(self, node_name: str, parameter_name: str,
                               value: float):
@@ -809,6 +839,17 @@ def _get_app(node: WebRemoteNode):
             'status': 'ok' if ok else 'error',
             'mode': node.mode,
             'stack_ready': node.stack_ready,
+            'camera_ready': node.camera_ready,
+            'message': output[-2000:],
+        }), 200 if ok else 500
+
+    @_app.route('/inference/start', methods=['POST'])
+    def start_inference():
+        ok, output = node.start_inference_stack()
+        return jsonify({
+            'status': 'ok' if ok else 'error',
+            'mode': node.mode,
+            'inference_ready': node.inference_ready,
             'message': output[-2000:],
         }), 200 if ok else 500
 

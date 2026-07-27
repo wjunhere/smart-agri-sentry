@@ -83,6 +83,9 @@ window.store = Vue.reactive({
   stackPreheating: false,
   stackReady: false,
   visionStarting: false,
+  cameraReady: false,
+  inferenceStarting: false,
+  inferenceReady: false,
   cameraCaptureBusy: false,
   cruiseSpeed: 0.18,
   cruiseSpeedBusy: false,
@@ -343,12 +346,26 @@ function callVisionStart() {
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
-        throw new Error(data.message || 'Failed to start vision stack');
+        throw new Error(data.message || 'Failed to start camera stack');
       }
-      store.stackReady = Boolean(data.stack_ready);
+      store.cameraReady = Boolean(data.camera_ready);
       return data;
     })
     .finally(() => { store.visionStarting = false; });
+}
+
+function callInferenceStart() {
+  store.inferenceStarting = true;
+  return fetch(API_BASE + '/inference/start', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to start inference stack');
+      }
+      store.inferenceReady = Boolean(data.inference_ready);
+      return data;
+    })
+    .finally(() => { store.inferenceStarting = false; });
 }
 
 function callCaptureImage() {

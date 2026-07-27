@@ -1,7 +1,7 @@
 """YOLOv8n utilities: NV12 preprocessing and multi-output postprocessing.
 
 The quantized YOLOv8n BPU model outputs 6 tensors (2 per stride level):
-  - Class scores: (1, H, W, 2) per stride
+  - Class scores: (1, H, W, C) per stride (C=2 for crop/weed, C=1 for plant)
   - Bbox DFL features: (1, H, W, 64) per stride  (64 = 4 coords * 16 bins)
 """
 
@@ -59,14 +59,14 @@ def yolo_postprocess(
     for si, stride in enumerate(STRIDES):
         h, w = GRID_SIZES[si]
 
-        cls_out = outputs[si * 2]       # (1, H, W, 2)
+        cls_out = outputs[si * 2]       # (1, H, W, C)
         bbox_out = outputs[si * 2 + 1]  # (1, H, W, 64)
 
-        cls_out = cls_out.reshape(h, w, 2)
+        cls_out = cls_out.reshape(h, w, -1)
         bbox_out = bbox_out.reshape(h, w, 4, REG_MAX)
 
         # Class scores: sigmoid
-        cls_probs = 1.0 / (1.0 + np.exp(-cls_out))  # (H, W, 2)
+        cls_probs = 1.0 / (1.0 + np.exp(-cls_out))  # (H, W, C)
 
         # Bbox DFL: softmax on last dim → integral
         bbox_out = bbox_out - bbox_out.max(axis=-1, keepdims=True)
@@ -98,7 +98,8 @@ def yolo_postprocess(
 
         boxes = np.stack([x1.ravel(), y1.ravel(), x2.ravel(), y2.ravel()], axis=1)
 
-        # Take max confidence across BOTH classes (crop + weed)
+        # Take max confidence across classes (works for both the old
+        # 2-class crop/weed model and the new single-class plant model)
         scores = cls_probs.max(axis=-1).ravel()
         all_boxes.append(boxes)
         all_scores.append(scores)

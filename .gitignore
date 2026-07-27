@@ -110,3 +110,8 @@ report/
 #the wechat mini-program
 # dependencies
 node_modules/
+
+# local artifacts
+verify_shots/
+calibration/raw/
+calibration/out/

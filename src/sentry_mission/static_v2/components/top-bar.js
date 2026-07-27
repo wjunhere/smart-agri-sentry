@@ -6,9 +6,13 @@ const TopBar = {
       <span class="dot" :class="store.connected ? 'dot-green' : 'dot-red'"></span>
       {{ store.mode === 'AUTO' ? 'AUTO' : store.mode === 'MANUAL' ? 'MANUAL' : 'ESTOP' }}
     </span>
-    <button class="camera-start-btn" :disabled="store.visionStarting || store.stackReady"
+    <button class="camera-start-btn" :disabled="store.visionStarting"
             @click="startVision">
-      {{ store.visionStarting ? '启动中...' : store.stackReady ? '摄像头已开启' : '开启摄像头' }}
+      {{ store.visionStarting ? '启动中...' : store.cameraReady ? '重启摄像头' : '开启摄像头' }}
+    </button>
+    <button class="camera-start-btn inference-start-btn" :disabled="store.inferenceStarting"
+            @click="startInference">
+      {{ store.inferenceStarting ? '启动中...' : store.inferenceReady ? '重启推理' : '开启推理' }}
     </button>
     <button class="camera-capture-btn" :disabled="store.cameraCaptureBusy"
             @click="captureImage">
@@ -48,6 +52,9 @@ const TopBar = {
   methods: {
     startVision() {
       callVisionStart().catch(err => console.error(err));
+    },
+    startInference() {
+      callInferenceStart().catch(err => console.error(err));
     },
     captureImage() {
       callCaptureImage().catch(err => console.error(err));

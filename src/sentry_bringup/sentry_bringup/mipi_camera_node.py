@@ -43,6 +43,9 @@ class MipiCameraNode(Node):
         self.declare_parameter('gamma', 1.0)
         self.declare_parameter('saturation_scale', 1.0)
         self.declare_parameter('sharpen_amount', 0.0)
+        self.declare_parameter('enable_undistort', False)
+        self.declare_parameter('undistort_calib_file', '')
+        self.declare_parameter('undistort_alpha', 0.0)
 
         self.device_id = int(self.get_parameter('device_id').value)
         self.width = self.get_parameter('width').value
@@ -69,6 +72,15 @@ class MipiCameraNode(Node):
             0.0, float(self.get_parameter('saturation_scale').value))
         self.sharpen_amount = max(
             0.0, float(self.get_parameter('sharpen_amount').value))
+        self.enable_undistort = self.get_parameter('enable_undistort').value
+        self.undistort_calib_file = str(
+            self.get_parameter('undistort_calib_file').value)
+        self.undistort_alpha = float(
+            self.get_parameter('undistort_alpha').value)
+        self._undistort_map1 = None
+        self._undistort_map2 = None
+        if self.enable_undistort:
+            self._init_undistort_maps()
 
         # Import hobot_vio (only available on RDK X5)
         try:
@@ -136,6 +148,49 @@ class MipiCameraNode(Node):
         timer_period = 1.0 / self.fps
         self.timer = self.create_timer(timer_period, self.capture)
         self.frame_count = 0
+
+    def _init_undistort_maps(self):
+        """Load calibration YAML and precompute undistort remap tables."""
+        fs = cv2.FileStorage(self.undistort_calib_file, cv2.FILE_STORAGE_READ)
+        if not fs.isOpened():
+            self.get_logger().error(
+                f'Cannot open undistort calib file: '
+                f'{self.undistort_calib_file}; undistort disabled')
+            self.enable_undistort = False
+            return
+        K = fs.getNode('camera_matrix').mat()
+        dist = fs.getNode('distortion_coefficients').mat()
+        calib_w = int(fs.getNode('image_width').real())
+        calib_h = int(fs.getNode('image_height').real())
+        fs.release()
+        if K is None or dist is None:
+            self.get_logger().error(
+                'Calib file missing camera_matrix/distortion_coefficients; '
+                'undistort disabled')
+            self.enable_undistort = False
+            return
+        if (calib_w, calib_h) != (self.width, self.height):
+            self.get_logger().warn(
+                f'Calib resolution {calib_w}x{calib_h} != output '
+                f'{self.width}x{self.height}; undistort disabled')
+            self.enable_undistort = False
+            return
+        new_K, _ = cv2.getOptimalNewCameraMatrix(
+            K, dist, (self.width, self.height),
+            self.undistort_alpha, (self.width, self.height))
+        self._undistort_map1, self._undistort_map2 = \
+            cv2.initUndistortRectifyMap(
+                K, dist, None, new_K, (self.width, self.height),
+                cv2.CV_16SC2)
+        self.get_logger().info(
+            f'Undistort enabled: calib={self.undistort_calib_file}, '
+            f'alpha={self.undistort_alpha}')
+
+    def _apply_undistort(self, frame):
+        if not self.enable_undistort or self._undistort_map1 is None:
+            return frame
+        return cv2.remap(frame, self._undistort_map1, self._undistort_map2,
+                         cv2.INTER_LINEAR)
 
     def _yuv_to_bgr_code(self):
         if self.yuv_format == 'nv21':
@@ -261,6 +316,7 @@ class MipiCameraNode(Node):
             frame = self._nv12_to_bgr(img_buf, self.width, self.height, actual_size)
             if frame is None:
                 return
+            frame = self._apply_undistort(frame)
             frame = self._apply_color_correction(frame)
             frame = self._apply_low_light_enhancement(frame)
 

@@ -268,16 +268,36 @@ def test_stop_independent_diagnosis_only_terminates_owned_process_group():
     run.assert_not_called()
 
 
-def test_start_vision_stack_reuses_manual_preheat():
+def test_start_vision_stack_runs_camera_script():
     from sentry_mission.web_remote_node import WebRemoteNode
 
     web = WebRemoteNode.__new__(WebRemoteNode)
-    web.preheat_stack = mock.MagicMock(return_value=(True, 'ready'))
     web.lock = threading.Lock()
-    web.stack_ready = False
+    web.stack_lock = threading.Lock()
+    web.camera_ready = False
+    web.camera_start_script = '/tmp/start_camera_stack.sh'
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+    web._run_stack_script = mock.MagicMock(return_value=(True, 'camera up'))
 
-    assert web.start_vision_stack() == (True, 'ready')
-    web.preheat_stack.assert_called_once()
+    assert web.start_vision_stack() == (True, 'camera up')
+    web._run_stack_script.assert_called_once_with('/tmp/start_camera_stack.sh')
+    assert web.camera_ready is True
+
+
+def test_start_inference_stack_runs_inference_script():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.stack_lock = threading.Lock()
+    web.inference_ready = False
+    web.inference_start_script = '/tmp/start_inference_stack.sh'
+    web.get_logger = mock.MagicMock(return_value=mock.MagicMock())
+    web._run_stack_script = mock.MagicMock(return_value=(True, 'inference up'))
+
+    assert web.start_inference_stack() == (True, 'inference up')
+    web._run_stack_script.assert_called_once_with('/tmp/start_inference_stack.sh')
+    assert web.inference_ready is True
 
 
 def test_validate_cruise_speed_limits_value():
