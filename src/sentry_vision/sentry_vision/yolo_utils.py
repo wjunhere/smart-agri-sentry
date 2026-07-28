@@ -32,6 +32,7 @@ def bgr_to_nv12(bgr: np.ndarray) -> np.ndarray:
 STRIDES = [8, 16, 32]
 GRID_SIZES = [(80, 80), (40, 40), (20, 20)]
 REG_MAX = 16  # DFL regression bins per coordinate
+_DFL_BINS = np.arange(REG_MAX, dtype=np.float32)
 
 
 def yolo_postprocess(
@@ -63,60 +64,44 @@ def yolo_postprocess(
         bbox_out = outputs[si * 2 + 1]  # (1, H, W, 64)
 
         cls_out = cls_out.reshape(h, w, -1)
-        bbox_out = bbox_out.reshape(h, w, 4, REG_MAX)
 
         # Class scores: sigmoid
         cls_probs = 1.0 / (1.0 + np.exp(-cls_out))  # (H, W, C)
 
-        # Bbox DFL: softmax on last dim → integral
-        bbox_out = bbox_out - bbox_out.max(axis=-1, keepdims=True)
-        bbox_exp = np.exp(bbox_out)
-        bbox_soft = bbox_exp / bbox_exp.sum(axis=-1, keepdims=True)  # (H, W, 4, 16)
-        dfl_bins = np.arange(REG_MAX, dtype=np.float32)
-        offsets = np.sum(bbox_soft * dfl_bins, axis=-1)  # (H, W, 4)
-
-        # Pre-compute anchor grid centers
-        yv, xv = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
-        anchors_x = xv.astype(np.float32)  # (H, W)
-        anchors_y = yv.astype(np.float32)  # (H, W)
-
-        # Decode: lt_rb offsets to x1,y1,x2,y2 normalized
-        left = offsets[:, :, 0]
-        top = offsets[:, :, 1]
-        right = offsets[:, :, 2]
-        bottom = offsets[:, :, 3]
-
-        x1 = (anchors_x - left) * stride / input_size
-        y1 = (anchors_y - top) * stride / input_size
-        x2 = (anchors_x + right) * stride / input_size
-        y2 = (anchors_y + bottom) * stride / input_size
-
-        x1 = np.clip(x1, 0.0, 1.0)
-        y1 = np.clip(y1, 0.0, 1.0)
-        x2 = np.clip(x2, 0.0, 1.0)
-        y2 = np.clip(y2, 0.0, 1.0)
-
-        boxes = np.stack([x1.ravel(), y1.ravel(), x2.ravel(), y2.ravel()], axis=1)
-
         # Take max confidence across classes (works for both the old
         # 2-class crop/weed model and the new single-class plant model)
-        scores = cls_probs.max(axis=-1).ravel()
-        all_boxes.append(boxes)
-        all_scores.append(scores)
+        scores = cls_probs.max(axis=-1)  # (H, W)
+
+        # Confidence-first filtering: DFL-decode only promising anchors.
+        # >99% of the 8400 anchors are background; decoding them all costs
+        # ~65 ms per frame in numpy, decoding only survivors costs <5 ms.
+        mask = scores > conf_threshold
+        if not mask.any():
+            continue
+        ys, xs = np.nonzero(mask)
+        sel_scores = scores[ys, xs]
+
+        # Bbox DFL on selected anchors only: softmax on last dim → integral
+        bbox_sel = bbox_out.reshape(h, w, 4, REG_MAX)[ys, xs]  # (N, 4, 16)
+        bbox_sel = bbox_sel - bbox_sel.max(axis=-1, keepdims=True)
+        bbox_exp = np.exp(bbox_sel)
+        bbox_soft = bbox_exp / bbox_exp.sum(axis=-1, keepdims=True)
+        offsets = np.sum(bbox_soft * _DFL_BINS, axis=-1)  # (N, 4)
+
+        # Decode: lt_rb offsets to x1,y1,x2,y2 normalized
+        x1 = np.clip((xs - offsets[:, 0]) * stride / input_size, 0.0, 1.0)
+        y1 = np.clip((ys - offsets[:, 1]) * stride / input_size, 0.0, 1.0)
+        x2 = np.clip((xs + offsets[:, 2]) * stride / input_size, 0.0, 1.0)
+        y2 = np.clip((ys + offsets[:, 3]) * stride / input_size, 0.0, 1.0)
+
+        all_boxes.append(np.stack([x1, y1, x2, y2], axis=1))
+        all_scores.append(sel_scores)
 
     if not all_boxes:
         return False, [0.0, 0.0, 0.0, 0.0], 0.0
 
     boxes = np.concatenate(all_boxes, axis=0)
     scores = np.concatenate(all_scores, axis=0)
-
-    # Filter by confidence
-    mask = scores > conf_threshold
-    if not mask.any():
-        return False, [0.0, 0.0, 0.0, 0.0], 0.0
-
-    boxes = boxes[mask]
-    scores = scores[mask]
 
     # NMS
     keep = _nms(boxes, scores, iou_threshold)
