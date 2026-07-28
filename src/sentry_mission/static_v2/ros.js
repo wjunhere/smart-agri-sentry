@@ -395,6 +395,7 @@ function callVisionStop() {
         throw new Error(data.message || 'Failed to stop camera stack');
       }
       store.cameraReady = false;
+      store.cameraFrame = null;
       return data;
     })
     .finally(() => { store.visionStopping = false; });
@@ -841,6 +842,14 @@ function refreshStackStatus() {
     .then(resp => resp.json())
     .then(data => {
       store.stackReady = Boolean(data.stack_ready);
+      // Sync live node states from the ROS graph, but don't fight
+      // with an in-flight start/stop request.
+      if (!store.visionStarting && !store.visionStopping) {
+        store.cameraReady = Boolean(data.camera_running);
+      }
+      if (!store.inferenceStarting && !store.inferenceStopping) {
+        store.inferenceReady = Boolean(data.inference_running);
+      }
       if (!cruiseSpeedLoaded && Number.isFinite(Number(data.cruise_speed))) {
         store.cruiseSpeed = Number(data.cruise_speed);
         cruiseSpeedLoaded = true;

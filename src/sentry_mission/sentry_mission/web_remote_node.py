@@ -740,8 +740,23 @@ class WebRemoteNode(Node):
             self.vision_diagnosis_log = None
         return True, 'independent diagnosis stopped'
 
+    def _get_stack_states(self):
+        """Live state of camera/inference stacks from the ROS graph."""
+        try:
+            names = set(self.get_node_names())
+        except Exception:
+            return False, False
+        camera_running = ('mipi_camera_node' in names
+                          and 'image_republisher' in names)
+        inference_running = ('plant_detector_node' in names
+                             and 'vision_pipeline_node' in names)
+        return camera_running, inference_running
+
     def get_status(self):
+        camera_running, inference_running = self._get_stack_states()
         with self.lock:
+            self.camera_ready = camera_running
+            self.inference_ready = inference_running
             now = time.time()
             return {
                 'mode': self.mode,
@@ -753,6 +768,8 @@ class WebRemoteNode(Node):
                 'frontend_started_auto': self.frontend_started_auto,
                 'completion_stop_started': self.completion_stop_started,
                 'stack_ready': self.stack_ready,
+                'camera_running': camera_running,
+                'inference_running': inference_running,
                 'cruise_speed': self.cruise_speed,
                 'vision_inference_mode': self.vision_inference_mode,
                 'message_unread': self.batch_recorder.unread,
