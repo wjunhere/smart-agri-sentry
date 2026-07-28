@@ -127,3 +127,15 @@ Next incremental work:
 - [ ] Keep future cruise changes evidence-driven: change one parameter or behavior group at a time, then run the same field validation.
 - [ ] Consider cleaning old tracked temporary shell test scripts from repository history/tree in a separate cleanup change.
 
+
+
+---
+
+## 视觉/部署后续优化项（2026-07-28 记）
+
+1. **Nav2 降频**（用户确认暂缓）：`controller_frequency` 20→10Hz、costmap `update_frequency` 5→3Hz、local costmap 3m→2m，预估省 40~60% CPU。0.18 m/s 车速下影响可忽略（刹车反应 +50ms ≈ 1cm）。全栈 + 15fps 预估 405~485% CPU 超载，降频后 ~280~320%。
+2. **真实植株数据集**（暂缓中）：250~400 张板端实拍真植株（田间/阳台），补屏幕图与真实场景的分布差；当前模型在真植株上的精度未重新验证。
+3. **板端预处理 letterbox 对齐**：`yolo_utils.py` 目前直接 `cv2.resize` 拉伸，与训练 letterbox 不一致，小目标有掉点；改补灰边 letterbox 约十几行。
+4. **肥料袋/纯绿图案硬负样本补强**：yolo11s 残留的 4/160 误检集中在这两类，下轮数据迭代时精准补拍。
+5. **yolo11s + 全栈巡航实测**：新模型下"检测→停车→扫描诊断"全链路田间验证未做。
+6. **第三次微调数据集已就绪**：`D:\wjun\data\yolo\train_plant_full`（5108 张单类）；训练/导出/量化/部署全流程已跑通三轮，可直接复用脚本（`train_yolo11s.py`、`export_monkey_patch.py`、`models/yolo_quantize/mapper.py`）。

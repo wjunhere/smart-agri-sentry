@@ -348,3 +348,33 @@ ros2 run sentry_mission imu_turn --angle 90
 - 任务与阻塞 → [`docs/TODO.md`](TODO.md)
 - 已知问题 → [`docs/ISSUES.md`](ISSUES.md)
 - 开发规范 → `CLAUDE.md`
+
+
+---
+
+## 6. 板端重刷恢复流程（2026-07-24 验证）
+
+适用：SD 卡损坏/系统无法启动后的完整恢复。
+
+1. **烧录**：RDK Studio → RDKOS 3.5.0 **Server** 镜像 → TF 卡（Desktop 版带 GUI 不必需，Server 更省资源）。
+2. **首启**：串口（115200 8N1，sunrise/sunrise）登录 → 配 WiFi（`nmcli device wifi connect <SSID> password <PWD>`）。
+3. **SSH 通道**：热点 `ssh rdk1`（密钥免密）；Type-C RNDIS `ssh sunrise@192.168.128.10`（PC 侧网卡配静态 192.168.128.20/24，板端无 DHCP）。
+4. **重建环境**：`sudo apt install ros-humble-*`（含 imu_filter_madgwick，缺它 sentry_v2 launch 起一半崩）、nav2 依赖；tar+scp 部署 dev_ws（板端上不了 GitHub，勿用 git clone）→ `colcon build`（14 包）。
+5. **Python 依赖**：缺 fastapi/uvicorn/httpx 时离线装（见 `docs/ISSUES.md` pip 离线法）；缺 flask 同理。
+6. **自启动**：`scripts/rdk/install_autostart.sh` 装 `sentry-bridge.service`（网关）；相机/推理**不装自启**，由前端按钮启停。
+7. **~/.bashrc**：追加 source ROS2 + dev_ws（注意 bashrc 顶部非交互 return 守卫，`bash -lc` 不生效要用 `bash -ic` 或放守卫前）。
+
+## 7. YOLO 模型训练 → 量化 → 部署流水线（2026-07-28 定稿）
+
+1. **训练**（PC，`D:\Anaconda_envs\envs\py311\python.exe`）：`D:\wjun\data\yolo\train_yolo11s.py`，数据 `train_plant_full/data.yaml`（单类 plant）。
+2. **导出 ONNX**：`rdk_model_zoo/.../export_monkey_patch.py --pt <best.pt>`（Detect head → 6 路 NHWC，opset 11，simplify=False，勿改）。
+3. **量化**（PC Docker）：校准集换板端实拍图（正 70 + 负 30）放 `models/yolo_quantize/calibration/`，然后：
+   ```bash
+   docker run --rm -v "E:\smart_agri_sentry\models\yolo_quantize:/workspace/yolo" -w /workspace/yolo \
+     openexplorer/ai_toolchain_ubuntu_20_x5_cpu:v1.2.8-py310 \
+     python3 mapper.py --onnx best.onnx --cal-images ./calibration --cal-sample-num 50 \
+     --optimize-level O3 --output-dir ./output_xx
+   ```
+   验收：余弦相似度 ≥0.99（单路 0.987 可接受），查 `output_xx/hb_mapper_makertbin.log`。
+4. **部署**：`.bin` scp 到板端 `/home/sunrise/dev_ws/models/`（新文件名保留旧版可回滚），改 `start_inference_stack.sh` 的 `YOLO_MODEL` 默认路径，前端"开启推理"按钮重启生效。
+5. **验证**：`/vision/plant_detected` 话题有帧、前端对准已知目标出框。

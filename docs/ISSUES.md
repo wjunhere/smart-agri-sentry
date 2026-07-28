@@ -98,3 +98,30 @@
 - [ ] 比赛规则是否强制要求机械臂/土壤采样动作
 - [ ] 固定环境节点外壳尺寸与太阳能板安装方式
 - [ ] LoRa 实际通信距离与频段选择
+
+
+---
+
+## 4. 板端运维类问题（2026-07 重刷周期记录）
+
+### 欠压 → SD 卡损坏（已发生，需警惕复发）
+
+- **现象**：橙灯灭绿灯亮、串口无输出、kernel panic 启动循环。
+- **根因**：非 5V/5A 的 Type-C 线/适配器欠压 → 多次硬死机 → SD 卡（非 eMMC）ext4 组描述符损坏。
+- **规避**：使用 5V/5A 规格适配器和粗线径数据线；避免带电热插拔；异常断电后若无法启动，串口看日志，ext4 损坏基本只能重刷（RDK Studio + RDKOS 3.5.0 Server 镜像）。重刷后恢复流程见 `docs/SETUP.md` 第 6 节。
+- **症状预警**：拍摄图片出现 0 字节文件 = 写入中途断电的标志。
+
+### MIPI 排线接触不良
+
+- **现象**：相机无图，官方 dump 工具同样失败；I2C 能探测到 IMX477（`Found sensor name: imx477`）但 `vp_isp_init hbn_vnode_set_attr failed, ret(-10)`。
+- **结论**：I2C 通 ≠ MIPI 数据通，重插排线（两端）即可恢复。
+
+### 无 RTC 时钟
+
+- 板端时钟常年 2000-01-01，journalctl --list-boots 时序混乱，boot 日志跨次启动不可靠；功能无影响。
+
+### 其他
+
+- **热点断连**：曾因供电不足反复断连，换线后消失；双通道备用（热点 `ssh rdk1` / Type-C RNDIS `ssh sunrise@192.168.128.10`）。
+- **Docker 量化环境**：hb_mapper 在 PC 端 OE Docker（`openexplorer/ai_toolchain_ubuntu_20_x5_cpu:v1.2.8-py310`）中运行，Docker Desktop 需保持运行；daemon 掉线会导致量化任务直接失败。
+- **板端 pip 离线安装**：板端无法访问 GitHub/外网时，从 PC `pip download --platform manylinux2014_aarch64 --python-version 3.10 --only-binary=:all:` 下载轮子 scp 过去 `pip install --no-index --find-links`（fastapi/uvicorn/httpx 曾因此缺失导致网关节点静默崩溃）。

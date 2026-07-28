@@ -453,3 +453,47 @@ ros2 run sentry_mission imu_turn --stop         # 急停
 | `enable_image_enhancement` | `true` | gamma LUT 开关 |
 
 板端实测（2026-07-17）：暗场景静止收敛 mean→80.0（目标值），运动/静止切换按里程计迟滞工作，硬件回读与控制器状态一致（ExposureAuto=0, ExposureTime=20000, GainAuto=0, Gain≈12）。
+
+
+---
+
+## 10. 视觉栈与前端开关接口（2026-07-28）
+
+### HTTP 端点（web_remote_node :5000）
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/vision/start` | POST | 清理残留相机进程后启动相机栈（mipi_camera + republish + rosbridge），验证 `/out/compressed` 有帧才返回 ok |
+| `/vision/stop` | POST | 停止相机 + 转发（rosbridge 保留） |
+| `/inference/start` | POST | 清理残留推理节点后启动 `plant_detector_node` + `vision_pipeline_node`（YOLO+MobileNet） |
+| `/inference/stop` | POST | 停止推理节点 |
+| `/status` | GET | 新增 `camera_running` / `inference_running`（实时读 ROS 图，非缓存标志） |
+
+启动/停止脚本：`scripts/rdk/start_camera_stack.sh`、`start_inference_stack.sh`、`stop_camera_stack.sh`、`stop_inference_stack.sh`（均先杀后启，防重复节点抢 MIPI 设备/BPU）。
+
+### plant_detector_node 新参数
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `confidence_threshold` | 0.5（启动脚本传 0.35） | YOLO 置信度阈值 |
+| `vote_window` / `vote_min` | 3 / 2 | 时序投票：近 N 帧至少 M 帧出框才上报 `detected=true`，单帧漏检沿用上一帧的框；`vote_window<=1` 关闭 |
+| `model_path` | 见启动脚本 | 现役 `best_plant_11s_bayese_640x640_nv12.bin`（单类 yolo11s） |
+
+### mipi_camera_node 去畸变参数
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `enable_undistort` | false | 开启 initUndistortRectifyMap + remap 去畸变 |
+| `undistort_calib_file` | — | 标定 YAML（`config/imx477_640x480.yaml`，k3 模型 RMS 0.200px） |
+| `undistort_alpha` | 0.0 | 0=裁切无黑边，1=保留全部视野 |
+| `fps` | 10（监测脚本 15） | 15fps 时建议关闭低光增强/锐化（见 `start_camera_stack.sh`） |
+
+### yolo_utils 后处理（性能关键）
+
+- 类别通道数动态化：`cls.reshape(h, w, -1)`，兼容 2 类 crop/weed 与单类 plant 模型。
+- **置信度优先 DFL 解码**：先以 `scores > conf` 过滤锚点，仅对存活锚点做 DFL softmax 解码（8400 → 通常 <100），后处理 ~65ms → <5ms，检测帧率 13 → 15fps 满帧，检测节点 CPU 117% → 65%。
+
+### static_v2 前端
+
+- 顶栏相机/推理按钮为开关式（toggle），文字反映 ROS 图真实状态（3s 轮询 `/status`，启动/停止进行中不同步防打架）。
+- 视频帧渲染：requestAnimationFrame 只画最新帧，修复 rosbridge 积帧导致的"快速回放"。

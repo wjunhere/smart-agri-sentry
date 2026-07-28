@@ -306,3 +306,32 @@ Field tests repeatedly exposed stale ROS nodes, old TF publishers, and temporary
 - Startup is slower than a raw launch, but it includes cleanup and health checks.
 - The same mission-owned safety layer can remain useful after a future map-based navigation upgrade.
 
+
+---
+
+## ADR-011：植株检测改单类 plant + COCO 基座全量重训（yolo11s）
+
+**状态**：已实施
+**日期**：2026-07-28
+
+### 背景
+
+原 crop/weed 二分类 YOLOv8n 在板端对屏幕/打印的病害图片不出框（只对"密集叶片+根部"出框）。排查出四类原因：部署端 conf/min_area 过滤过狠；训练 letterbox 与板端直接 resize 拉伸不一致；量化校准集全是数据集图、与板端输入分布不符；模型本身对"图片中的叶片"这一分布没见过。
+
+### 决策
+
+1. **类别合并为单类 `plant`**：板端后处理本来就取两类置信度最大值（`yolo_utils.py`），下游不消费 crop/weed 区分（病害分类由 MobileNet 负责）。单类省去类间区分负担，召回更高。
+2. **数据闭环用板端实拍**：训练/校准数据必须与部署输入同分布。病害图通过平板显示 + 板端相机翻拍获得（330 张），硬负样本（风扇、吊灯、遮阳网、地膜等 13 类）用"网络搜图 → 平板翻拍"解决场景受限问题（160 张）。
+3. **接力微调不可持续，改为 COCO 基座全量重训**：R1（best.pt 微调）、R2（R1 再微调）指标提升但误检感加重——每轮微调向最新数据漂移，且 PlantDoc 叶片特写占比过高使模型"纹理过敏"。最终 yolo11s 从 COCO 预训练基座用全量 5108 张一次训到位。
+4. **更大模型换判别力**：v8n(3.2M) → v11s(9.4M)，BPU 估算 272→80 FPS 仍有 8 倍富余（相机 10~15fps），容量提升正对"风扇网罩 vs 叶丛"这类细粒度纹理区分。
+
+### 结果
+
+- mAP50 0.970、mAP50-95 0.645（板端实拍验证集，与 R1/R2 同一套）；硬负样本误检 21(R1) → 14(R2) → **4/160**；风扇误检消除（残留为肥料袋绿叶图案与纯绿几何图）。
+- 板端配套：conf 0.35 + 时序投票（3帧2票）压边界/偶发误检。
+
+### 经验记录
+
+- **校准集必须用板端实拍图**（含负样本），数据集图校准会让量化掉点且分布错位。
+- 预标注 + 人工修正的标注效率远高于纯手标（330 张约半天）；LabelImg 1.8.6 与新版 PyQt5 有 float→int 兼容问题需打补丁。
+- 微调数据配比：新图 : 原数据 ≈ 1:2，lr 降 1/10；验证集必须含部署域（板端实拍）样本，混合域指标会虚高。
