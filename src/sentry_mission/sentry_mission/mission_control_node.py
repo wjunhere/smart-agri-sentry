@@ -81,7 +81,7 @@ class MissionControlNode(Node):
         self.declare_parameter('analyze_timeout_sec', 5.0)
         self.declare_parameter('resume_delay_sec', 2.0)
         self.declare_parameter('waypoints_file', '')
-        self.declare_parameter('wheel_base', 0.23)
+        self.declare_parameter('wheel_base', 0.244)
         self.declare_parameter('pulses_per_meter', 11552)
         self.declare_parameter('min_resume_distance', 0.5)
         self.declare_parameter('crop_type', 'tomato')

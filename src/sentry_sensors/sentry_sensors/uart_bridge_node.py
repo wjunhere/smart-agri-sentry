@@ -132,7 +132,7 @@ class UartBridgeNode(Node):
         self.declare_parameter('uart_port', '/dev/ttyS1')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('forward_servo_cmd', False)
-        self.declare_parameter('wheel_base', 0.23)
+        self.declare_parameter('wheel_base', 0.244)
         self.declare_parameter('left_speed_scale', 1.0)
         self.declare_parameter('right_speed_scale', 1.0)
         self.declare_parameter('swap_wheel_commands', False)
