@@ -9,10 +9,33 @@ import cv2
 import numpy as np
 
 
-def bgr_to_yolo_input(bgr: np.ndarray, size: int = 640) -> np.ndarray:
-    """Resize BGR image to size×size and convert to flat NV12 uint8 for YOLO BPU."""
-    resized = cv2.resize(bgr, (size, size))
-    return bgr_to_nv12(resized)
+def bgr_to_yolo_input(bgr: np.ndarray, size: int = 640) -> tuple:
+    """Letterbox BGR image to size×size and convert to flat NV12 uint8.
+
+    Matches the training-time letterbox (aspect-preserving resize + gray
+    padding) instead of a distorting stretch — small/thin objects keep
+    their shape. Returns (nv12, scale, pad_x, pad_y); the meta is needed
+    by yolo_box_to_image() to map detections back to the original frame.
+    """
+    h, w = bgr.shape[:2]
+    scale = min(size / w, size / h)
+    nw, nh = int(round(w * scale)), int(round(h * scale))
+    resized = cv2.resize(bgr, (nw, nh))
+    canvas = np.full((size, size, 3), 114, dtype=np.uint8)
+    pad_x, pad_y = (size - nw) // 2, (size - nh) // 2
+    canvas[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
+    return bgr_to_nv12(canvas), scale, pad_x, pad_y
+
+
+def yolo_box_to_image(bbox, scale: float, pad_x: int, pad_y: int,
+                      orig_w: int, orig_h: int, size: int = 640) -> list:
+    """Map a normalized letterbox-space bbox back to normalized coords of
+    the original image (clamped to [0, 1])."""
+    x0 = (bbox[0] * size - pad_x) / scale / orig_w
+    y0 = (bbox[1] * size - pad_y) / scale / orig_h
+    x1 = (bbox[2] * size - pad_x) / scale / orig_w
+    y1 = (bbox[3] * size - pad_y) / scale / orig_h
+    return [min(1.0, max(0.0, v)) for v in (x0, y0, x1, y1)]
 
 
 def bgr_to_nv12(bgr: np.ndarray) -> np.ndarray:

@@ -17,7 +17,7 @@ from sentry_interfaces.msg import Diagnosis
 from sentry_interfaces.srv import PipelineTrigger
 from cv_bridge import CvBridge
 
-from .yolo_utils import bgr_to_yolo_input, yolo_postprocess
+from .yolo_utils import bgr_to_yolo_input, yolo_postprocess, yolo_box_to_image
 from .diagnosis_utils import get_labels, resolve_model_path, get_input_format
 
 
@@ -156,7 +156,7 @@ class VisionPipelineNode(Node):
             cv_image = self.bridge.imgmsg_to_cv2(frame_msg, desired_encoding='bgr8')
 
             # YOLO detect
-            yolo_input = bgr_to_yolo_input(cv_image, 640)
+            yolo_input, yscale, pad_x, pad_y = bgr_to_yolo_input(cv_image, 640)
             yolo_out = yolo.forward([yolo_input])
 
             detected, bbox, conf = yolo_postprocess(
@@ -168,6 +168,9 @@ class VisionPipelineNode(Node):
             if not detected:
                 self.get_logger().info(f'Shot {shot}: no crop detected')
                 continue
+
+            fh, fw = cv_image.shape[:2]
+            bbox = yolo_box_to_image(bbox, yscale, pad_x, pad_y, fw, fh)
 
             # MobileNet classify on the YOLO crop (letterboxed), not full frame
             mb_input = self._preprocess_mobilenet(cv_image, crop_type, bbox=bbox)

@@ -9,7 +9,7 @@ from collections import deque
 import signal
 import sys
 
-from .yolo_utils import bgr_to_yolo_input, yolo_postprocess
+from .yolo_utils import bgr_to_yolo_input, yolo_postprocess, yolo_box_to_image
 
 
 class PlantDetectorNode(Node):
@@ -144,7 +144,7 @@ class PlantDetectorNode(Node):
         if self._model is None:
             return False, [0.0, 0.0, 0.0, 0.0], 0.0, 0.0
 
-        input_tensor = bgr_to_yolo_input(image, 640)
+        input_tensor, scale, pad_x, pad_y = bgr_to_yolo_input(image, 640)
         outputs = self._model.forward([input_tensor])
 
         detected, bbox, confidence = yolo_postprocess(
@@ -154,6 +154,8 @@ class PlantDetectorNode(Node):
         if not detected:
             return False, bbox, confidence, 0.0
 
+        h, w = image.shape[:2]
+        bbox = yolo_box_to_image(bbox, scale, pad_x, pad_y, w, h)
         x1, y1, x2, y2 = bbox
         area_ratio = float((x2 - x1) * (y2 - y1))
 

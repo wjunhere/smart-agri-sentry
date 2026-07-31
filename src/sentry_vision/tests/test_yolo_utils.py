@@ -14,11 +14,24 @@ class TestNV12Conversion:
         assert nv12.dtype == np.uint8
 
     def test_bgr_to_yolo_input(self):
-        """Resize to 640×640 then convert to NV12."""
+        """Letterbox to 640×640 (aspect preserved) then convert to NV12."""
         bgr = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
-        tensor = bgr_to_yolo_input(bgr, 640)
+        tensor, scale, pad_x, pad_y = bgr_to_yolo_input(bgr, 640)
         assert len(tensor) == int(640 * 640 * 1.5)
         assert tensor.dtype == np.uint8
+        # 1920x1080: limited by width, vertical padding expected
+        assert scale == pytest.approx(640 / 1920)
+        assert pad_x == 0
+        assert pad_y > 0
+
+    def test_yolo_box_roundtrip(self):
+        """Letterbox-space box maps back to original-image normalized coords."""
+        from sentry_vision.yolo_utils import yolo_box_to_image
+        # 640x480 image: scale=1.0, pad_y=80 — full-width box at vertical
+        # center of the letterbox maps to the whole original frame.
+        bbox = yolo_box_to_image([0.0, 80 / 640, 1.0, 560 / 640],
+                                 1.0, 0, 80, 640, 480)
+        assert bbox == pytest.approx([0.0, 0.0, 1.0, 1.0])
 
     def test_nv12_roundtrip_visual(self):
         """NV12 → BGR should roughly recover a solid color image."""
