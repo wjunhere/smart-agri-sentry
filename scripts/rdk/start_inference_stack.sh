@@ -54,14 +54,24 @@ setsid ros2 run sentry_vision vision_pipeline_node --ros-args \
   >"${LOG_DIR}/inference_vision_pipeline.log" 2>&1 &
 echo "$!" > /tmp/vision_pipeline_node.pid
 
+# Streaming disease diagnosis for the frontend: classifies the plant_detector
+# crop (letterbox) continuously and publishes /vision/diagnosis.
+log "Starting vision_diagnosis_node (streaming, YOLO-crop input)..."
+setsid ros2 run sentry_vision vision_diagnosis_node --ros-args \
+  -p crop_type:="${CROP_TYPE:-tomato}" \
+  -p healthy_threshold:=0.0 \
+  >"${LOG_DIR}/inference_vision_diagnosis.log" 2>&1 &
+echo "$!" > /tmp/vision_diagnosis_node.pid
+
 log "Waiting for inference nodes in ROS graph..."
 for attempt in $(seq 1 15); do
   nodes="$(ros2 node list 2>/dev/null || true)"
-  det_ok=false; pipe_ok=false
+  det_ok=false; pipe_ok=false; diag_ok=false
   printf '%s\n' "$nodes" | grep -qx '/plant_detector_node' && det_ok=true
   printf '%s\n' "$nodes" | grep -qx '/vision_pipeline_node' && pipe_ok=true
-  if $det_ok && $pipe_ok; then
-    log "Inference stack is up (plant_detector + vision_pipeline)."
+  printf '%s\n' "$nodes" | grep -qx '/vision_diagnosis_node' && diag_ok=true
+  if $det_ok && $pipe_ok && $diag_ok; then
+    log "Inference stack is up (plant_detector + vision_pipeline + vision_diagnosis)."
     exit 0
   fi
   sleep 1
@@ -69,4 +79,5 @@ done
 
 tail -5 "${LOG_DIR}/inference_plant_detector.log" >&2 || true
 tail -5 "${LOG_DIR}/inference_vision_pipeline.log" >&2 || true
+tail -5 "${LOG_DIR}/inference_vision_diagnosis.log" >&2 || true
 fail "Inference nodes did not appear within 15s"

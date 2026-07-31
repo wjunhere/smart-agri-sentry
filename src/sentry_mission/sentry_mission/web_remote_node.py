@@ -693,8 +693,8 @@ class WebRemoteNode(Node):
             model_path = os.environ.get(
                 'VISION_DIAGNOSIS_MODEL_PATH',
                 '/home/sunrise/dev_ws/models/quantization/'
-                'tomato_mobilenetv3_output/'
-                'tomato_mobilenetv3_bayese_224x224_nv12.bin')
+                'tomato_mobilenetv3_v5_output/'
+                'tomato_mobilenetv3_v5_bayese_224x224_nv12.bin')
             cmd = [
                 'ros2', 'run', 'sentry_vision', 'vision_diagnosis_node',
                 '--ros-args',

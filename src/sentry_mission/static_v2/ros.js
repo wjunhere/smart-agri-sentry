@@ -605,10 +605,10 @@ function callSetCropType(cropType) {
   store.plantBbox = [];
   store.plantAreaRatio = 0;
 
-  // Diagnosis — mock healthy
-  store.diagnosisDisease = 'healthy';
-  store.diagnosisConfidence = 0.85;
-  store.diagnosisProbabilities = [0.85, 0.06, 0.04, 0.02, 0.01, 0.01, 0.01];
+  // Diagnosis — no real data yet: show placeholder instead of a fake class
+  store.diagnosisDisease = '--';
+  store.diagnosisConfidence = 0;
+  store.diagnosisProbabilities = [];
   store.diagnosisCropType = 'tomato';
 
   // Advisory

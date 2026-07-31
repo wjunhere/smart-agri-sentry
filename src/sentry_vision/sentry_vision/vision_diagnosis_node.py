@@ -1,12 +1,14 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from sentry_interfaces.msg import Diagnosis
+from sentry_interfaces.msg import Diagnosis, PlantDetection
 from cv_bridge import CvBridge
 import numpy as np
 import cv2
 
-from .diagnosis_utils import get_labels, resolve_model_path, get_input_format
+from .diagnosis_utils import (
+    get_labels, resolve_model_path, get_input_format, crop_letterbox,
+)
 
 
 def bgr_to_nv12(bgr: np.ndarray) -> np.ndarray:
@@ -35,7 +37,7 @@ class VisionDiagnosisNode(Node):
         self.declare_parameter('model_path', '')
         self.declare_parameter('input_size', 224)
 
-        self.declare_parameter('healthy_threshold', 0.15)
+        self.declare_parameter('healthy_threshold', 0.0)
 
         self.crop_type = self.get_parameter('crop_type').value
         self.input_size = self.get_parameter('input_size').value
@@ -59,8 +61,29 @@ class VisionDiagnosisNode(Node):
         self.sub = self.create_subscription(
             Image, '/sentry/camera/image_raw', self.on_image, 1)
         self.pub = self.create_publisher(Diagnosis, '/vision/diagnosis', 10)
+        # Latest YOLO plant box from plant_detector_node; when fresh, the
+        # classifier sees the crop (letterboxed) instead of the full frame.
+        self._plant_bbox = None
+        self._plant_stamp = 0.0
+        self._plant_sub = self.create_subscription(
+            PlantDetection, '/vision/plant_detected', self._on_plant, 10)
         self.get_logger().info('Vision diagnosis node ready (BPU) '
                                f'healthy_threshold={self.healthy_threshold}')
+
+    def _on_plant(self, msg: PlantDetection):
+        if msg.detected and len(msg.bbox) == 4:
+            self._plant_bbox = list(msg.bbox)
+            self._plant_stamp = self.get_clock().now().nanoseconds * 1e-9
+        else:
+            self._plant_bbox = None
+
+    def _fresh_bbox(self):
+        if self._plant_bbox is None:
+            return None
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if now - self._plant_stamp > 1.0:
+            return None
+        return self._plant_bbox
 
     def on_image(self, msg: Image):
         try:
@@ -69,7 +92,7 @@ class VisionDiagnosisNode(Node):
             self.get_logger().error(f'CV bridge error: {e}')
             return
 
-        input_tensor = self.preprocess(cv_image)
+        input_tensor = self.preprocess(cv_image, bbox=self._fresh_bbox())
         outputs = self.model.forward([input_tensor])
         output = outputs[0].buffer.reshape(-1)
 
@@ -77,8 +100,10 @@ class VisionDiagnosisNode(Node):
         healthy_idx = self.labels.index('healthy') if 'healthy' in self.labels else -1
         healthy_prob = float(probs[healthy_idx]) if healthy_idx >= 0 else 0.0
 
-        # Healthy threshold: if healthy class probability >= threshold, predict healthy
-        if healthy_idx >= 0 and healthy_prob >= self.healthy_threshold:
+        # Healthy threshold (0 = disabled): if healthy class probability
+        # exceeds threshold, predict healthy; otherwise plain argmax.
+        if (healthy_idx >= 0 and self.healthy_threshold > 0
+                and healthy_prob >= self.healthy_threshold):
             class_idx = healthy_idx
         else:
             class_idx = int(np.argmax(probs))
@@ -95,8 +120,11 @@ class VisionDiagnosisNode(Node):
         out_msg.probabilities = probs.tolist()
         self.pub.publish(out_msg)
 
-    def preprocess(self, image: np.ndarray) -> np.ndarray:
-        resized = cv2.resize(image, (self.input_size, self.input_size))
+    def preprocess(self, image: np.ndarray, bbox=None) -> np.ndarray:
+        if bbox is not None:
+            resized = crop_letterbox(image, bbox, size=self.input_size)
+        else:
+            resized = cv2.resize(image, (self.input_size, self.input_size))
         if self.input_format == 'nv12':
             return bgr_to_nv12(resized)
         else:

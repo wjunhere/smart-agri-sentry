@@ -96,12 +96,21 @@ class VisionPipelineNode(Node):
 
     # ── preprocessing for MobileNet ─────────────────────────────────
 
-    def _preprocess_mobilenet(self, bgr, crop_type: str) -> np.ndarray:
-        """Resize and convert to BPU input format matching the model."""
+    def _crop_letterbox(self, bgr, bbox, size=224, expand=0.20):
+        """Crop normalized YOLO bbox (expanded) and letterbox to square."""
+        from .diagnosis_utils import crop_letterbox
+        return crop_letterbox(bgr, bbox, size=size, expand=expand)
+
+    def _preprocess_mobilenet(self, bgr, crop_type: str,
+                              bbox=None) -> np.ndarray:
+        """Crop+letterbox (when bbox given), then convert to BPU input."""
         from .vision_diagnosis_node import bgr_to_nv12, bgr_to_rgb_nchw
         import cv2
 
-        resized = cv2.resize(bgr, (224, 224))
+        if bbox is not None:
+            resized = self._crop_letterbox(bgr, bbox)
+        else:
+            resized = cv2.resize(bgr, (224, 224))
         fmt = get_input_format(crop_type)
         if fmt == 'nv12':
             return bgr_to_nv12(resized)
@@ -160,8 +169,8 @@ class VisionPipelineNode(Node):
                 self.get_logger().info(f'Shot {shot}: no crop detected')
                 continue
 
-            # MobileNet classify
-            mb_input = self._preprocess_mobilenet(cv_image, crop_type)
+            # MobileNet classify on the YOLO crop (letterboxed), not full frame
+            mb_input = self._preprocess_mobilenet(cv_image, crop_type, bbox=bbox)
             mb_out = mobilenet.forward([mb_input])
             mb_raw = mb_out[0].buffer.reshape(-1)
 

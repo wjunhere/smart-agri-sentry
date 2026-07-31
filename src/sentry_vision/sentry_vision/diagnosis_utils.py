@@ -2,10 +2,44 @@
 
 import os
 
+import numpy as np
+
+
+def crop_letterbox(bgr, bbox, size=224, expand=0.20):
+    """Crop a normalized bbox (expanded) from bgr and letterbox to square.
+
+    Matches the v5 fine-tune dataset construction: same expand ratio and
+    gray (114) padding, so train/inference distributions align.
+    Returns the letterboxed BGR image; falls back to plain resize when the
+    box is degenerate.
+    """
+    import cv2
+
+    h, w = bgr.shape[:2]
+    x0, y0, x1, y1 = bbox
+    x0, x1 = x0 * w, x1 * w
+    y0, y1 = y0 * h, y1 * h
+    bw, bh = x1 - x0, y1 - y0
+    x0 = max(0, int(x0 - bw * expand / 2))
+    y0 = max(0, int(y0 - bh * expand / 2))
+    x1 = min(w, int(x1 + bw * expand / 2))
+    y1 = min(h, int(y1 + bh * expand / 2))
+    crop = bgr[y0:y1, x0:x1]
+    if crop.size == 0:
+        return cv2.resize(bgr, (size, size))
+    ch, cw = crop.shape[:2]
+    s = min(size / cw, size / ch)
+    nw, nh = int(round(cw * s)), int(round(ch * s))
+    resized = cv2.resize(crop, (nw, nh))
+    out = np.full((size, size, 3), 114, dtype=np.uint8)
+    px, py = (size - nw) // 2, (size - nh) // 2
+    out[py:py + nh, px:px + nw] = resized
+    return out
+
 
 # Quantized BPU model paths (relative to workspace root)
 _QUANTIZED_MODEL_PATHS = {
-    'tomato': 'models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin',
+    'tomato': 'models/quantization/tomato_mobilenetv3_v5_output/tomato_mobilenetv3_v5_bayese_224x224_nv12.bin',
     'wheat': 'models/quantization/wheat_mobilenetv3_output/wheat_mobilenetv3_bayese_224x224_nv12.bin',
     'strawberry': 'models/quantization/strawberry_mobilenetv3_output/strawberry_mobilenetv3_bayese_224x224_rgb.bin',
 }

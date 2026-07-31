@@ -36,7 +36,7 @@ class TestResolveModelPath:
     def test_relative_path_resolved_with_search(self, tmp_path, monkeypatch):
         # Create a fake quantized model file at the new default path so
         # resolution succeeds.
-        rel = 'models/quantization/tomato_mobilenetv3_output/tomato_mobilenetv3_bayese_224x224_nv12.bin'
+        rel = 'models/quantization/tomato_mobilenetv3_v5_output/tomato_mobilenetv3_v5_bayese_224x224_nv12.bin'
         model_file = tmp_path / rel
         model_file.parent.mkdir(parents=True)
         model_file.write_text('fake')
@@ -44,7 +44,7 @@ class TestResolveModelPath:
         monkeypatch.chdir(tmp_path)
         path = resolve_model_path('tomato', '', 224)
         assert os.path.isabs(path)
-        assert path.endswith('tomato_mobilenetv3_bayese_224x224_nv12.bin')
+        assert path.endswith('tomato_mobilenetv3_v5_bayese_224x224_nv12.bin')
 
 
 class TestGetLabels:
