@@ -23,7 +23,7 @@ from .diagnosis_utils import get_labels, resolve_model_path, get_input_format
 
 # Scan limits
 SCAN_TIMEOUT_SEC = 15.0
-DEFAULT_YOLO_MODEL_PATH = '/home/sunrise/dev_ws/models/yolov8n_crop_weed_bayese_640x640_nv12.bin'
+DEFAULT_YOLO_MODEL_PATH = '/home/sunrise/dev_ws/models/best_plant_11s_bayese_640x640_nv12.bin'
 
 
 class VisionPipelineNode(Node):

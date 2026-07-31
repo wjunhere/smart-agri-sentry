@@ -645,15 +645,17 @@ class MissionControlNode(Node):
                 dx = self.odom_x - self._servo_flip_position[0]
                 dy = self.odom_y - self._servo_flip_position[1]
                 if math.hypot(dx, dy) < self.servo_flip_cooldown_distance:
+                    self.get_logger().info(
+                        'Suppressing plant stop trigger: servo flip cooldown')
                     return False
             self._servo_flip_time = None
         if not self.has_scan_reference:
             return True
         if self._distance_from_reference() >= self.min_resume_distance:
             return True
-        self.get_logger().debug(
-            f'Suppressing trigger: distance={self._distance_from_reference():.2f} '
-            f'< {self.min_resume_distance}')
+        self.get_logger().info(
+            f'Suppressing plant stop trigger: distance={self._distance_from_reference():.2f}m '
+            f'< min_resume_distance={self.min_resume_distance}m')
         return False
 
     def _find_unhandled_fixed_point_stop(self):
