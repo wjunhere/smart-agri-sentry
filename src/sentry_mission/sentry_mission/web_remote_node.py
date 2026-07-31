@@ -16,8 +16,10 @@ from pathlib import Path
 import rclpy
 import yaml
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import String
 from sentry_interfaces.msg import MissionStatus, PlantDetection, Diagnosis
 from sentry_mission.batch_recorder import BatchRecorder, draw_bbox_on_jpeg
 from sentry_interfaces.srv import SetCropType
@@ -207,6 +209,15 @@ class WebRemoteNode(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.mode_srv = self.create_client(SetBool, '/set_auto_mode')
         self.crop_type_client = self.create_client(SetCropType, '/set_crop_type')
+        # Latched crop-type channel for the monitoring plane: the streaming
+        # vision_diagnosis_node reloads its model when this changes. Works
+        # without mission_control_node (unlike the /set_crop_type service).
+        self.crop_type_pub = self.create_publisher(
+            String, '/vision/crop_type',
+            QoSProfile(depth=1,
+                       durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.current_crop_type = os.environ.get('CROP_TYPE', 'tomato')
+        self.crop_type_pub.publish(String(data=self.current_crop_type))
         self.mission_status_sub = self.create_subscription(
             MissionStatus, '/mission/status', self.on_mission_status, 10)
 
@@ -1049,32 +1060,41 @@ def _get_app(node: WebRemoteNode):
     def set_crop_type():
         data = request.get_json()
         crop = data.get('crop_type', '')
-        if not node.crop_type_client.wait_for_service(timeout_sec=1.0):
-            return jsonify({'status': 'error', 'message': 'Service unavailable'})
+        valid = {'tomato', 'wheat', 'strawberry'}
+        if crop not in valid:
+            return jsonify({'status': 'error',
+                            'message': f'Invalid crop type: {crop}. Valid: {sorted(valid)}'}), 400
 
-        req = SetCropType.Request()
-        req.crop_type = crop
-        future = node.crop_type_client.call_async(req)
-        event = threading.Event()
-        result = {}
+        # Always update the monitoring plane (latched topic); the streaming
+        # diagnosis node reloads its model on change.
+        node.current_crop_type = crop
+        node.crop_type_pub.publish(String(data=crop))
 
-        def done_cb(fut):
-            try:
-                result['response'] = fut.result()
-            except Exception as e:
-                result['error'] = str(e)
-            finally:
-                event.set()
+        # Best-effort forward to mission_control (only up during full stack).
+        if node.crop_type_client.wait_for_service(timeout_sec=0.5):
+            req = SetCropType.Request()
+            req.crop_type = crop
+            future = node.crop_type_client.call_async(req)
+            event = threading.Event()
+            result = {}
 
-        future.add_done_callback(done_cb)
-        if not event.wait(timeout=2.0):
-            return jsonify({'status': 'error', 'message': 'Request timed out'})
-        if result.get('error'):
-            return jsonify({'status': 'error', 'message': result['error']})
-        resp = result.get('response')
-        if resp is not None and resp.success:
-            return jsonify({'status': 'ok', 'message': resp.message})
-        return jsonify({'status': 'error', 'message': resp.message if resp else 'Unknown error'})
+            def done_cb(fut):
+                try:
+                    result['response'] = fut.result()
+                except Exception as e:
+                    result['error'] = str(e)
+                finally:
+                    event.set()
+
+            future.add_done_callback(done_cb)
+            if not event.wait(timeout=2.0):
+                return jsonify({'status': 'error', 'message': 'Request timed out'})
+            if result.get('error'):
+                return jsonify({'status': 'error', 'message': result['error']})
+            resp = result.get('response')
+            if resp is not None and not resp.success:
+                return jsonify({'status': 'error', 'message': resp.message})
+        return jsonify({'status': 'ok', 'message': f'Crop type set to {crop}'})
 
     # Shared mock diagnosis mode (cross-client sync)
     _app.config['mock_diagnosis_mode'] = 'real'

@@ -1,6 +1,8 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 from sentry_interfaces.msg import Diagnosis, PlantDetection
 from cv_bridge import CvBridge
 import numpy as np
@@ -43,19 +45,12 @@ class VisionDiagnosisNode(Node):
         self.input_size = self.get_parameter('input_size').value
         model_path = self.get_parameter('model_path').value
         self.healthy_threshold = self.get_parameter('healthy_threshold').value
+        self._model_path_param = model_path
 
-        model_path = resolve_model_path(self.crop_type, model_path, self.input_size)
-        self.labels = get_labels(self.crop_type)
-        self.input_format = get_input_format(self.crop_type)
-
-        self.get_logger().info(
-            f'Loading BPU model: {model_path} (format={self.input_format})')
         from hobot_dnn import pyeasy_dnn as dnn
         self._dnn = dnn
-        self.model = dnn.load(model_path)[0]
-        self.get_logger().info(
-            f'BPU model loaded. name={self.model.name} '
-            f'inputs={len(self.model.inputs)} outputs={len(self.model.outputs)}')
+        self.model = None
+        self._load_model(self.crop_type)
 
         self.bridge = CvBridge()
         self.sub = self.create_subscription(
@@ -67,8 +62,39 @@ class VisionDiagnosisNode(Node):
         self._plant_stamp = 0.0
         self._plant_sub = self.create_subscription(
             PlantDetection, '/vision/plant_detected', self._on_plant, 10)
+        # Frontend crop switching: gateway publishes the latched selection on
+        # /vision/crop_type; reload the BPU model to match.
+        self._crop_type_sub = self.create_subscription(
+            String, '/vision/crop_type', self._on_crop_type,
+            QoSProfile(depth=1,
+                       durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.get_logger().info('Vision diagnosis node ready (BPU) '
                                f'healthy_threshold={self.healthy_threshold}')
+
+    def _load_model(self, crop_type: str):
+        model_path = resolve_model_path(
+            crop_type, self._model_path_param, self.input_size)
+        self.get_logger().info(
+            f'Loading BPU model: {model_path} '
+            f'(format={get_input_format(crop_type)})')
+        model = self._dnn.load(model_path)[0]
+        self.crop_type = crop_type
+        self.labels = get_labels(crop_type)
+        self.input_format = get_input_format(crop_type)
+        self.model = model
+        self.get_logger().info(
+            f'BPU model loaded. name={self.model.name} '
+            f'inputs={len(self.model.inputs)} outputs={len(self.model.outputs)}')
+
+    def _on_crop_type(self, msg: String):
+        crop = msg.data
+        if crop and crop != self.crop_type:
+            self.get_logger().info(f'Crop type switched: {self.crop_type} -> {crop}')
+            try:
+                self._load_model(crop)
+            except Exception as exc:
+                self.get_logger().error(
+                    f'Failed to load model for {crop}, keeping {self.crop_type}: {exc}')
 
     def _on_plant(self, msg: PlantDetection):
         if msg.detected and len(msg.bbox) == 4:
