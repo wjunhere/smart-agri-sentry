@@ -560,18 +560,19 @@ function publishResumeNavigation() {
 }
 
 function callSetCropType(cropType) {
-  return new Promise((resolve, reject) => {
-    const svc = new ROSLIB.Service({
-      ros, name: '/set_crop_type', serviceType: 'sentry_interfaces/SetCropType'
-    });
-    svc.callService(new ROSLIB.ServiceRequest({ crop_type: cropType }), (resp) => {
-      if (resp.success) {
-        store.cropType = cropType;
-        resolve(resp);
-      } else {
-        reject(new Error(resp.message));
-      }
-    });
+  // Goes through the always-on gateway (hot-reloads the diagnosis model via
+  // the latched /vision/crop_type topic); works without mission_control.
+  return fetch(API_BASE + '/crop_type', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ crop_type: cropType })
+  }).then(async (resp) => {
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.status === 'ok') {
+      store.cropType = cropType;
+      return data;
+    }
+    throw new Error(data.message || `HTTP ${resp.status}`);
   });
 }
 

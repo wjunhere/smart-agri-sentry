@@ -16,7 +16,7 @@ const CropSelector = {
   methods: {
     async select(crop) {
       if (crop === this.store.cropType) return;
-      if (!confirm(`切换作物类型到 ${crop} 将重启相关节点，约 5-10 秒不可用。确定？`)) return;
+      if (!confirm(`切换作物类型到 ${crop}？病害模型将热切换，1 秒内生效。`)) return;
       this.switching = true;
       try { await callSetCropType(crop); }
       catch (err) { alert('切换失败: ' + err.message); }
