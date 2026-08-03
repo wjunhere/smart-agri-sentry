@@ -308,7 +308,7 @@ main() {
     check_param_contains /uart_bridge_node right_speed_scale "1.0"
     check_param_contains /uart_bridge_node left_speed_scale "1.0"
     check_param_contains /wheel_odom_node pulses_per_meter "11552"
-    check_param_contains /wheel_odom_node wheel_base "0.23"
+    check_param_contains /wheel_odom_node wheel_base "0.244"
     check_param_contains /mission_control_node obstacle_resume_delay_sec "0.5"
     check_param_contains /mission_control_node avoidance_retrigger_suppression_sec "2.5"
     check_param_contains /mission_control_node avoidance_drive_distance "0.55"

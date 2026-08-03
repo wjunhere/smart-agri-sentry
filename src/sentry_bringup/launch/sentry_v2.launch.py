@@ -224,7 +224,7 @@ def generate_launch_description():
             executable='wheel_odom_node',
             name='wheel_odom_node',
             parameters=[{
-                'wheel_base': 0.23,
+                'wheel_base': 0.244,
                 'pulses_per_meter': 11552,
             }],
             output='screen',
@@ -348,7 +348,7 @@ def generate_launch_description():
                 'mission_params_file': mission_params_config,
                 'cruise_speed': ParameterValue(
                     LaunchConfiguration('cruise_speed'), value_type=float),
-                'wheel_base': 0.23,
+                'wheel_base': 0.244,
                 'pulses_per_meter': 11552,
                 'crop_type': LaunchConfiguration('crop_type'),
                 'detection_confidence_threshold': 0.4,

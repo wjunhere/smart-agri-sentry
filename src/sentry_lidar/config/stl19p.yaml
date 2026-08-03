@@ -10,9 +10,12 @@ sentry_lidar:
     enable_angle_crop_func: false
     angle_crop_min: 135.0
     angle_crop_max: 225.0
-    min_range: 0.3
+    min_range: 0.05
     max_range: 20.0
-    front_sector_half_angle: 30.0
+    # 0.277 m chassis width / 2 + 0.10 m wall clearance = 0.2385 m.
+    # Keep only lidar points in this base-forward travel corridor.
+    front_sector_half_angle: 90.0
     front_sector_center_angle: 90.0
+    front_corridor_half_width: 0.24
     danger_threshold: 0.5
     enable_filter: false
