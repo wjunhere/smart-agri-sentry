@@ -57,6 +57,7 @@ const store = {
 
   stackState: 'idle',
   stackMessage: '',
+  stackAlive: false,
   carIp: '',
 
   cropType: 'tomato',

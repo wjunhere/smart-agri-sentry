@@ -1,6 +1,7 @@
 import { getStore, updateStore, onStoreChange } from '../../services/store';
 import { apiSetMode, apiControl, apiStop, apiSetCropType,
-         apiStackPreheat, apiStackStart, apiStackStop } from '../../services/api';
+         apiStackPreheat, apiStackStart, apiStackStop,
+         apiStackShutdown } from '../../services/api';
 import { setCarIp } from '../../services/config';
 import { wsConnect } from '../../services/ws';
 
@@ -18,6 +19,7 @@ Component({
     missionWaypointLabels: [] as string[],
     stackState: 'idle',
     stackMessage: '',
+    stackAlive: false,
     carIp: '',
     connected: false,
     showWaypointEditor: false,
@@ -47,6 +49,7 @@ Component({
         missionWaypointLabels: s.missionWaypointLabels,
         stackState: s.stackState,
         stackMessage: s.stackMessage,
+        stackAlive: s.stackAlive,
         carIp: s.carIp,
         connected: s.connected,
       });
@@ -80,6 +83,15 @@ Component({
     onStackPreheat() { apiStackPreheat(); },
     onStackStart()   { apiStackStart(); },
     onStackStop()    { apiStackStop(); },
+    onStackShutdown() {
+      wx.showModal({
+        title: '结束栈',
+        content: '将完全停止车上全部工作节点（相机/导航/视觉），下次使用需重新预热。确认结束？',
+        confirmText: '结束栈',
+        confirmColor: '#e54545',
+        success: (res) => { if (res.confirm) apiStackShutdown(); },
+      });
+    },
 
     onIpInput(e: any) {
       this.setData({ carIp: e.detail.value });

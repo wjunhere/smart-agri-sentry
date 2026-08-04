@@ -67,6 +67,12 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
         angular: data.angular,
         rosConnected: data.ros_connected,
       });
+      if (data.stack) {
+        updateStore({
+          stackState: data.stack.state,
+          stackAlive: Boolean(data.stack.stack_alive),
+        });
+      }
       if (data.sensors) applySensorData(data.sensors);
       if (data.mission) applyMissionData(data.mission);
       break;
@@ -126,6 +132,7 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
       updateStore({
         stackState: data.state,
         stackMessage: data.message || '',
+        stackAlive: Boolean(data.alive),
       });
       break;
   }

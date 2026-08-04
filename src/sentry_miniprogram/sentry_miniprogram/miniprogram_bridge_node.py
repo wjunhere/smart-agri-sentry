@@ -55,6 +55,8 @@ class MiniProgramBridgeNode(Node):
         # Services
         self.mode_srv = self.create_client(SetBool, '/set_auto_mode')
         self.crop_type_srv = self.create_client(SetCropType, '/set_crop_type')
+        self.vision_pause_srv = self.create_client(
+            SetBool, '/vision/plant_detector/pause')
 
         # State cache
         self.mode = 'AUTO'
@@ -249,15 +251,9 @@ class MiniProgramBridgeNode(Node):
         }
 
     def _on_camera_frame(self, msg):
-        import cv2
-        import numpy as np
-        np_arr = np.frombuffer(msg.data, np.uint8)
-        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if frame is None:
-            return
-        self._latest_frame = frame
-        _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        self._latest_jpeg = jpeg.tobytes()
+        # /out/compressed is already JPEG — forward as-is. The previous
+        # decode + re-encode per frame cost ~1 CPU core at 30fps.
+        self._latest_jpeg = bytes(msg.data)
 
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
@@ -279,8 +275,21 @@ class MiniProgramBridgeNode(Node):
         req.data = auto
         future = self.mode_srv.call_async(req)
         self.mode = 'AUTO' if auto else 'MANUAL'
+        self._set_vision_paused(not auto)
         self.get_logger().info(f"Mode switched to {self.mode}")
         return True
+
+    def _set_vision_paused(self, paused: bool):
+        """Gate YOLO inference with cruise mode: run in AUTO, idle in MANUAL."""
+        try:
+            ready = self.vision_pause_srv.service_is_ready()
+        except Exception:
+            ready = False
+        if not ready:
+            return
+        req = SetBool.Request()
+        req.data = paused
+        self.vision_pause_srv.call_async(req)
 
     def set_velocity(self, linear: float, angular: float):
         twist = Twist()
@@ -354,16 +363,33 @@ class MiniProgramBridgeNode(Node):
         self._push_ws({
             'type': 'stack_status',
             'ts': self._now_ms(),
-            'data': {'state': state, 'message': message},
+            'data': {'state': state, 'message': message,
+                     'alive': self._stack_alive()},
         })
 
     def _stack_alive(self) -> bool:
-        """Process-level fact: mode service only exists when main stack runs."""
+        """Process-level fact: the main stack is running.
+
+        Checks the node graph first — it settles faster than service
+        discovery right after the stack (re)starts, and a false negative
+        here would trigger a full clean restart that kills a healthy stack.
+        """
+        try:
+            names = {n for n, _ in self.get_node_names_and_namespaces()}
+        except Exception:
+            names = set()
+        if 'mission_control_node' in names:
+            return True
         return self.mode_srv.service_is_ready()
 
     def stack_preheat(self):
         def work():
             with self.stack_lock:
+                if self._stack_alive():
+                    # Adopt the resident stack instead of a clean restart.
+                    self._set_stack_state(
+                        'idle', 'Stack already resident; preheat skipped')
+                    return
                 self._set_stack_state('preheating', 'Running start_robot_stack.sh')
                 ok, output = self._run_stack_script(self.stack_start_script)
                 if ok and self._stack_alive():
@@ -385,18 +411,32 @@ class MiniProgramBridgeNode(Node):
                     self._set_stack_state(
                         'error', '/set_auto_mode not available after stack start')
                     return
-                self.set_mode(True)
-                self._set_stack_state(
-                    'cruising', 'Stack running, AUTO mode engaged')
+                if self.set_mode(True):
+                    self._set_stack_state(
+                        'cruising', 'Stack running, AUTO mode engaged')
+                else:
+                    self._set_stack_state('error', '/set_auto_mode call failed')
         threading.Thread(target=work, daemon=True).start()
 
     def stack_stop(self):
+        """End the cruise but keep the robot stack resident (fast path)."""
+        def work():
+            with self.stack_lock:
+                self._set_stack_state('stopping', 'Switching to MANUAL')
+                self.emergency_stop()
+                self._set_stack_state(
+                    'idle', 'Cruise stopped; stack stays resident')
+        threading.Thread(target=work, daemon=True).start()
+
+    def stack_shutdown(self):
+        """Full teardown of the robot stack; the bridge itself stays up."""
         def work():
             with self.stack_lock:
                 self._set_stack_state('stopping', 'Running stop_robot_stack.sh')
+                self.emergency_stop()
                 ok, output = self._run_stack_script(self.stack_stop_script)
                 if ok:
-                    self._set_stack_state('idle', 'Stack stopped')
+                    self._set_stack_state('idle', 'Stack shut down')
                 else:
                     self._set_stack_state('error', output[-500:])
         threading.Thread(target=work, daemon=True).start()
@@ -417,6 +457,7 @@ class MiniProgramBridgeNode(Node):
             'sensors': self.sensors,
             'mission': self.mission,
             'plant_detect': self.plant_detect,
+            'stack': self.get_stack_status(),
         }
 
 
@@ -579,6 +620,13 @@ def get_app() -> FastAPI:
         if _node is None:
             return {'status': 'error', 'message': 'Bridge node not ready'}
         _node.stack_stop()
+        return {'status': 'accepted', 'state': _node.stack_state}
+
+    @_app.post('/stack/shutdown')
+    async def stack_shutdown():
+        if _node is None:
+            return {'status': 'error', 'message': 'Bridge node not ready'}
+        _node.stack_shutdown()
         return {'status': 'accepted', 'state': _node.stack_state}
 
     # --- WebSocket Endpoint ---

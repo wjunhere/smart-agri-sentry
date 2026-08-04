@@ -78,6 +78,10 @@ export function apiStackStop() {
   return request<{status: string; state: string}>('POST', '/stack/stop');
 }
 
+export function apiStackShutdown() {
+  return request<{status: string; state: string}>('POST', '/stack/shutdown');
+}
+
 export function apiStackStatus() {
   return request<{state: string; stack_alive: boolean; last_output: string}>('GET', '/stack/status');
 }

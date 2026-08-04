@@ -28,6 +28,7 @@
         <view class="btn-danger {{(stackState === 'stopping' || stackState === 'idle') ? 'btn-disabled' : ''}}" bindtap="onStackStop">
           <text>{{stackState === 'stopping' ? '停止中…' : '停止巡航'}}</text>
         </view>
+        <view class="btn-ghost {{(!stackAlive || stackState === 'cruising' || stackState === 'preheating' || stackState === 'starting' || stackState === 'stopping') ? 'btn-disabled' : ''}}" bindtap="onStackShutdown">结束栈</view>
       </view>
     </view>
   </view>
