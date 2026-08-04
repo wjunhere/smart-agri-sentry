@@ -88,6 +88,18 @@ rules:
         - "使用对应杀菌剂喷洒"
         - "记录处理位置"
 
+  - name: unknown_disease_review
+    conditions:
+      mode: UNKNOWN_DISEASE
+    action:
+      action_type: MONITOR
+      priority: HIGH
+      description: "检测到未收录的病害类别，建议人工复核确认，暂不自动喷药。"
+      steps:
+        - "停车并近距离复拍病斑"
+        - "人工比对病害图谱确认类别"
+        - "记录样本用于模型迭代"
+
   - name: latent_outbreak
     conditions:
       crop_type: tomato
@@ -99,6 +111,7 @@ rules:
 
   - name: drought_stress
     conditions:
+      alert_type: DROUGHT_STRESS
       humidity_max: 40
       temperature_min: 30
     action:

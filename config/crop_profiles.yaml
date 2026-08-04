@@ -1,15 +1,29 @@
 # Crop-specific profiles for fusion node
 # Disease risk class names must match the model output labels in diagnosis_utils.py.
+#
+# infection_model 参数文献溯源见 docs/research/fusion_algorithm_paper.md。
+# 标注 [calibration: pending] 的参数为文献形状 + 待实测标定初值。
 tomato:
-  lwd_threshold_hours: 6.0
+  lwd_threshold_hours: 6.0        # legacy, 由 infection_model.lwd_base_hours 取代
   high_humidity_threshold: 85.0
   drought_threshold: 30.0
-  optimal_temp_min: 18.0
+  optimal_temp_min: 18.0          # legacy, 由 infection_model.temp_optimal 取代
   optimal_temp_max: 25.0
   weights:
     vision: 0.5
     env: 0.3
     interaction: 0.2
+  infection_model:
+    temp_optimal: [18.0, 25.0]    # 早疫 24°C 实验点 (Vloutoglou & Kalogerakis 2000, Plant Pathology 49:181); 晚疫 18-22°C (Wallin 1962)
+    temp_tolerance: [7.0, 32.0]   # 晚疫 Wallin severity 表覆盖 ~7-26°C; 早疫高温侧仍可侵染
+    rh_onset: 75.0                # 湿度风险起点
+    rh_full: 90.0                 # Wallin/Winstel 系模型以 RH>=90% 计湿润小时 (Pande et al. 2009, PReMI LNCS 5909)
+    lwd_base_hours: 6.0           # 早疫 24°C 下感病品种需 4-6h 叶湿 (Vloutoglou & Kalogerakis 2000)
+    lwd_temp_correction: 1.5      # 每偏离最适区间 5°C 湿时需求放大倍数 [calibration: pending]; 形状依据 Mills (1944) 二维表与 Gilles et al. 2001 (Plant Pathology 50:42)
+    references:
+      - "Vloutoglou & Kalogerakis 2000, Plant Pathology 49(3):181, tomato early blight LWD 4-6h at 24C"
+      - "Pande et al. 2009, PReMI LNCS 5909:609-614, Wallin/Winstel late blight models RH>=90% 10h"
+      - "Gilles et al. 2001, Plant Pathology 50:42-52, LWD requirement doubles per 4-8C below optimum"
   disease_risk_classes:
     - late_blight
     - healthy
@@ -29,6 +43,16 @@ wheat:
     vision: 0.5
     env: 0.3
     interaction: 0.2
+  infection_model:
+    temp_optimal: [10.0, 22.0]    # 包络: 条锈 4-16°C 上半段 (El Jarroudi et al. 2017, Plant Disease 101:829) + 白粉 15-22°C; 4-10°C 由 temp_tolerance 覆盖给 0.7; 病害级拆分列为后续工作
+    temp_tolerance: [4.0, 28.0]   # 下限覆盖条锈侵染下限 4°C
+    rh_onset: 80.0
+    rh_full: 92.0                 # 条锈模型 RH>92% 计有利小时 (El Jarroudi et al. 2017)
+    lwd_base_hours: 8.0           # 条锈连续 >=4h + 赤霉长湿时需求的保守包络 [calibration: pending]
+    lwd_temp_correction: 1.5      # [calibration: pending]; 形状依据 Mills (1944)
+    references:
+      - "El Jarroudi et al. 2017, Plant Disease 101(5):829-837, stripe rust RH>92% 4-16C >=4h continuous"
+      - "Gilles et al. 2001, Plant Pathology 50:42-52, temperature-LWD interaction"
   disease_risk_classes:
     - healthy
     - wheat_powdery_mildew
@@ -46,6 +70,16 @@ strawberry:
     vision: 0.5
     env: 0.3
     interaction: 0.2
+  infection_model:
+    temp_optimal: [15.0, 22.0]    # 灰霉 15-20°C 最适 (Bulger et al. 1987, Phytopathology 77:1225; iMETOS 模型)
+    temp_tolerance: [5.0, 30.0]
+    rh_onset: 75.0
+    rh_full: 90.0
+    lwd_base_hours: 10.0          # 灰霉长湿时需求: 20°C 下 32h→60% 感染率 (Bulger et al. 1987); 10h 为预警级保守阈值 [calibration: pending]
+    lwd_temp_correction: 1.5      # [calibration: pending]
+    references:
+      - "Bulger, Ellis & Madden 1987, Phytopathology 77:1225-1230, Botrytis cinerea strawberry flower infection vs wetness duration"
+      - "Rasiukeviciute et al. 2013, Proc. Latvian Acad. Sci. 67(2):195-198, iMETOS grey mold risk model"
   disease_risk_classes:
     - leaf_spot
     - powdery_mildew_leaf
