@@ -277,6 +277,12 @@ class WebRemoteNode(Node):
         self.vision_inference_mode = 'triggered'
         self.vision_diagnosis_proc = None
         self.vision_diagnosis_log = None
+        # None | 'preheat' | 'start' | 'shutdown' — guards async stack ops
+        self.stack_operation = None
+        self.vision_pause_srv = self.create_client(
+            SetBool, '/vision/plant_detector/pause')
+        self._watchdog_fail_count = 0
+        self._last_watchdog_restart = 0.0
         self.latest_camera_jpeg = None
         self.camera_image_sub = self.create_subscription(
             CompressedImage, '/out/compressed', self._on_camera_image, 1)
@@ -290,6 +296,7 @@ class WebRemoteNode(Node):
         self.diagnosis_sub = self.create_subscription(
             Diagnosis, '/vision/diagnosis', self._on_diagnosis, 10)
         self.timer = self.create_timer(0.05, self.timer_cb)
+        self.watchdog_timer = self.create_timer(5.0, self._watchdog_tick)
 
     def _on_camera_image(self, msg: CompressedImage):
         with self.lock:
@@ -382,9 +389,9 @@ class WebRemoteNode(Node):
                 self.completion_stop_started = True
         if should_stop:
             self.get_logger().info(
-                'Mission completed from frontend AUTO session; stopping stack')
+                'Mission completed from frontend AUTO session; stopping cruise')
             threading.Thread(
-                target=self.stop_stack,
+                target=self.stop_cruise,
                 kwargs={'reason': 'mission_complete'},
                 daemon=True).start()
 
@@ -408,6 +415,7 @@ class WebRemoteNode(Node):
                 self.last_cmd_time = time.time()
         self.get_logger().info(f"Switched to {self.mode}")
         self.batch_recorder.on_mode_change('AUTO' if auto else 'MANUAL')
+        self._set_vision_paused(not auto)
         return True
 
     def _on_mode_response(self, future, auto: bool):
@@ -445,6 +453,7 @@ class WebRemoteNode(Node):
             self.angular = 0.0
             self.last_cmd_time = time.time()
         self.batch_recorder.on_mode_change('MANUAL')
+        self._set_vision_paused(True)
         self.get_logger().warn('EMERGENCY STOP triggered')
 
     def _on_stop_response(self, future):
@@ -458,6 +467,87 @@ class WebRemoteNode(Node):
                     f"/set_auto_mode stop rejected: {response.message}")
         except Exception as e:
             self.get_logger().error(f"/set_auto_mode stop call failed: {e}")
+
+    def _set_vision_paused(self, paused: bool):
+        """Gate YOLO inference with the cruise mode: run in AUTO, idle in MANUAL.
+
+        Keeps BPU/CPU load at zero while the resident stack is idle. No-op
+        when the detector is not running (stack stopped or camera stack down).
+        """
+        try:
+            ready = self.vision_pause_srv.service_is_ready()
+        except Exception:
+            ready = False
+        if not ready:
+            return
+        req = SetBool.Request()
+        req.data = paused
+        future = self.vision_pause_srv.call_async(req)
+        future.add_done_callback(
+            lambda f: self._on_vision_pause_response(f, paused))
+
+    def _on_vision_pause_response(self, future, paused: bool):
+        try:
+            response = future.result()
+            if not response.success:
+                self.get_logger().warn(
+                    f"plant_detector pause={paused} rejected: "
+                    f"{response.message}")
+        except Exception as exc:
+            self.get_logger().error(f'plant_detector pause call failed: {exc}')
+
+    def _watchdog_tick(self):
+        """Detect a dead robot stack while it is supposed to be resident.
+
+        Two consecutive misses of the core nodes mark the stack not-ready. If
+        the robot was cruising, e-stop first, then auto-restart the stack
+        (rate-limited to one restart per 10 minutes).
+        """
+        with self.lock:
+            ready = self.stack_ready
+            operation = self.stack_operation
+        if not ready or operation is not None or self.stack_lock.locked():
+            self._watchdog_fail_count = 0
+            return
+        try:
+            names = {name for name, _ in self.get_node_names_and_namespaces()}
+        except Exception:
+            return
+        missing = [n for n in ('mission_control_node', 'uart_bridge_node')
+                   if n not in names]
+        if not missing:
+            self._watchdog_fail_count = 0
+            return
+        self._watchdog_fail_count += 1
+        if self._watchdog_fail_count < 2:
+            return
+        self._watchdog_fail_count = 0
+        self.get_logger().error(
+            f'Watchdog: stack nodes vanished {missing}; stack not-ready')
+        with self.lock:
+            self.stack_ready = False
+            was_auto = self.mode == 'AUTO'
+        if was_auto:
+            self.emergency_stop()
+        now = time.time()
+        if was_auto and (now - self._last_watchdog_restart) > 600.0:
+            self._last_watchdog_restart = now
+            self.get_logger().warn('Watchdog: auto-restarting robot stack')
+            with self.lock:
+                self.stack_operation = 'start'
+            threading.Thread(target=self._start_worker, daemon=True).start()
+
+    def _detect_live_stack(self) -> bool:
+        """Adopt an externally started stack: if the core nodes and the mode
+        service are alive, treat the stack as resident-ready instead of
+        forcing a full clean restart."""
+        try:
+            names = {name for name, _ in self.get_node_names_and_namespaces()}
+        except Exception:
+            return False
+        if not {'mission_control_node', 'uart_bridge_node'} <= names:
+            return False
+        return self.mode_srv.service_is_ready()
 
     def _run_stack_script(self, script_path: str):
         path = Path(script_path)
@@ -657,11 +747,25 @@ class WebRemoteNode(Node):
                 self.mode = 'MANUAL'
                 self.frontend_started_auto = False
                 self.completion_stop_started = False
+            self._set_vision_paused(True)  # idle stack: no YOLO until cruise
             return True, output
 
-    def stop_stack(self, reason='frontend'):
+    def stop_cruise(self, reason='frontend'):
+        """End the cruise but keep the robot stack resident (fast path).
+
+        Switches mission_control back to MANUAL, zeros motion and pauses
+        YOLO inference; Nav2/camera/vision nodes stay warm so the next
+        start is a service call instead of a full relaunch.
+        """
+        self.get_logger().info(
+            f'Frontend requested cruise stop (stack stays resident): {reason}')
+        self.emergency_stop()
+        return True, 'Cruise stopped; robot stack stays resident in MANUAL.'
+
+    def shutdown_stack(self, reason='frontend'):
+        """Full teardown of the robot stack (stop script); web plane stays up."""
         with self.stack_lock:
-            self.get_logger().info(f'Frontend requested robot stack stop: {reason}')
+            self.get_logger().info(f'Frontend requested robot stack shutdown: {reason}')
             self.emergency_stop()
             self._stop_independent_diagnosis_locked()
             ok, output = self._run_stack_script(self.stack_stop_script)
@@ -677,6 +781,27 @@ class WebRemoteNode(Node):
                 self.get_logger().error(f'stop_robot_stack failed: {output[-1000:]}')
                 return False, output
             return True, output
+
+    def _start_worker(self):
+        try:
+            self.start_stack_and_auto()
+        finally:
+            with self.lock:
+                self.stack_operation = None
+
+    def _preheat_worker(self):
+        try:
+            self.preheat_stack()
+        finally:
+            with self.lock:
+                self.stack_operation = None
+
+    def _shutdown_worker(self):
+        try:
+            self.shutdown_stack(reason='frontend')
+        finally:
+            with self.lock:
+                self.stack_operation = None
 
     def set_vision_inference_mode(self, mode: str):
         mode = _validate_vision_inference_mode(mode)
@@ -765,6 +890,7 @@ class WebRemoteNode(Node):
 
     def get_status(self):
         camera_running, inference_running = self._get_stack_states()
+        stack_busy = self.stack_lock.locked()
         with self.lock:
             self.camera_ready = camera_running
             self.inference_ready = inference_running
@@ -779,6 +905,8 @@ class WebRemoteNode(Node):
                 'frontend_started_auto': self.frontend_started_auto,
                 'completion_stop_started': self.completion_stop_started,
                 'stack_ready': self.stack_ready,
+                'stack_busy': stack_busy,
+                'stack_operation': self.stack_operation,
                 'camera_running': camera_running,
                 'inference_running': inference_running,
                 'cruise_speed': self.cruise_speed,
@@ -874,23 +1002,83 @@ def _get_app(node: WebRemoteNode):
 
     @_app.route('/stack/start', methods=['POST'])
     def stack_start():
-        ok, output = node.start_stack_and_auto()
+        with node.lock:
+            ready = node.stack_ready
+        if not ready and node._detect_live_stack():
+            with node.lock:
+                node.stack_ready = True
+            ready = True
+        if ready and node.mode_srv.service_is_ready():
+            # Fast path: resident stack, just flip to AUTO.
+            ok, output = node.start_stack_and_auto()
+            return jsonify({
+                'status': 'ok' if ok else 'error',
+                'mode': 'AUTO' if ok else node.mode,
+                'stack_ready': node.stack_ready,
+                'message': output[-2000:],
+            }), 200 if ok else 500
+        with node.lock:
+            if node.stack_operation is not None:
+                return jsonify({
+                    'status': 'busy',
+                    'message': f"stack operation in progress: {node.stack_operation}",
+                    'stack_ready': node.stack_ready,
+                }), 409
+            node.stack_operation = 'start'
+        threading.Thread(target=node._start_worker, daemon=True).start()
         return jsonify({
-            'status': 'ok' if ok else 'error',
-            'mode': 'AUTO' if ok else node.mode,
-            'stack_ready': node.stack_ready,
-            'message': output[-2000:],
-        }), 200 if ok else 500
+            'status': 'started',
+            'stack_ready': False,
+            'message': 'stack start launched in background; poll /status',
+        }), 202
 
     @_app.route('/stack/preheat', methods=['POST'])
     def stack_preheat():
-        ok, output = node.preheat_stack()
+        with node.lock:
+            ready = node.stack_ready
+        if not ready and node._detect_live_stack():
+            with node.lock:
+                node.stack_ready = True
+            ready = True
+        if ready:
+            # Already resident — preheat is a no-op.
+            return jsonify({
+                'status': 'ok',
+                'mode': 'MANUAL',
+                'stack_ready': True,
+                'message': 'Robot stack already resident; preheat skipped.',
+            })
+        with node.lock:
+            if node.stack_operation is not None:
+                return jsonify({
+                    'status': 'busy',
+                    'message': f"stack operation in progress: {node.stack_operation}",
+                    'stack_ready': node.stack_ready,
+                }), 409
+            node.stack_operation = 'preheat'
+        threading.Thread(target=node._preheat_worker, daemon=True).start()
         return jsonify({
-            'status': 'ok' if ok else 'error',
-            'mode': 'MANUAL',
+            'status': 'started',
+            'stack_ready': False,
+            'message': 'stack preheat launched in background; poll /status',
+        }), 202
+
+    @_app.route('/stack/shutdown', methods=['POST'])
+    def stack_shutdown():
+        with node.lock:
+            if node.stack_operation is not None:
+                return jsonify({
+                    'status': 'busy',
+                    'message': f"stack operation in progress: {node.stack_operation}",
+                    'stack_ready': node.stack_ready,
+                }), 409
+            node.stack_operation = 'shutdown'
+        threading.Thread(target=node._shutdown_worker, daemon=True).start()
+        return jsonify({
+            'status': 'started',
             'stack_ready': node.stack_ready,
-            'message': output[-2000:],
-        }), 200 if ok else 500
+            'message': 'stack shutdown launched in background; poll /status',
+        }), 202
 
     @_app.route('/vision/start', methods=['POST'])
     def start_vision():
@@ -935,7 +1123,8 @@ def _get_app(node: WebRemoteNode):
 
     @_app.route('/stack/stop', methods=['POST'])
     def stack_stop():
-        ok, output = node.stop_stack(reason='frontend')
+        # Fast path: end the cruise, keep the stack resident.
+        ok, output = node.stop_cruise(reason='frontend')
         return jsonify({
             'status': 'ok' if ok else 'error',
             'mode': 'MANUAL',

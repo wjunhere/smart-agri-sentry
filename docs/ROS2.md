@@ -120,10 +120,11 @@
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/status` | GET | Current mode, service readiness, stack readiness, and manual velocity state |
-| `/stack/preheat` | POST | Run `start_robot_stack.sh`; keep MANUAL and do not start cruise |
-| `/stack/start` | POST | Start stack if needed, then call `/set_auto_mode=true` |
-| `/stack/stop` | POST | Publish zero velocity and run `stop_robot_stack.sh` |
+| `/status` | GET | Current mode, service readiness, stack readiness (`stack_ready`/`stack_busy`/`stack_operation`), and manual velocity state |
+| `/stack/preheat` | POST | 栈未运行时后台跑 `start_robot_stack.sh`（202 异步，轮询 `/status`）；栈已常驻则直接收养返回 200；不切 AUTO |
+| `/stack/start` | POST | 栈常驻时仅切 `/set_auto_mode=true`（毫秒级）；栈未运行则后台起栈（202）后切 AUTO；进 AUTO 自动恢复 YOLO 推理 |
+| `/stack/stop` | POST | 结束巡航：切 MANUAL + 零速 + 暂停 YOLO 推理，**栈保持常驻**（秒级） |
+| `/stack/shutdown` | POST | 完全结束栈：后台跑 `stop_robot_stack.sh`（202 异步），控制面经 `SENTRY_PRESERVE_WEB=1` 保留 |
 | `/waypoints` | GET/POST | Read or write cruise waypoints; POST updates install and source YAML files |
 | `/crop_type` | POST | Set the current crop type |
 | `/api/messages` | GET | 巡航消息列表：批次（启动巡航→停止）+ 每株检测记录（快照 URL、病害类别、置信度、时间），附未读批次数 |
@@ -140,7 +141,7 @@
 | `/stack/start` | POST | 幂等启动主栈并切 AUTO 巡航；状态经 WS 推送 |
 | `/stack/stop` | POST | 后台运行 `stop_robot_stack.sh` |
 
-开机自启：`scripts/rdk/install_autostart.sh` 安装 `sentry-bridge.service`（systemd），开机拉起 `miniprogram_bridge.launch.py`（bridge + web_remote + weather_node + llm_advisor_node）——仅常驻网关层，相机/Nav2 等工作节点由前端 `/stack/*` 按钮按需启停。
+开机自启：`scripts/rdk/install_autostart.sh` 安装 `sentry-bridge.service`（systemd），开机拉起 `miniprogram_bridge.launch.py`（bridge + web_remote + weather_node + llm_advisor_node）——仅常驻网关层；相机/Nav2 等工作节点由前端"预热"按钮拉起一次后常驻，之后"启动/结束巡航"只是 `/set_auto_mode` 服务调用（毫秒级），"结束栈"才全量拆除。看门狗：`web_remote_node` 每 5s 检查核心节点（mission_control/uart_bridge），连续丢失则标记栈不可用；巡航中掉栈会先急停再自动重拉（10 分钟冷却）。
 
 **本地开发模式（2026-07-23）**：Web 面板可在本地运行、像小程序一样连接小车。在 `src/sentry_mission/static_v2/` 起任意静态服务（如 `python -m http.server 8899`），打开 `http://localhost:8899/?car=<小车IP>`。`?car=` 参数会存入 localStorage（之后可省略）；rosbridge 与全部 REST 改指向 `<car>:9090` / `<car>:5000`，Flask 已带 CORS 头。板端托管（`http://<car>:5000/`）同源行为不变。注意 rosbridge :9090 随主栈启停，idle 状态下页面显示 ROS OFFLINE 但 REST 控制仍可用。
 

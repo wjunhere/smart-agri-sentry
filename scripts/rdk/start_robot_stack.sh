@@ -13,11 +13,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${SENTRY_LOG_DIR:-/tmp}"
 LAUNCH_LOG="${LOG_DIR}/sentry_v2_start_robot_stack.log"
 PRESERVE_WEB="${SENTRY_PRESERVE_WEB:-0}"
-NODE_WAIT_TIMEOUT="${SENTRY_NODE_WAIT_TIMEOUT:-35}"
+NODE_WAIT_TIMEOUT="${SENTRY_NODE_WAIT_TIMEOUT:-60}"
 PARAM_TIMEOUT="${SENTRY_PARAM_TIMEOUT:-4}"
 TOPIC_TIMEOUT="${SENTRY_TOPIC_TIMEOUT:-3}"
 CHASSIS_TIMEOUT="${SENTRY_CHASSIS_TIMEOUT:-8}"
 REQUIRE_SCAN_SAMPLE="${SENTRY_REQUIRE_SCAN_SAMPLE:-0}"
+REQUIRE_LIDAR="${SENTRY_REQUIRE_LIDAR:-0}"
+REQUIRE_CHASSIS="${SENTRY_REQUIRE_CHASSIS:-1}"
 CHECK_STABLE_PARAMS="${SENTRY_CHECK_STABLE_PARAMS:-0}"
 
 CROP_TYPE="${CROP_TYPE:-tomato}"
@@ -73,6 +75,9 @@ source_ros() {
   set -u
   export FASTDDS_BUILTIN_TRANSPORTS="${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
   export RMW_FASTRTPS_USE_SHM="${RMW_FASTRTPS_USE_SHM:-0}"
+  # Bypass the ros2 daemon: live graph queries are slower per call but never
+  # stale, which removes the daemon stop/start cycles from the checks below.
+  export ROS2CLI_NO_DAEMON=1
 }
 
 wait_for_nodes() {
@@ -139,16 +144,20 @@ check_topic_once_quiet() {
 }
 
 check_chassis_status() {
+  local required="${1:-required}"
   local status
   log "Checking /sentry/chassis/status once..."
-  status="$(timeout "$CHASSIS_TIMEOUT" ros2 topic echo /sentry/chassis/status --once 2>&1)" || fail "No /sentry/chassis/status sample within ${CHASSIS_TIMEOUT}s"
+  status="$(timeout "$CHASSIS_TIMEOUT" ros2 topic echo /sentry/chassis/status --once 2>&1 || true)"
   printf '%s\n' "$status" | grep -E 'left_speed|right_speed|battery_voltage|comm_timeout' || true
-  if ! printf '%s' "$status" | grep -q "comm_timeout: false"; then
+  if printf '%s' "$status" | grep -q "comm_timeout: false" && ! printf '%s' "$status" | grep -qi "nan"; then
+    log "Chassis communication healthy."
+    return 0
+  fi
+  if [ "$required" = "required" ]; then
     fail "Chassis communication is not healthy"
   fi
-  if printf '%s' "$status" | grep -qi "nan"; then
-    fail "Chassis status contains NaN values"
-  fi
+  warn "Chassis communication unhealthy (allowed: SENTRY_REQUIRE_CHASSIS=0)"
+  return 0
 }
 
 check_obstacle_info() {
@@ -168,15 +177,9 @@ check_no_duplicate_nodes() {
     return 0
   fi
 
-  warn "Duplicate ROS node names detected; refreshing graph and retrying..."
-  ros2 daemon stop >/dev/null 2>&1 || true
-  ros2 daemon start >/dev/null 2>&1 || true
-  sleep 3
-  duplicates="$(ros2 node list 2>/dev/null | sort | uniq -d | grep -Ev '^/transform_listener_impl_' || true)"
-  if [ -z "$duplicates" ]; then
-    return 0
-  fi
-
+  # With ROS2CLI_NO_DAEMON=1 the graph query is live, so any remaining
+  # duplicate is a real duplicate process — except for the known stale
+  # /mission_control_node graph entry, which we verify via pgrep.
   local remaining=""
   while IFS= read -r node; do
     [ -n "$node" ] || continue
@@ -201,17 +204,12 @@ EOF
 }
 
 check_cmd_vel_route() {
-  local info attempt expected_publishers
-  if control_web_expected; then
-    expected_publishers=2
-  else
-    expected_publishers=1
-  fi
-
+  local info attempt
+  # Verify route ownership by node presence, not exact publisher count:
+  # miniprogram_bridge may legitimately add a third publisher.
   for attempt in $(seq 1 10); do
     info="$(ros2 topic info /cmd_vel -v 2>&1 || true)"
-    if printf '%s' "$info" | grep -q "Publisher count: ${expected_publishers}" \
-      && printf '%s' "$info" | grep -q "mission_control_node" \
+    if printf '%s' "$info" | grep -q "mission_control_node" \
       && printf '%s' "$info" | grep -q "uart_bridge_node"; then
       if ! control_web_expected || printf '%s' "$info" | grep -q "web_remote_node"; then
         printf '%s\n' "$info" | grep -E 'Publisher count|Subscription count|Node name' || true
@@ -285,8 +283,13 @@ main() {
     /planner_server
     /bt_navigator
     /velocity_smoother
-    /sentry_lidar
   )
+  # Lidar is optional on bench setups: enforce only when required or present.
+  if [ "$REQUIRE_LIDAR" = "1" ] || [ -e /dev/wheeltec_lidar ]; then
+    nodes+=(/sentry_lidar)
+  else
+    warn "Lidar /dev/wheeltec_lidar not found; continuing without lidar (set SENTRY_REQUIRE_LIDAR=1 to enforce)"
+  fi
   if control_web_expected; then
     ensure_preserved_rosbridge
     nodes+=(/web_remote_node /rosbridge_websocket)
@@ -320,20 +323,43 @@ main() {
     log "Skipping stable parameter checks; set SENTRY_CHECK_STABLE_PARAMS=1 for full validation."
   fi
 
-  log "Checking /cmd_vel ownership..."
-  check_cmd_vel_route
+  log "Running post-start checks in parallel..."
+  local check_dir="${LOG_DIR}/start_robot_stack_checks"
+  mkdir -p "$check_dir"
+  local -a check_pids=() check_names=()
 
-  log "Checking web frontend control path..."
-  check_web_frontend
-
-  log "Checking chassis, scan, and obstacle topics..."
-  check_chassis_status
-  if [ "$REQUIRE_SCAN_SAMPLE" = "1" ]; then
-    check_topic_once_quiet /scan "$TOPIC_TIMEOUT" required
+  check_cmd_vel_route >"${check_dir}/cmd_vel.log" 2>&1 &
+  check_pids+=($!); check_names+=(cmd_vel)
+  check_web_frontend >"${check_dir}/web.log" 2>&1 &
+  check_pids+=($!); check_names+=(web)
+  if [ "$REQUIRE_CHASSIS" = "1" ]; then
+    check_chassis_status required >"${check_dir}/chassis.log" 2>&1 &
   else
-    check_topic_once_quiet /scan "$TOPIC_TIMEOUT" optional
+    check_chassis_status optional >"${check_dir}/chassis.log" 2>&1 &
   fi
-  check_obstacle_info
+  check_pids+=($!); check_names+=(chassis)
+  if [ "$REQUIRE_SCAN_SAMPLE" = "1" ]; then
+    check_topic_once_quiet /scan "$TOPIC_TIMEOUT" required >"${check_dir}/scan.log" 2>&1 &
+  else
+    check_topic_once_quiet /scan "$TOPIC_TIMEOUT" optional >"${check_dir}/scan.log" 2>&1 &
+  fi
+  check_pids+=($!); check_names+=(scan)
+  if printf '%s\n' "${nodes[@]}" | grep -qx '/sentry_lidar'; then
+    check_obstacle_info >"${check_dir}/obstacle.log" 2>&1 &
+    check_pids+=($!); check_names+=(obstacle)
+  fi
+
+  local -a failed_checks=()
+  local i
+  for i in "${!check_pids[@]}"; do
+    if ! wait "${check_pids[$i]}"; then
+      failed_checks+=("${check_names[$i]}")
+    fi
+    cat "${check_dir}/${check_names[$i]}.log" 2>/dev/null || true
+  done
+  if [ "${#failed_checks[@]}" -gt 0 ]; then
+    fail "Post-start checks failed: ${failed_checks[*]} (logs: ${check_dir})"
+  fi
 
   log "Robot stack started and checked. Open http://<rdk-ip>:5000/ and use the cruise buttons."
 }

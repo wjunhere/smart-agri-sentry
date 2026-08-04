@@ -20,19 +20,28 @@ const CruisePanel = {
       <button class="btn btn-resume" @click="applyCruiseSpeed"
               :disabled="store.cruiseSpeedBusy">应用</button>
     </label>
-    <button class="btn btn-resume" @click="preheatCruise" :disabled="store.mode === 'AUTO' || store.stackPreheating || store.stackStarting || store.stackReady">{{ preheatLabel }}</button>
-    <button v-if="store.mode !== 'AUTO'" class="btn btn-go" @click="startCruise" :disabled="store.stackStarting || store.stackPreheating">{{ store.stackStarting ? '启动中...' : '启动巡航' }}</button>
-    <button v-if="store.mode === 'AUTO'" class="btn btn-pause" @click="pauseCruise">暂停</button>
+    <button class="btn" :class="store.stackReady ? 'btn-pause' : 'btn-resume'" @click="onPreheatOrShutdown" :disabled="preheatDisabled">{{ preheatLabel }}</button>
+    <button v-if="store.mode !== 'AUTO'" class="btn btn-go" @click="startCruise" :disabled="store.stackStarting || store.stackPreheating || store.stackShuttingDown">{{ store.stackStarting ? '启动中...' : '启动巡航' }}</button>
+    <button v-if="store.mode === 'AUTO'" class="btn btn-pause" @click="pauseCruise">结束巡航</button>
   </div>`,
   computed: {
     preheatLabel() {
+      if (store.stackShuttingDown) return '结束中...';
       if (store.stackPreheating) return '预热中...';
-      if (store.mode === 'AUTO' || store.stackReady) return '已预热';
+      if (store.stackReady) return '结束栈';
       return '预热模式';
+    },
+    preheatDisabled() {
+      // 巡航中不允许动栈；栈操作进行中也不允许重复触发
+      return store.mode === 'AUTO' || store.stackPreheating
+        || store.stackStarting || store.stackShuttingDown;
     }
   },
   methods: {
-    preheatCruise() { callStackPreheat().catch(err => console.error(err)); },
+    onPreheatOrShutdown() {
+      const p = store.stackReady ? callStackShutdown() : callStackPreheat();
+      p.catch(err => console.error(err));
+    },
     startCruise() { callStackStart().catch(err => console.error(err)); },
     pauseCruise() { callStackStop().catch(err => console.error(err)); },
     applyCruiseSpeed() { callSetCruiseSpeed(store.cruiseSpeed).catch(err => console.error(err)); },

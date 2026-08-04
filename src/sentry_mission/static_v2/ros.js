@@ -81,6 +81,7 @@ window.store = Vue.reactive({
   showWpEditor: false,
   stackStarting: false,
   stackPreheating: false,
+  stackShuttingDown: false,
   stackReady: false,
   visionStarting: false,
   visionStopping: false,
@@ -314,11 +315,34 @@ function callSetAutoMode(auto) {
   });
 }
 
+// Poll /status until cond(data) holds (used for async stack operations
+// that return 202 and run in the background on the board).
+function waitForStackState(cond, timeoutMs = 300000) {
+  const t0 = Date.now();
+  const tick = () => refreshStackStatus().then(data => {
+    if (data && cond(data)) return data;
+    if (Date.now() - t0 > timeoutMs) throw new Error('等待栈状态超时');
+    return new Promise(r => setTimeout(r, 2000)).then(tick);
+  });
+  return tick();
+}
+
 function callStackStart() {
   store.stackStarting = true;
   return fetch(API_BASE + '/stack/start', { method: 'POST' })
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
+      if (resp.status === 202) {
+        // Slow path: stack is (re)starting in background; wait for AUTO.
+        const finalData = await waitForStackState(
+          d => d.mode === 'AUTO' || (!d.stack_busy && !d.stack_operation));
+        if (finalData.mode !== 'AUTO') {
+          throw new Error('栈启动失败，请查看板端日志');
+        }
+        store.mode = 'AUTO';
+        store.stackReady = Boolean(finalData.stack_ready);
+        return finalData;
+      }
       if (!resp.ok || data.status !== 'ok') {
         throw new Error(data.message || 'Failed to start robot stack');
       }
@@ -335,9 +359,10 @@ function callStackStop() {
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.status !== 'ok') {
-        throw new Error(data.message || 'Failed to stop robot stack');
+        throw new Error(data.message || 'Failed to stop cruise');
       }
       store.mode = 'MANUAL';
+      // 栈保持常驻，stack_ready 仍为 true
       store.stackReady = Boolean(data.stack_ready);
       return data;
     });
@@ -348,6 +373,16 @@ function callStackPreheat() {
   return fetch(API_BASE + '/stack/preheat', { method: 'POST' })
     .then(async (resp) => {
       const data = await resp.json().catch(() => ({}));
+      if (resp.status === 202) {
+        const finalData = await waitForStackState(
+          d => !d.stack_busy && !d.stack_operation);
+        if (!finalData.stack_ready) {
+          throw new Error('预热失败，请查看板端日志');
+        }
+        store.mode = 'MANUAL';
+        store.stackReady = true;
+        return finalData;
+      }
       if (!resp.ok || data.status !== 'ok') {
         throw new Error(data.message || 'Failed to preheat robot stack');
       }
@@ -356,6 +391,30 @@ function callStackPreheat() {
       return data;
     })
     .finally(() => { store.stackPreheating = false; });
+}
+
+function callStackShutdown() {
+  store.stackShuttingDown = true;
+  return fetch(API_BASE + '/stack/shutdown', { method: 'POST' })
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      if (resp.status === 202) {
+        const finalData = await waitForStackState(
+          d => !d.stack_busy && !d.stack_operation);
+        if (finalData.stack_ready) {
+          throw new Error('结束栈失败，请查看板端日志');
+        }
+        store.stackReady = false;
+        store.mode = 'MANUAL';
+        return finalData;
+      }
+      if (!resp.ok || data.status !== 'ok') {
+        throw new Error(data.message || 'Failed to shut down robot stack');
+      }
+      store.stackReady = false;
+      return data;
+    })
+    .finally(() => { store.stackShuttingDown = false; });
 }
 
 function callVisionStart() {

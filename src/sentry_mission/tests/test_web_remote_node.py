@@ -20,10 +20,13 @@ def mock_ros2():
     modules = {
         'rclpy': types.ModuleType('rclpy'),
         'rclpy.node': types.ModuleType('rclpy.node'),
+        'rclpy.qos': types.ModuleType('rclpy.qos'),
         'geometry_msgs': types.ModuleType('geometry_msgs'),
         'geometry_msgs.msg': types.ModuleType('geometry_msgs.msg'),
         'std_srvs': types.ModuleType('std_srvs'),
         'std_srvs.srv': types.ModuleType('std_srvs.srv'),
+        'std_msgs': types.ModuleType('std_msgs'),
+        'std_msgs.msg': types.ModuleType('std_msgs.msg'),
         'sentry_interfaces': types.ModuleType('sentry_interfaces'),
         'sentry_interfaces.srv': types.ModuleType('sentry_interfaces.srv'),
         'sentry_interfaces.msg': types.ModuleType('sentry_interfaces.msg'),
@@ -31,12 +34,15 @@ def mock_ros2():
         'sensor_msgs.msg': types.ModuleType('sensor_msgs.msg'),
     }
 
+    modules['rclpy'].__path__ = []
     modules['rclpy'].init = mock.MagicMock()
     modules['sentry_interfaces'].__path__ = []
     modules['rclpy'].shutdown = mock.MagicMock()
     modules['rclpy'].ok = mock.MagicMock(return_value=True)
     modules['rclpy'].Node = object
     modules['rclpy.node'].Node = object
+    modules['rclpy.qos'].DurabilityPolicy = type('DurabilityPolicy', (), {})
+    modules['rclpy.qos'].QoSProfile = type('QoSProfile', (), {})
 
     Twist = type('Twist', (), {})
     modules['geometry_msgs.msg'].Twist = Twist
@@ -55,6 +61,8 @@ def mock_ros2():
     modules['sentry_interfaces.msg'].Diagnosis = Diagnosis
     CompressedImage = type('CompressedImage', (), {})
     modules['sensor_msgs.msg'].CompressedImage = CompressedImage
+    String = type('String', (), {})
+    modules['std_msgs.msg'].String = String
 
 
     for name, mod in modules.items():
@@ -508,6 +516,8 @@ def test_get_status_includes_message_unread():
     node.frontend_started_auto = False
     node.completion_stop_started = False
     node.stack_ready = False
+    node.stack_lock = threading.Lock()
+    node.stack_operation = None
     node.cruise_speed = 0.18
     node.vision_inference_mode = 'triggered'
     node.batch_recorder.unread = 2
