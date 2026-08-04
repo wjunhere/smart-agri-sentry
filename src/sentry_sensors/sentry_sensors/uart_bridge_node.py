@@ -1,4 +1,6 @@
 import math
+import threading
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -120,7 +122,9 @@ class UartBridgeNode(Node):
         self._last_sent_mode = None
 
         try:
-            self.ser = serial.Serial(port, baud, timeout=0)
+            # Blocking read with a short timeout: the RX thread sleeps in
+            # read() until bytes arrive instead of polling at 100 Hz.
+            self.ser = serial.Serial(port, baud, timeout=0.1)
             self.get_logger().info(f'UART open: {port} @ {baud}')
         except serial.SerialException as e:
             self.get_logger().error(f'Failed to open UART: {e}')
@@ -146,50 +150,67 @@ class UartBridgeNode(Node):
         self.srv_reset_enc = self.create_service(
             Trigger, '/sentry/reset_encoder', self.reset_encoder_cb)
 
-        self.timer_rx = self.create_timer(0.01, self.rx_tick)
         self.rx_buf = bytearray()
+        self._rx_lock = threading.Lock()
+        self._rx_running = False
+        self._rx_thread = None
+        if self.ser is not None:
+            self._rx_running = True
+            self._rx_thread = threading.Thread(
+                target=self._rx_loop, daemon=True,
+                name='uart_bridge_rx')
+            self._rx_thread.start()
 
         self.last_chassis_time = self.get_clock().now()
         self.chassis_timed_out = False
         self.timer_chassis_timeout = self.create_timer(
             1.0, self.check_chassis_timeout)
 
-    def rx_tick(self):
-        if self.ser is None or not self.ser.is_open:
-            return
-        try:
-            try:
-                waiting = self.ser.in_waiting
-            except OSError:
-                # Some UART drivers (e.g. RDK X5 dw-apb-uart) do not
-                # support the TIOCINQ ioctl used by in_waiting.
-                waiting = None
-            if waiting is None:
-                chunk = self.ser.read(256)
-            elif waiting:
-                chunk = self.ser.read(waiting)
-            else:
-                chunk = b''
-            if chunk:
-                self.rx_buf.extend(chunk)
-        except serial.SerialException as e:
-            self.get_logger().error(f'UART read error: {e}')
-            return
+    def _rx_loop(self):
+        """Dedicated blocking reader thread.
 
+        read() blocks until bytes arrive (or the 100ms serial timeout
+        fires), so the node idles at ~0% CPU instead of polling the UART
+        at 100 Hz. Frame parsing and publishing happen right here; rclpy
+        publish is thread-safe.
+        """
+        while self._rx_running:
+            try:
+                chunk = self.ser.read(256)
+            except serial.SerialException as e:
+                if not self._rx_running:
+                    break
+                self.get_logger().error(f'UART read error: {e}')
+                time.sleep(0.5)  # do not spin on a persistent error
+                continue
+            except OSError as e:
+                if not self._rx_running:
+                    break
+                self.get_logger().error(f'UART read error: {e}')
+                time.sleep(0.5)
+                continue
+            if not chunk:
+                continue
+            with self._rx_lock:
+                self.rx_buf.extend(chunk)
+            self._parse_rx_buf()
+
+    def _parse_rx_buf(self):
         while True:
-            idx = self.rx_buf.find(FRAME_HEADER)
-            if idx < 0:
-                if len(self.rx_buf) > 256:
-                    self.rx_buf.clear()
-                break
-            if len(self.rx_buf) < idx + 4:
-                break
-            length = self.rx_buf[idx + 3]
-            total = 4 + length + 2
-            if len(self.rx_buf) < idx + total:
-                break
-            frame = bytes(self.rx_buf[idx:idx + total])
-            self.rx_buf = self.rx_buf[idx + total:]
+            with self._rx_lock:
+                idx = self.rx_buf.find(FRAME_HEADER)
+                if idx < 0:
+                    if len(self.rx_buf) > 256:
+                        self.rx_buf.clear()
+                    return
+                if len(self.rx_buf) < idx + 4:
+                    return
+                length = self.rx_buf[idx + 3]
+                total = 4 + length + 2
+                if len(self.rx_buf) < idx + total:
+                    return
+                frame = bytes(self.rx_buf[idx:idx + total])
+                del self.rx_buf[:idx + total]
             self.handle_frame(frame)
 
     def handle_frame(self, frame: bytes):
@@ -331,6 +352,12 @@ class UartBridgeNode(Node):
         return response
 
     def destroy_node(self):
+        self._rx_running = False
+        rx_thread = getattr(self, '_rx_thread', None)
+        if rx_thread is not None:
+            # read() returns within one serial timeout, so join is fast
+            rx_thread.join(timeout=1.0)
+            self._rx_thread = None
         if self.ser and self.ser.is_open:
             self.ser.close()
         super().destroy_node()
