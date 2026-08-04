@@ -1,11 +1,12 @@
+import math
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 import yaml
 import os
 
-from sentry_interfaces.msg import (
-    Diagnosis, Environment, FusionResult, SoilNutrition)
+from sentry_interfaces.msg import Diagnosis, Environment, FusionResult
 from .lwd_calculator import LWDCalculator, Phase
 
 
@@ -25,7 +26,20 @@ MODE_VISION_DOMINANT = 'VISION_DOMINANT'
 MODE_LATENT_SUSPICION = 'LATENT_SUSPICION'
 MODE_HIGH_HUMIDITY_PATHOGEN = 'HIGH_HUMIDITY_PATHOGEN'
 MODE_DROUGHT_STRESS = 'DROUGHT_STRESS'
+MODE_UNKNOWN_DISEASE = 'UNKNOWN_DISEASE'
 MODE_BALANCED = 'BALANCED'
+
+# Fallback infection model when crop_profiles.yaml lacks the section.
+# Mirrors pre-change behavior (global 15-25C window, linear humidity,
+# fixed LWD threshold) so old configs keep working.
+DEFAULT_INFECTION_MODEL = {
+    'temp_optimal': [15.0, 25.0],
+    'temp_tolerance': [5.0, 35.0],
+    'rh_onset': 50.0,
+    'rh_full': 100.0,
+    'lwd_base_hours': 6.0,
+    'lwd_temp_correction': 1.0,
+}
 
 
 class FusionNode(Node):
@@ -34,30 +48,39 @@ class FusionNode(Node):
         self.declare_parameter('crop_type', 'tomato')
         self.declare_parameter('crop_profiles_path',
                                'config/crop_profiles.yaml')
-        self.declare_parameter('mobile_stale_sec', 2.0)
-        self.declare_parameter('fixed_env_window_sec', 10.0)
+        # Fixed (LoRa) node is the only environment source; ~3x its 60s
+        # frame period. Weight switching is latched (see below).
+        self.declare_parameter('env_stale_sec', 180.0)
+        self.declare_parameter('stale_latch_sec', 2.0)
 
         self.crop_type = self.get_parameter('crop_type').value
-        self.mobile_stale_sec = self.get_parameter('mobile_stale_sec').value
-        self.fixed_env_window_sec = self.get_parameter(
-            'fixed_env_window_sec').value
+        self.env_stale_sec = self.get_parameter('env_stale_sec').value
+        self.stale_latch_sec = self.get_parameter('stale_latch_sec').value
 
         # Load crop profiles
         profiles_path = self.get_parameter('crop_profiles_path').value
         self.profiles = self._load_profiles(profiles_path)
         self.profile = self.profiles.get(self.crop_type, {})
 
-        # LWD calculator
+        # Infection model parameters (literature-sourced, see yaml refs)
+        self.infection_model = self._load_infection_model(self.profile)
+
+        # LWD calculator: fixed env node sends one frame per 60s,
+        # so the 24h sliding window holds 1440 points at 1-minute interval.
         self.lwd_calc = LWDCalculator(
-            window_hours=24, interval_minutes=5, warm_up_points=12)
+            window_hours=24, interval_minutes=1, warm_up_points=12)
 
         # State
         self.last_vision = None
-        self.last_mobile_env = None
-        self.last_mobile_ts = 0.0
-        self.fixed_env_samples = []
+        self.last_env = None
+        self.last_env_ts = 0.0
         self.last_fusion_alert = ALERT_NORMAL
         self.last_fusion_mode = MODE_BALANCED
+
+        # Stale latch: avoid weight flapping on frame jitter
+        self._stale_latched = False
+        self._stale_pending = None
+        self._stale_pending_since = 0.0
 
         # Hysteresis band (alert level changes only if delta exceeds this)
         self.hysteresis_delta = 0.15
@@ -65,8 +88,6 @@ class FusionNode(Node):
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.sub_vision = self.create_subscription(
             Diagnosis, '/vision/diagnosis', self.on_vision, 10)
-        self.sub_mobile = self.create_subscription(
-            Environment, '/sensor/environment_mobile', self.on_mobile_env, qos)
         self.sub_fixed = self.create_subscription(
             Environment, '/sensor/environment_fixed', self.on_fixed_env, qos)
 
@@ -102,6 +123,7 @@ class FusionNode(Node):
                 'high_humidity_threshold': 85.0,
                 'drought_threshold': 30.0,
                 'weights': {'vision': 0.5, 'env': 0.3, 'interaction': 0.2},
+                'infection_model': dict(DEFAULT_INFECTION_MODEL),
                 'disease_risk_classes': [
                     'late_blight', 'healthy', 'early_blight',
                     'bacterial_spot', 'leaf_mold', 'septoria_leaf_spot',
@@ -113,6 +135,9 @@ class FusionNode(Node):
                 'high_humidity_threshold': 80.0,
                 'drought_threshold': 25.0,
                 'weights': {'vision': 0.5, 'env': 0.3, 'interaction': 0.2},
+                'infection_model': dict(DEFAULT_INFECTION_MODEL,
+                                        **{'rh_onset': 80.0, 'rh_full': 92.0,
+                                           'lwd_base_hours': 8.0}),
                 'disease_risk_classes': [
                     'healthy', 'wheat_powdery_mildew', 'wheat_scab',
                     'wheat_stripe_rust', 'wheat_yellow_dwarf'
@@ -123,6 +148,8 @@ class FusionNode(Node):
                 'high_humidity_threshold': 85.0,
                 'drought_threshold': 35.0,
                 'weights': {'vision': 0.5, 'env': 0.3, 'interaction': 0.2},
+                'infection_model': dict(DEFAULT_INFECTION_MODEL,
+                                        **{'lwd_base_hours': 10.0}),
                 'disease_risk_classes': [
                     'leaf_spot', 'powdery_mildew_leaf', 'gray_mold',
                     'angular_leaf_spot', 'blossom_blight',
@@ -131,28 +158,93 @@ class FusionNode(Node):
             },
         }
 
+    def _load_infection_model(self, profile: dict) -> dict:
+        im = profile.get('infection_model')
+        if not im:
+            self.get_logger().warn(
+                f'No infection_model for crop={self.crop_type}, '
+                f'falling back to defaults (legacy behavior)')
+            return dict(DEFAULT_INFECTION_MODEL)
+        merged = dict(DEFAULT_INFECTION_MODEL)
+        merged.update(im)
+        refs = im.get('references') or []
+        self.get_logger().info(
+            f'infection_model loaded for {self.crop_type}: '
+            f'temp_optimal={merged["temp_optimal"]}, '
+            f'rh=[{merged["rh_onset"]},{merged["rh_full"]}], '
+            f'lwd_base={merged["lwd_base_hours"]}h, refs={len(refs)}')
+        return merged
+
     def on_vision(self, msg: Diagnosis):
         self.last_vision = msg
 
-    def on_mobile_env(self, msg: Environment):
+    def on_fixed_env(self, msg: Environment):
         now = self.get_clock().now().nanoseconds / 1e9
-        self.last_mobile_env = msg
-        self.last_mobile_ts = now
+        # The fixed (LoRa) node is the sole environment source: it updates
+        # both the "current environment" cache and the LWD calculator
+        # (dedup by sampling interval keeps one point per 5 min).
+        self.last_env = msg
+        self.last_env_ts = now
         self.lwd_calc.update(
             msg.air_temp, msg.air_humidity, msg.soil_humidity,
             msg.leaf_wetness, now)
 
-    def on_fixed_env(self, msg: Environment):
-        now = self.get_clock().now().nanoseconds / 1e9
-        self.fixed_env_samples.append((now, msg))
-        # Prune old samples
-        cutoff = now - self.fixed_env_window_sec
-        self.fixed_env_samples = [
-            (t, m) for t, m in self.fixed_env_samples if t > cutoff]
-
     def tick(self):
         result = self._fuse()
         self.pub_fusion.publish(result)
+
+    # --- Infection-model-driven component helpers ---
+
+    def _humi_risk(self, humi: float) -> float:
+        """Threshold-style humidity risk (piecewise), per crop profile."""
+        onset = float(self.infection_model['rh_onset'])
+        full = float(self.infection_model['rh_full'])
+        if humi < onset:
+            return 0.0
+        if humi >= full:
+            return 1.0
+        return (humi - onset) / max(1e-6, full - onset)
+
+    def _temp_factor(self, temp: float) -> float:
+        """Temperature suitability from crop-specific optimal/tolerance."""
+        t_lo, t_hi = self.infection_model['temp_optimal']
+        tol_lo, tol_hi = self.infection_model['temp_tolerance']
+        if t_lo <= temp <= t_hi:
+            return 1.0
+        if temp < tol_lo or temp > tol_hi:
+            return 0.3
+        return 0.7
+
+    def _lwd_threshold_at(self, temp: float) -> float:
+        """Temperature-corrected LWD requirement (Mills-table style).
+
+        threshold_at(T) = lwd_base * correction^k, where k is the number of
+        5C steps by which T deviates from the optimal range. Colder/warmer
+        than optimal => more wetness hours needed for infection.
+        """
+        base = float(self.infection_model['lwd_base_hours'])
+        corr = float(self.infection_model['lwd_temp_correction'])
+        t_lo, t_hi = self.infection_model['temp_optimal']
+        if t_lo <= temp <= t_hi or corr <= 1.0:
+            return base
+        dev = (t_lo - temp) if temp < t_lo else (temp - t_hi)
+        k = min(3, math.ceil(dev / 5.0))
+        return base * (corr ** k)
+
+    def _is_env_stale(self, now: float) -> bool:
+        """Latched stale detection: state changes only after persisting."""
+        raw = (now - self.last_env_ts) > self.env_stale_sec
+        if raw == self._stale_latched:
+            self._stale_pending = None
+            return self._stale_latched
+        if self._stale_pending != raw:
+            self._stale_pending = raw
+            self._stale_pending_since = now
+            return self._stale_latched
+        if (now - self._stale_pending_since) >= self.stale_latch_sec:
+            self._stale_latched = raw
+            self._stale_pending = None
+        return self._stale_latched
 
     def _fuse(self) -> FusionResult:
         now = self.get_clock().now().nanoseconds / 1e9
@@ -163,24 +255,28 @@ class FusionNode(Node):
         profile = self.profile
         w = profile.get('weights', {'vision': 0.5, 'env': 0.3,
                                       'interaction': 0.2})
-        lwd_threshold = profile.get('lwd_threshold_hours', 6.0)
         high_humidity_th = profile.get('high_humidity_threshold', 85.0)
         drought_th = profile.get('drought_threshold', 30.0)
         risk_classes = profile.get('disease_risk_classes', [])
 
         # --- Vision component ---
+        # No discount for unknown disease classes: an early-warning system
+        # must not systematically suppress novel diseases (Smith et al. 2018,
+        # PLoS ONE — low action thresholds preserve control efficacy).
+        # Unknown classes are routed to mode UNKNOWN_DISEASE so the advisory
+        # layer can recommend manual inspection instead of spraying.
         p_vis = 0.0
         vision_class = 'none'
         vision_conf = 0.0
+        unknown_disease = False
         if self.last_vision is not None:
             vision_class = self.last_vision.disease_class
             vision_conf = self.last_vision.confidence
-            if vision_class != 'healthy' and vision_class in risk_classes:
+            if vision_class != 'healthy':
                 p_vis = vision_conf
-            elif vision_class != 'healthy':
-                p_vis = vision_conf * 0.5  # Unknown disease, moderate weight
+                unknown_disease = vision_class not in risk_classes
 
-        # --- Environment component ---
+        # --- Environment component (infection-model-driven) ---
         env = self._effective_env(now)
         e_norm = 0.0
         trend = self.lwd_calc.recent_trend()
@@ -190,28 +286,25 @@ class FusionNode(Node):
         if env is not None:
             humi = env.air_humidity
             temp = env.air_temp
-            # Normalize humidity risk (0-100 -> 0-1)
-            humi_risk = max(0.0, min(1.0, (humi - 50.0) / 50.0))
-            # Temperature factor: pathogens favor 15-25C
-            temp_factor = 1.0
-            if 15.0 <= temp <= 25.0:
-                temp_factor = 1.0
-            elif temp < 5.0 or temp > 35.0:
-                temp_factor = 0.3
-            else:
-                temp_factor = 0.7
-            # LWD factor
-            lwd_factor = min(1.0, lwd / lwd_threshold) if lwd_threshold > 0 else 0.0
+            humi_risk = self._humi_risk(humi)
+            temp_factor = self._temp_factor(temp)
+            lwd_threshold = self._lwd_threshold_at(temp)
+            lwd_factor = (min(1.0, lwd / lwd_threshold)
+                          if lwd_threshold > 0 else 0.0)
             e_norm = (humi_risk * 0.4 + temp_factor * 0.3
                       + lwd_factor * 0.3)
+        else:
+            humi = 0.0
+            temp = float('nan')
+            lwd_threshold = float(self.infection_model['lwd_base_hours'])
 
         # --- Interaction term ---
         interaction = p_vis * e_norm
 
-        # --- Stale detection: boost vision weight if mobile env is stale ---
-        mobile_stale = (now - self.last_mobile_ts) > self.mobile_stale_sec
-        w_v = w['vision'] * (1.3 if mobile_stale else 1.0)
-        w_e = w['env'] * (0.7 if mobile_stale else 1.0)
+        # --- Stale detection: boost vision weight if env data is stale ---
+        env_stale = self._is_env_stale(now)
+        w_v = w['vision'] * (1.3 if env_stale else 1.0)
+        w_e = w['env'] * (0.7 if env_stale else 1.0)
         w_i = w['interaction']
         total_w = w_v + w_e + w_i
         w_v /= total_w
@@ -233,7 +326,9 @@ class FusionNode(Node):
 
         # --- Gating: determine fusion mode ---
         mode = MODE_BALANCED
-        if p_vis > 0.7:
+        if unknown_disease and p_vis > 0.3:
+            mode = MODE_UNKNOWN_DISEASE
+        elif p_vis > 0.7:
             mode = MODE_VISION_DOMINANT
         elif p_vis > 0.3 and e_norm < 0.3:
             mode = MODE_LATENT_SUSPICION
@@ -249,6 +344,14 @@ class FusionNode(Node):
             self.last_fusion_alert = alert
         else:
             alert = self.last_fusion_alert
+
+        # --- Data-sufficiency gating (aligns with ARCHITECTURE.md §6) ---
+        # Alert level is capped while LWD history is insufficient; the raw
+        # risk_score is published unchanged.
+        if phase == Phase.COLD_BOOT:
+            alert = min(alert, ALERT_SUSPICION)
+        elif phase == Phase.WARM_UP:
+            alert = min(alert, ALERT_WARNING)
         self.last_fusion_mode = mode
 
         # --- Evidence chain ---
@@ -259,10 +362,13 @@ class FusionNode(Node):
         if env is not None:
             evidence.append(
                 f'Env: T={env.air_temp:.1f}C H={env.air_humidity:.1f}%')
-        evidence.append(f'LWD={lwd:.1f}h (phase={phase.value})')
+        evidence.append(
+            f'LWD={lwd:.1f}h/{lwd_threshold:.1f}h (phase={phase.value})')
         evidence.append(f'Mode={mode}')
-        if mobile_stale:
-            evidence.append('Mobile env stale: vision weight boosted')
+        if env_stale:
+            evidence.append('Env stale: vision weight boosted')
+        if phase != Phase.NORMAL:
+            evidence.append(f'Alert capped by data sufficiency ({phase.value})')
 
         msg.risk_score = float(risk)
         msg.alert_level = alert
@@ -273,37 +379,12 @@ class FusionNode(Node):
         return msg
 
     def _effective_env(self, now: float):
-        """Return averaged environment from fixed + mobile sensors."""
-        sources = []
-        if self.last_mobile_env is not None and (
-                now - self.last_mobile_ts) <= self.mobile_stale_sec:
-            sources.append(self.last_mobile_env)
-        if self.fixed_env_samples:
-            # Average fixed env samples
-            avg = Environment()
-            n = len(self.fixed_env_samples)
-            avg.air_temp = sum(m.air_temp for _, m in self.fixed_env_samples) / n
-            avg.air_humidity = sum(m.air_humidity for _, m in self.fixed_env_samples) / n
-            avg.air_co2 = sum(m.air_co2 for _, m in self.fixed_env_samples) / n
-            avg.soil_temp = sum(m.soil_temp for _, m in self.fixed_env_samples) / n
-            avg.soil_humidity = sum(m.soil_humidity for _, m in self.fixed_env_samples) / n
-            avg.leaf_wetness = sum(m.leaf_wetness for _, m in self.fixed_env_samples) / n
-            avg.data_source = 'FIXED_AVG'
-            sources.append(avg)
-        if not sources:
+        """Return the latest fixed-node environment if still fresh."""
+        if self.last_env is None:
             return None
-        if len(sources) == 1:
-            return sources[0]
-        # Blend mobile and fixed
-        blended = Environment()
-        blended.air_temp = sum(s.air_temp for s in sources) / len(sources)
-        blended.air_humidity = sum(s.air_humidity for s in sources) / len(sources)
-        blended.air_co2 = sum(s.air_co2 for s in sources) / len(sources)
-        blended.soil_temp = sum(s.soil_temp for s in sources) / len(sources)
-        blended.soil_humidity = sum(s.soil_humidity for s in sources) / len(sources)
-        blended.leaf_wetness = sum(s.leaf_wetness for s in sources) / len(sources)
-        blended.data_source = 'BLENDED'
-        return blended
+        if (now - self.last_env_ts) > self.env_stale_sec:
+            return None
+        return self.last_env
 
     def _alert_level(self, risk: float) -> int:
         if risk >= 0.8:

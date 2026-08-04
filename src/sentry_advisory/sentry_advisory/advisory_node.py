@@ -45,7 +45,7 @@ class AdvisoryNode(Node):
         self.sub_forecast = self.create_subscription(
             ForecastAlert, '/forecast/alert', self.on_forecast, 10)
         self.sub_env = self.create_subscription(
-            Environment, '/sensor/environment_mobile', self.on_env, 10)
+            Environment, '/sensor/environment_fixed', self.on_env, 10)
         self.sub_weather = self.create_subscription(
             WeatherForecast, '/weather/forecast', self.on_weather, 10)
 

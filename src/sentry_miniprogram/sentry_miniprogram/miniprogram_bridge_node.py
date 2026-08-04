@@ -102,18 +102,15 @@ class MiniProgramBridgeNode(Node):
 
     def _setup_subscriptions(self):
         from sentry_interfaces.msg import (
-            Environment, SoilNutrition, ChassisStatus,
+            Environment, ChassisStatus,
             Diagnosis, MissionStatus, PlantDetection,
             WeatherForecast, ForecastAlert, AdvisoryAction,
         )
         from sensor_msgs.msg import CompressedImage
 
         self.create_subscription(
-            Environment, '/sensor/environment_mobile',
+            Environment, '/sensor/environment_fixed',
             self._on_environment, 10)
-        self.create_subscription(
-            SoilNutrition, '/sensor/soil_nutrition',
-            self._on_soil, 10)
         self.create_subscription(
             ChassisStatus, '/sentry/chassis/status',
             self._on_chassis, 10)
@@ -152,13 +149,12 @@ class MiniProgramBridgeNode(Node):
         self.sensors['soil_temp'] = round(msg.soil_temp, 1)
         self.sensors['soil_humidity'] = round(msg.soil_humidity, 1)
         self.sensors['leaf_wetness'] = round(msg.leaf_wetness, 1)
+        # Environment carries no NPK fields; keep the payload keys present
+        # (null) so the mini-program frontend degrades gracefully.
+        self.sensors['soil_n'] = None
+        self.sensors['soil_p'] = None
+        self.sensors['soil_k'] = None
         self.sensors['data_source'] = msg.data_source
-        self._push_ws({'type': 'sensor', 'ts': self._now_ms(), 'data': dict(self.sensors)})
-
-    def _on_soil(self, msg):
-        self.sensors['soil_n'] = round(msg.nitrogen, 1)
-        self.sensors['soil_p'] = round(msg.phosphorus, 1)
-        self.sensors['soil_k'] = round(msg.potassium, 1)
         self._push_ws({'type': 'sensor', 'ts': self._now_ms(), 'data': dict(self.sensors)})
 
     def _on_chassis(self, msg):

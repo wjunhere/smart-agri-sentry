@@ -37,8 +37,7 @@ Smart Agri Sentry is an embedded competition prototype for autonomous crop disea
 │  ├─ plant_detector_node   → /vision/plant_detected         │
 │  ├─ vision_diagnosis_node → /vision/diagnosis              │
 │  ├─ vision_pipeline_node  → gimbal multi-angle scan        │
-│  ├─ uart_bridge_node      → /sensor/environment_mobile     │
-│  │                         → /sensor/soil_nutrition        │
+│  ├─ uart_bridge_node      → /sentry/chassis/status         │
 │  ├─ lora_bridge_node      → /sensor/environment_fixed      │
 │  └─ imu_node              → /sensor/imu                    │
 └──────────────────────────┬──────────────────────────────────┘
@@ -64,7 +63,7 @@ Smart Agri Sentry is an embedded competition prototype for autonomous crop disea
 
 - **Multi-crop support**: dynamic crop switching (tomato / wheat / strawberry)
 - **Event-driven inspection**: plant detection → stop → multi-angle gimbal scan → classify → decide → resume
-- **24h Leaf Wetness Duration (LWD)**: fixed env node samples every 5 min, 288-point sliding window, cold-boot graceful degradation
+- **24h Leaf Wetness Duration (LWD)**: fixed env node sends one frame per 60s, 1440-point sliding window, cold-boot graceful degradation
 - **Priority gating**: VISION_DOMINANT → LATENT_SUSPICION → HIGH_HUMIDITY_PATHOGEN → DROUGHT_STRESS → BALANCED, with hysteresis to prevent mode flutter
 - **Structured agronomic advice**: YAML rule engine, millisecond response, competition-ready explainability
 - **Web frontend**: real-time monitoring dashboard with mock mode for offline testing
@@ -81,10 +80,9 @@ Smart Agri Sentry is an embedded competition prototype for autonomous crop disea
 | LiDAR | STL19P / LD19 | CP2102 UART 230400 baud |
 | IMU | YB-IMU (CH340 USB) | /dev/myimu, 115200 baud |
 | Gimbal | 2-DOF servo | RDK X5 direct PWM |
-| Mobile Sensors | 7-in-1 air (CJ702) + soil NPK (RS485 ModBus) + leaf wetness (LWS10) | Via chassis UART |
 | Fixed Env Node | STM32F103RCT6 + SX1262 (LoRa) | Solar-powered, IP65 enclosure |
-| LoRa Gateway | E22-400TBH-SC (ESP32-S3 + SX1262) | USB serial to RDK X5 |
-| Fixed Node Sensors | SHT30 + SCD40 + RS485 soil + LWS10 | Air / CO2 / soil / leaf wetness |
+| LoRa Gateway | E22-400TBH-SC (built-in STM32F103CBT6 + SX1262) | USB serial to RDK X5 |
+| Fixed Node Sensors | CJ702 7-in-1 air + leaf wetness (RS485) + soil TTL (temp/humidity/EC) | Air / CO₂ / soil / leaf wetness |
 
 ---
 
@@ -194,7 +192,7 @@ smart_agri_sentry/
 | `plant_detector_node` | `image_raw` | `/vision/plant_detected` | YOLOv8n BPU inference, triggers stop |
 | `vision_diagnosis_node` | `image_raw` | `/vision/diagnosis` | MobileNetV3 BPU crop-specific disease classification |
 | `vision_pipeline_node` | `image_raw`, `plant_detected` | `/vision/diagnosis`, servo cmd | Gimbal multi-angle scan orchestration |
-| `uart_bridge_node` | `cmd_vel`, `servo_cmd` | `/sensor/environment_mobile`, `/sensor/soil_nutrition`, `/sentry/chassis/status` | STM32F4 UART bridge |
+| `uart_bridge_node` | `cmd_vel`, `servo_cmd` | `/sentry/chassis/status` | STM32F4 UART bridge |
 | `lora_bridge_node` | LoRa gateway serial | `/sensor/environment_fixed` | Fixed env node data (multi-node, averaged in fusion) |
 | `imu_node` | - | `/sensor/imu` | YB-IMU driver with CH340 ARM read patch |
 
@@ -202,7 +200,7 @@ smart_agri_sentry/
 
 | Node | Subscribes | Publishes | Description |
 |------|-----------|-----------|-------------|
-| `fusion_node` | `/vision/diagnosis`, `/sensor/environment_fixed`, `/sensor/environment_mobile` | `/fusion/diagnosis` | LWD sliding window + priority gating + evidence chain |
+| `fusion_node` | `/vision/diagnosis`, `/sensor/environment_fixed` | `/fusion/diagnosis` | LWD sliding window + priority gating + evidence chain |
 | `forecast_node` | `/fusion/diagnosis` | `/forecast/alert` | Trend extrapolation (default), SIR-like model reserved |
 | `advisory_node` | `/fusion/diagnosis`, `/forecast/alert` | `/advisory/action` | YAML rule engine, event-triggered |
 
@@ -222,13 +220,13 @@ smart_agri_sentry/
 
 ### LWD Sliding Window & Cold Boot
 
-Fixed env nodes sample every 5 minutes, maintaining a 288-point (24h) sliding window:
+Fixed env nodes send one frame per 60s, maintaining a 1440-point (24h) sliding window:
 
 | Phase | Duration | LWD Strategy | LATENT_SUSPICION | Confidence |
 |-------|----------|-------------|------------------|------------|
-| COLD_BOOT | 0–30 min | Fallback to instantaneous humidity, cap 0.70 | Disabled | ×0.75 |
-| WARM_UP | 30 min–24h | Short-term LWD linear extrapolation | Relaxed conditions | ×0.90 |
-| NORMAL | ≥24h | Full 24h look-up table | Normal trigger | ×1.0 |
+| COLD_BOOT | before first frame | Fallback to instantaneous humidity, cap 0.70 | Disabled | ×0.75 |
+| WARM_UP | <12 points (~12 min) | Short-term LWD linear extrapolation | Relaxed conditions | ×0.90 |
+| NORMAL | ≥12 points (window fills over 24h) | Full 24h look-up table | Normal trigger | ×1.0 |
 
 Crop-specific LWD thresholds:
 

@@ -53,7 +53,7 @@ def build_standard_prompt(data: dict) -> str:
 诊断结果: {data.get('disease', '无')} (置信度 {data.get('confidence', 0)*100:.1f}%)
 分类概率: {data.get('probabilities_list', '无')}
 
-【环境传感器】(移动节点)
+【环境传感器】(固定节点)
 空气: 温度{data.get('air_temp', '--')}°C 湿度{data.get('air_humidity', '--')}% CO₂ {data.get('co2', '--')}ppm
 土壤: 温度{data.get('soil_temp', '--')}°C 湿度{data.get('soil_humidity', '--')}% N{data.get('soil_n', '--')} P{data.get('soil_p', '--')} K{data.get('soil_k', '--')}
 叶面湿度: {data.get('leaf_wetness', '--')}%
@@ -146,7 +146,7 @@ class LLMAdvisorNode(Node):
         )
         qos = rclpy.qos.QoSProfile(depth=10, reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(Diagnosis, '/vision/diagnosis', self._on_diagnosis, 10)
-        self.create_subscription(Environment, '/sensor/environment_mobile', self._on_env, qos)
+        self.create_subscription(Environment, '/sensor/environment_fixed', self._on_env, qos)
         self.create_subscription(WeatherForecast, '/weather/forecast', self._on_weather, 10)
         self.create_subscription(ForecastAlert, '/forecast/alert', self._on_forecast, 10)
         self.create_subscription(FusionResult, '/fusion/diagnosis', self._on_fusion, 10)

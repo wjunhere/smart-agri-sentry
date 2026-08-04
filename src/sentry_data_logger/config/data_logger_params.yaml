@@ -5,7 +5,7 @@ data_logger_node:
       - /mission/status
       - /forecast/alert
       - /advisory/action
-      - /sensor/environment_mobile
+      - /sensor/environment_fixed
       - /vision/diagnosis
     bag_base_dir: bags
     split_duration_sec: 900

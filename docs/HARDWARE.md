@@ -150,7 +150,7 @@ typedef struct {
 - 转发内容为原始二进制帧，由 RDK X5 的 `lora_bridge_node` 解析
 
 **RDK X5 端（lora_bridge_node）**：
-- 解析串口二进制帧，转换为 `Environment` 消息（含 air_temp/humidity/CO₂/soil_temp/soil_humidity/EC/leaf_wetness/leaf_temp 及土壤 NPK/pH 扩展字段）
+- 解析串口二进制帧，转换为 `Environment` 消息（含 air_temp/humidity/CO₂/soil_temp/soil_humidity/EC/leaf_wetness/leaf_temp）
 - `data_source` 字段设为 `FIXED_NODE_01` / `FIXED_NODE_02` / ...
 
 ---
@@ -237,22 +237,7 @@ typedef struct {
 
 ---
 
-## 10. 固定环境节点
-
-- **主控**：STM32F103RCT6（采集传感器、运行低功耗逻辑）
-- **LoRa 模块**：E22-400TBH-SC（内置 STM32F103CBT6，负责 LoRa 收发）
-- **主控 ↔ LoRa 模块**：UART（RCT6 发送数据给模块内置 CBT6，CBT6 通过 SX1262 发出）
-- **传感器**：SHT30（空气温湿）+ SCD40（CO₂）+ RS485 土壤（温湿+EC）+ LWS10（叶面湿度）
-- **采样**：5 分钟周期，深度睡眠
-- **供电**：10 W 太阳能 + 18650×2
-
-**RDK 侧接收链**：
-- 网关端 E22-400TBH-SC（内置 CBT6）接收到 LoRa 数据后，通过 UART 经 USB 转串口发送给 RDK X5
-- RDK X5 上 `env_bridge_node` 解析后发布 `/sensor/environment_fixed`
-
----
-
-## 11. 已移除硬件
+## 10. 已移除硬件
 
 ### GPS 模块（已弃用）
 

@@ -11,7 +11,7 @@
 
 - 底盘自动巡航与植株检测触发停车（YOLOv8n 检测 → MobileNetV3 分类 两阶段管线）
 - 端侧 AI 病害识别（RDK X5 NPU）
-- 环境数据融合决策（移动传感器 + 固定环境节点）
+- 环境数据融合决策（固定环境节点）
 - 农艺建议生成与本地数据记录
 
 **非目标**：工业级防护、续航极限、Web 前端、外部天气接口、端侧大模型（均后置到后续版本）。
@@ -24,7 +24,7 @@
 
 | 层级 | 职责 | 关键节点/组件 |
 |---|---|---|
-| **感知层** | 视觉推理（YOLO 检测 + 分类）、移动/固定环境传感、底盘状态、LiDAR/IMU | `camera_node`, `plant_detector_node`, `vision_diagnosis_node`, `yolo_detection_node`(计划), `uart_bridge_node`, `lora_bridge_node`, `sentry_lidar`, `imu_node` |
+| **感知层** | 视觉推理（YOLO 检测 + 分类）、固定环境传感（LoRa 链路）、底盘状态、LiDAR/IMU | `camera_node`, `plant_detector_node`, `vision_diagnosis_node`, `yolo_detection_node`(计划), `uart_bridge_node`, `lora_bridge_node`, `sentry_lidar`, `imu_node` |
 | **决策层** | 实时融合、趋势预测、农艺建议 | `fusion_node`, `forecast_node`, `advisory_node` |
 | **控制层** | 巡检状态机、底盘/云台控制、数据记录 | `mission_control_node`, `wheel_odom_node`, `web_remote_node`, `servo_driver_node`, `data_logger_node`, Nav2 |
 
@@ -34,9 +34,7 @@
 │  ├─ camera_node          → /sentry/camera/image_raw        │
 │  ├─ plant_detector_node  → /vision/plant_detected          │
 │  ├─ vision_diagnosis_node→ /vision/diagnosis               │
-│  ├─ uart_bridge_node     → /sensor/environment_mobile      │
-│  │                       → /sensor/soil_nutrition          │
-│  │                       → /sentry/chassis/status          │
+│  ├─ uart_bridge_node     → /sentry/chassis/status          │
 │  ├─ lora_bridge_node     → /sensor/environment_fixed       │
 │  ├─ sentry_lidar         → /scan + /lidar/obstacle_info    │
 │  └─ imu_node             → /sensor/imu/data_raw/data       │
@@ -129,16 +127,13 @@ Stable baseline summary:
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           STM32F407ZGT6                              │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────────┐  │
-│  │ 空气传感器  │    │ 土壤传感器  │    │ 电机PID + 编码器 + 舵机 │  │
-│  │ (UART4)     │    │ (UART5)     │    │ (TIM/PWM)               │  │
-│  └──────┬──────┘    └──────┬──────┘    └───────────┬─────────────┘  │
-│         │                  │                        │                │
-│         └──────────────────┴────────────────────────┘                │
-│                            │                                         │
-│                            ▼                                         │
+│                   ┌─────────────────────────┐                        │
+│                   │ 电机PID + 编码器 + 舵机 │                        │
+│                   │ (TIM/PWM)               │                        │
+│                   └───────────┬─────────────┘                        │
+│                               │                                      │
+│                               ▼                                      │
 │                   ┌─────────────────┐                                │
-│                   │   TaskSensor    │ 100ms                          │
 │                   │   TaskControl   │ 20ms                           │
 │                   │   TaskComm      │ 100ms                          │
 │                   └────────┬────────┘                                │
@@ -160,12 +155,11 @@ Stable baseline summary:
 │  └──────────────────────────────────────────────────────────────┘   │
 │         │                  │              │          │                │
 │         ▼                  ▼              ▼          ▼                │
-│  /sensor/           /sentry/camera/    /sensor/     /scan            │
-│  environment_mobile image_raw          imu/data                      │
-│  /sensor/soil_nutrition                                              │
+│  /sentry/chassis/   /sentry/camera/    /sensor/     /scan            │
+│  status             image_raw          imu/data                      │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  USB转串口 ← LoRa网关 ← [固定环境节点: STM32F103RCT6+CJ702+leaf(RS485)+soil(NPK)+E22-400T30S] │
+│  │  USB转串口 ← LoRa网关 ← [固定环境节点: STM32F103RCT6+CJ702+leaf(RS485)+soil(TTL)+E22-400TBH-SC] │
 │  │         lora_bridge_node → /sensor/environment_fixed        │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                                                                      │
@@ -277,50 +271,58 @@ RESUME → PATROL
 
 ### 6.1 模式选择
 
+按以下顺序判定（实现见 `fusion_node.py:_fuse`）：
+
 ```python
-def select_mode(P_vis, env, E_norm, h_risk, t_risk, env_history):
-    if P_vis >= 0.80:
-        return "VISION_DOMINANT"
-
-    if not env_history.is_cold_boot():
-        lwd = env_history.get_lwd_hours()
-        if lwd >= LWD_THRESHOLD[crop] and P_vis <= 0.30 and t_risk >= 0.60:
-            return "LATENT_SUSPICION"
-
-    hum_threshold = 90 if env_history.is_cold_boot() else 80
-    if env.humidity >= hum_threshold and 15 <= env.temperature <= 28 and P_vis >= 0.50:
-        return "HIGH_HUMIDITY_PATHOGEN"
-
-    if env.humidity <= 40 and env.temperature >= 30:
-        return "DROUGHT_STRESS"
-
-    return "BALANCED"
+if unknown_disease and P_vis > 0.3:      # 非 healthy 但不在 disease_risk_classes
+    return "UNKNOWN_DISEASE"             # advisory 层转人工复核，不自动喷药
+if P_vis > 0.70:
+    return "VISION_DOMINANT"
+if P_vis > 0.30 and E_norm < 0.30:
+    return "LATENT_SUSPICION"
+if E_norm > 0.60 and humidity > high_humidity_threshold[crop]:
+    return "HIGH_HUMIDITY_PATHOGEN"
+if soil_humidity < drought_threshold[crop]:
+    return "DROUGHT_STRESS"
+return "BALANCED"
 ```
+
+未知病害类别不再打 5 折压低（低行动阈值哲学，Smith et al. 2018），改以 UNKNOWN_DISEASE 模式把处置决策移交 advisory 层。
 
 ### 6.2 风险计算
 
+环境分量由作物侵染参数表（`crop_profiles.yaml: infection_model`，参数均标注文献出处）驱动：
+
 ```
+humi_risk    = 0                      (H < rh_onset)
+             = (H - rh_onset)/(rh_full - rh_onset)
+             = 1                      (H ≥ rh_full)
+temp_factor  = 1.0 (T ∈ temp_optimal) / 0.7 (容差带内) / 0.3 (容差带外)
+threshold_at(T) = lwd_base × lwd_temp_correction^k   # k = T 偏离最适区间的 5°C 步数（Mills 表二维修正）
+lwd_factor   = min(1, LWD / threshold_at(T))
+E_norm       = 0.4·humi_risk + 0.3·temp_factor + 0.3·lwd_factor
+
 interaction   = P_vis × E_norm
-trend_factor  = 1.0 + 0.2 × max(0, humidity_trend_2h)
-Risk = w_v·P_vis + w_e·E_norm·trend_factor + w_i·interaction + bias
+trend_factor  = 1.0 + 0.2 × max(0, humidity_trend)
+Risk = w_v·P_vis + w_e·E_norm·trend_factor + w_i·interaction
 Risk = clip(Risk, 0.0, 1.0)
-
-agreement = 1.0 - |P_vis - E_norm|
-base_confidence = 0.55 + 0.45 × agreement
-
-if COLD_BOOT:   confidence = base_confidence × 0.75
-elif WARM_UP:     confidence = base_confidence × 0.90
-else:             confidence = base_confidence
 ```
+
+环境数据过期（> env_stale_sec，默认 180s，对应固定节点 60s 帧周期的 3 倍，带 latch 防抖）时 w_v×1.3、w_e×0.7 后重新归一化。confidence 由 LWD 相位给出：COLD_BOOT→0.3，WARM_UP→0.5+0.5×fill_ratio，NORMAL→1.0。
 
 ### 6.3 报警分级
 
 | 级别 | 条件 |
 |---|---|
-| `CRITICAL` | Risk ≥ 0.80 且 confidence ≥ 0.80（冷启动最多降级为 WARNING） |
+| `CRITICAL` | Risk ≥ 0.80 |
 | `WARNING` | Risk ≥ 0.60 |
-| `SUSPICION` | mode == LATENT_SUSPICION 且 Risk ≥ 0.40 |
+| `SUSPICION` | Risk ≥ 0.35 |
 | `NORMAL` | 其余 |
+
+滞回：|Risk − 当前级代表值{0.15,0.45,0.7,0.9}| > 0.15 才允许换级。
+数据充分性门控（confidence 参与分级的实现形式）：LWD 相位 COLD_BOOT 时等级封顶 SUSPICION，WARM_UP 时封顶 WARNING；门控不改变发布的 risk_score。
+
+> 注：本节已于 refine-disease-fusion-forecast 变更中与实现对齐；趋势预测层（forecast_node）改为"天气预报驱动侵染模型"（外推环境量而非外推 Risk 序列），依据见 `docs/research/fusion_algorithm_paper.md`。
 
 ---
 

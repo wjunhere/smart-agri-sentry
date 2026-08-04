@@ -80,8 +80,6 @@
 | `/sentry/camera/image_raw` | `sensor_msgs/Image` | `hikrobot_camera_node`（默认）/ `mipi_camera_node` | `plant_detector`, `vision_diagnosis` | 5 Hz | 摄像头原始图像，backend 由 launch 参数 `camera_backend` 选择 |
 | `/vision/plant_detected` | `PlantDetection` | `plant_detector_node` | `mission_control` | 5 Hz | 植株检测结果（bbox + 置信度） |
 | `/vision/diagnosis` | `Diagnosis` | `vision_diagnosis_node` | `fusion_node` | 2 Hz | 病害分类结果 |
-| `/sensor/environment_mobile` | `Environment` | `uart_bridge_node` | `fusion_node` | 1 Hz | 移动传感器环境数据 |
-| `/sensor/soil_nutrition` | `SoilNutrition` | `uart_bridge_node` | `data_logger` | 1 Hz | 土壤营养分离（N/P/K/pH/EC） |
 | `/sensor/environment_fixed` | `Environment` | `lora_bridge_node` | `fusion_node` | 1/60 Hz | 固定 LoRa 环境节点数据（每 60 秒一帧） |
 | `/scan` | `sensor_msgs/LaserScan` | `sentry_lidar` | Nav2/避障 | 10 Hz | 激光雷达点云 |
 | `/lidar/obstacle_info` | `ObstacleInfo` | `sentry_lidar` | `fusion_node` | 10 Hz | 前方扇区障碍物简化信息 |
@@ -217,7 +215,7 @@ float32 pm25                   # PM2.5 μg/m³（CJ-702）
 float32 pm10                   # PM10 μg/m³（CJ-702）
 float32 leaf_temp              # 叶面温度 °C
 float32 ec                     # 土壤电导率
-string data_source             # MOBILE / FIXED_LORA / FIXED_NODE_01 / ...
+string data_source             # FIXED_LORA / FIXED_NODE_01 / ...
 ```
 
 ### 4.4 SoilNutrition（土壤营养）
@@ -381,6 +379,10 @@ int32 front_point_count       # 前方扇区有效点数量
 ---
 
 ## 7. 已移除接口
+
+### 移动环境传感器话题（已弃用）
+
+`/sensor/environment_mobile`（`Environment`）与 `/sensor/soil_nutrition`（`SoilNutrition`）不再使用：移动节点已不挂载环境传感器，环境数据统一由固定 LoRa 节点经 `/sensor/environment_fixed` 提供。`uart_bridge_node` 仅发布 `/sentry/chassis/status`。
 
 ### GPS Topic（已弃用）
 

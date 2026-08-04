@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v3.1 · 更新日期 2026-07-28  
+> 架构版本 v3.2 · 更新日期 2026-07-30  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -9,10 +9,10 @@
 
 - Stable branch work from `fix/autonomous-cruise` has been merged into `main`.
 - The robot has demonstrated three-point cruise, mission-owned short-range avoidance, frontend Preheat/Start/Pause/E-STOP, waypoint editing, and automatic stack stop after mission completion.
-- Frontend gateway autostart: systemd `sentry-bridge.service` boots the gateway layer — miniprogram bridge :8765, web panel :5000, weather, LLM. **Camera/inference no longer autostart** — toggled from top-bar buttons (`/vision/*`, `/inference/*`), each press clean-restarts (kill-then-start) the respective nodes.
-- Plant detection is now **single-class "plant" (yolo11s)** trained from COCO base on 5108 images (PlantDoc + crop/weed + board captures), with temporal voting (3-frame/2-vote) and conf 0.35 on board. Details in 模型矩阵 and `docs/DECISIONS.md`.
+- Frontend gateway autostart: systemd `sentry-bridge.service` boots the gateway layer — miniprogram bridge :8765, web panel :5000, weather, LLM. **Camera/inference no longer autostart** — toggled from top-bar buttons (`/vision/*`, `/inference/*`), each press clean-restarts (kill-then-start) the respective nodes. Inference stack = plant_detector + vision_pipeline + **vision_diagnosis（流式，YOLO 裁剪输入）**.
+- Plant detection is **single-class "plant" (yolo11s)** trained from COCO base on 5108 images, with temporal voting (3-frame/2-vote) and conf 0.35 on board. Tomato disease classification is **MobileNetV3 v5 板端域微调版**，推理输入为 YOLO 框裁剪+letterbox（详见 模型矩阵 与 ADR-012）。
 - Details are intentionally split by topic: architecture in `docs/ARCHITECTURE.md`, ROS/HTTP interfaces in `docs/ROS2.md`, startup in `docs/SETUP.md`, decisions in `docs/DECISIONS.md`, known issues in `docs/ISSUES.md`, and remaining work in `docs/TODO.md`.
-- RDK access: `ssh rdk1` (hotspot, sunrise@10.66.175.213) or Type-C RNDIS `ssh sunrise@192.168.128.10`; frontend: `http://<board-ip>:5000/`. Board reflashed to **RDKOS 3.5.0 Server** (2026-07-24, see `docs/ISSUES.md` 欠压一节).
+- RDK access: `ssh rdk1` (hotspot, sunrise@10.66.175.213) or Type-C RNDIS `ssh sunrise@192.168.128.10`; frontend: `http://<board-ip>:5000/`. Board reflashed to **RDKOS 3.5.0 Server** (2026-07-24, see `docs/ISSUES.md` 欠压一节). **GitHub 推送走 SSH**（`git push git@github.com:wjunhere/smart-agri-sentry.git main`，https 代理/直连均不稳）。
 
 ## 项目目标
 
@@ -20,7 +20,7 @@
 
 - 底盘自动巡航（当前 mapless Nav2，目标 LiDAR SLAM）
 - 植株检测触发停车 → 端侧 AI 病害识别（RDK X5 BPU，`pyeasy_dnn` 推理）
-- 移动/固定环境数据融合决策 → 农艺建议
+- 固定环境节点数据融合决策 → 农艺建议
 - 本地 ros2 bag 数据记录
 - 微信小程序远程控制（原生 TS + Less + Skyline，4 Tab 布局）
 - FastAPI 桥接节点 `miniprogram_bridge_node :8765`（WebSocket 实时 + HTTP 控制）
@@ -37,7 +37,7 @@
 | 摄像头 | IMX477 MIPI-CSI（现役，已做棋盘格去畸变标定 `config/imx477_640x480.yaml`）/ 海康 MV-CS016-10UC（USB3，备用） |
 | IMU | YB-IMU（CH340 USB, /dev/ttyUSB0 → /dev/myimu, 115200） |
 | 云台 | 2-DOF 舵机，RDK X5 直接 PWM |
-| 环境传感 | 移动七合一空气/土壤 + 固定 LoRa 节点 |
+| 环境传感 | 固定 LoRa 节点（CJ702 七合一空气 + 叶面湿度 RS485 + 土壤 TTL 温湿度/EC） |
 
 **注意**：GPS 模块已移除，不再使用。USB 串口设备识别：CH340=ttyUSB0=IMU，CP2102=ttyUSB2=LiDAR。LiDAR 波特率 230400。
 
@@ -96,6 +96,7 @@
 24. **IMX477 去畸变标定 ✅ (2026-07-25)**：棋盘格 9x6 两轮 53 帧，k3 模型 RMS=0.200px，产物 `config/imx477_640x480.yaml`（PC 与板端一致）。`mipi_camera_node` 新增 `enable_undistort`/`undistort_calib_file`/`undistort_alpha` 参数（initUndistortRectifyMap+remap）。`denoise_h=4` 的 fastNlMeans 曾把 CPU 吃到 200% 致视频卡顿，已默认关闭。
 25. **YOLO 植株检测演进：单类 yolo11s ✅ (2026-07-28)**：原 crop/weed 二分类模型对屏幕/打印病害图不出框。诊断三因：阈值+min_area 过滤过狠、训练 letterbox vs 板端直接 resize、校准集全是数据集图。数据闭环：板端翻拍 330 正样本 + 160 硬负样本（风扇/吊灯/遮阳网/地膜等 13 类），两轮微调（R1/R2）有效但接力微调漂移、误检感加重。最终 **yolo11s 从 COCO 基座全量重训**（5108 张 = PlantDoc 2009 + crop/weed 2681 + 板端 478，30 类叶子合并为单类 plant）：mAP50 0.970 / mAP50-95 0.645，硬负样本误检 21→4/160，风扇误检消除。板端 conf 0.35 + **时序投票**（`vote_window=3`/`vote_min=2`）。后处理置信度优先 DFL 解码（8400 锚点只解高置信），检测 13→15fps 满帧，检测节点 CPU 117%→65%。板端预处理 resize 拉伸问题与类别合并决策见 `docs/DECISIONS.md` ADR-011。
 26. **前端相机/推理开关 + 状态同步 ✅ (2026-07-28)**：顶栏"开启/关闭摄像头""开启/关闭推理"切换按钮，`/status` 返回 ROS 图真实节点状态（`camera_running`/`inference_running`），前端 3s 轮询同步，启动/停止均先杀后启防重复节点。修复积帧 bug：rosbridge 积压帧导致重开页面"快速回放"，改为 rAF 只渲染最新帧。相机 15fps（关闭低光增强/锐化腾 CPU，去畸变保留）。Nav2 降频与巡航/监测双帧率档记为后续优化（`docs/TODO.md`）。
+27. **番茄病害 v5 域适应微调 + YOLO 裁剪管线 ✅ (2026-07-30)**：打印病叶在板端认不出（healthy/错类）的根因是"打印→翻拍"域差 + 整帧分类，模型本身没问题（数字原图 0.946 认对）。数据闭环：平板播放训练图 → 板端翻拍 638 张（7 类达标，分批继承标签 + ORB 回源校验 + 亮度/屏占比质量门），与数字原图混合（2108 张）微调 v4.2 → **v5**：数字基准 92.0%（超 v4.2），失败用例 YOLO 裁剪下 early_blight 0.78/0.91。推理侧配套：`vision_pipeline_node`/`vision_diagnosis_node` 均改 **YOLO 框外扩 20% 裁剪 + letterbox 224**（与训练分布一致，共享 `diagnosis_utils.crop_letterbox`）；诊断节点订阅 `/vision/plant_detected` 取框，无框回退整帧。同时修复三个掩盖真实结果的 bug：前端 mock 占位 healthy 0.85（无数据时显示假结果，已改 `--`）、`healthy_threshold=0` 恒真强判 healthy（0 现表示禁用）、推理栈此前不启动流式诊断节点导致前端无真实数据。量化校准集换板端翻拍图。完整流程（采集→校验→微调→量化→部署）可直接复用于小麦/草莓，详见 `docs/DECISIONS.md` ADR-012 与 `D:\wjun\data\toamtos\finetune\`。
 
 ## 模型矩阵
 
@@ -103,7 +104,7 @@
 
 | 作物 | 架构 | 类别数 | BPU 精度 | 输入 | Cosine | 准确率 | 部署状态 |
 |------|------|--------|---------|------|--------|--------|---------|
-| 番茄 | MobileNetV3-**Large** | 7 | int8 | NV12 224×224 | 0.9997 | 91.58% | ✅ 已部署 |
+| 番茄 | MobileNetV3-**Large** **v5 板端域微调** | 7 | int8 | NV12 224×224（**YOLO 裁剪+letterbox**） | — | 92.0%（数字基准） | ✅ 现役（旧 v4.2 bin 保留可回滚） |
 | 小麦 | MobileNetV3-Small | 5 | int8 | NV12 224×224 | 0.977 | — | ✅ 已部署 |
 | 草莓 | MobileNetV3-Small | 8 | int16 | RGB 224×224 | 0.977 | — | ✅ 已部署 |
 

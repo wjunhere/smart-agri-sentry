@@ -1,3 +1,4 @@
+import math
 import os
 import time
 import yaml
@@ -14,8 +15,25 @@ from sentry_interfaces.msg import (
 )
 
 
+# Fallback infection model when crop_profiles.yaml lacks the section.
+DEFAULT_INFECTION_MODEL = {
+    'temp_optimal': [15.0, 25.0],
+    'temp_tolerance': [5.0, 35.0],
+    'rh_onset': 50.0,
+    'rh_full': 100.0,
+    'lwd_base_hours': 6.0,
+    'lwd_temp_correction': 1.0,
+}
+
+
 class TrendForecaster:
-    """Simple linear trend extrapolation helper."""
+    """Linear trend helper — used for trend DIRECTION only.
+
+    Risk values must not be linearly extrapolated: plant disease
+    epidemics follow sigmoid (logistic/Gompertz) progress curves
+    (van der Plank; Kato & Koizumi 1987). Future risk is derived from
+    the infection model driven by the weather forecast instead.
+    """
 
     @staticmethod
     def linear_trend(samples, key='risk_score'):
@@ -32,72 +50,67 @@ class TrendForecaster:
             return 0.0
         return num / den
 
-    @staticmethod
-    def predict(samples, prediction_hours, key='risk_score'):
-        if not samples:
-            return 0.0
-        if len(samples) < 2:
-            return float(samples[-1][key])
-        slope = TrendForecaster.linear_trend(samples, key)
-        last = samples[-1][key]
-        return max(0.0, min(1.0, last + slope * prediction_hours))
+
+def lwd_threshold_at(infection_model, temp: float) -> float:
+    """Temperature-corrected LWD requirement (Mills-table style)."""
+    base = float(infection_model['lwd_base_hours'])
+    corr = float(infection_model['lwd_temp_correction'])
+    t_lo, t_hi = infection_model['temp_optimal']
+    if t_lo <= temp <= t_hi or corr <= 1.0:
+        return base
+    dev = (t_lo - temp) if temp < t_lo else (temp - t_hi)
+    k = min(3, math.ceil(dev / 5.0))
+    return base * (corr ** k)
 
 
-def weather_risk_model(hours, prediction_hours):
-    """Compute disease risk (0-1) from hourly weather forecast data."""
+def future_infection_risk(infection_model, hours, prediction_hours,
+                          lwd_now: float) -> float:
+    """Future disease risk from forecast-driven infection conditions.
+
+    Standard operational-DSS approach (Bastiaansen 1997, Acta Hort. 461;
+    Tyson et al. 2017, Phytopathology 107): extrapolate the ENVIRONMENT
+    (hours favorable for infection), then map to risk via the crop's
+    infection model — never extrapolate the risk series itself.
+
+    A forecast hour counts as favorable when temperature is inside the
+    crop's tolerance range AND free moisture is likely
+    (RH >= rh_onset or precipitation > 0.5 mm/h).
+    """
     if not hours:
         return 0.0
     window = [h for h in hours if h["hour_offset"] <= prediction_hours]
     if not window:
         return 0.0
 
-    risk = 0.0
-    # Fungal window: RH > 85% and 15 < T < 25, sustained > 6h
-    fungal_hours = sum(1 for h in window
-                       if h["humidity"] > 85.0 and 15.0 < h["temp"] < 25.0)
-    if fungal_hours > 6:
-        risk += min(0.4, 0.2 + 0.033 * (fungal_hours - 6))
+    tol_lo, tol_hi = infection_model['temp_tolerance']
+    onset = float(infection_model['rh_onset'])
+    favorable = [h for h in window
+                 if tol_lo <= h["temp"] <= tol_hi
+                 and (h["humidity"] >= onset or h["precipitation"] > 0.5)]
+    if not favorable:
+        return 0.0
 
-    # Continuous rain > 1mm/h for > 12h
-    rain_hours = 0
-    for h in window:
-        if h["precipitation"] > 1.0:
-            rain_hours += 1
-        else:
-            rain_hours = 0
-    if rain_hours > 12:
-        risk += min(0.3, 0.2 + 0.008 * (rain_hours - 12))
-
-    # Consecutive rain days > 2 (within prediction window)
-    max_day = max(1, prediction_hours // 24 + 1)
-    rain_days = 0
-    for day_offset in range(max_day):
-        day_hours = [h for h in window if day_offset * 24 <= h["hour_offset"] < (day_offset + 1) * 24]
-        if day_hours and sum(h["precipitation"] for h in day_hours) > 1.0:
-            rain_days += 1
-        else:
-            rain_days = 0
-    if rain_days > 2:
-        risk += min(0.2, 0.1 * (rain_days - 2))
-
-    # Heat stress: T > 35 sustained > 6h
-    heat_hours = sum(1 for h in window if h["temp"] > 35.0)
-    if heat_hours > 6:
-        risk += min(0.3, 0.2 + 0.016 * (heat_hours - 6))
-
-    # Frost risk: T < 5 present
-    frost_hours = sum(1 for h in window if h["temp"] < 5.0)
-    if frost_hours > 0:
-        risk += min(0.4, 0.2 + 0.05 * frost_hours)
-
-    return min(1.0, risk)
+    t_mean = sum(h["temp"] for h in favorable) / len(favorable)
+    future_lwd = lwd_now + len(favorable)
+    threshold = lwd_threshold_at(infection_model, t_mean)
+    return min(1.0, future_lwd / threshold) if threshold > 0 else 0.0
 
 
-def disaster_factor(disaster_alerts, cap=0.3):
-    """Boost risk based on disaster warnings (0 to cap)."""
+# Disaster warning level -> risk increment. Graded instead of a flat cap
+# (blue/yellow/orange/red per CMA warning levels).
+_DISASTER_LEVELS = {'红': 0.3, '橙': 0.25, '黄': 0.2, '蓝': 0.1}
+
+
+def disaster_factor(disaster_alerts):
+    """Risk increment from disaster warnings, graded by warning level."""
     if not disaster_alerts:
         return 0.0
-    return cap
+    best = 0.0
+    for alert in disaster_alerts:
+        for kw, value in _DISASTER_LEVELS.items():
+            if kw in alert:
+                best = max(best, value)
+    return best if best > 0.0 else 0.15
 
 
 ALERT_NONE = 'NONE'
@@ -117,16 +130,17 @@ class ForecastNode(Node):
             'crop_profiles_path', 'config/crop_profiles.yaml')
         self.declare_parameter(
             'forecast_params_path', 'config/forecast_params.yaml')
-        self.declare_parameter('mobile_stale_sec', 2.0)
+        self.declare_parameter('env_stale_sec', 180.0)
         self.declare_parameter('fusion_stale_sec', 30.0)
 
         self.crop_type = self.get_parameter('crop_type').value
-        self.mobile_stale_sec = self.get_parameter('mobile_stale_sec').value
+        self.env_stale_sec = self.get_parameter('env_stale_sec').value
         self.fusion_stale_sec = self.get_parameter('fusion_stale_sec').value
 
         self.profiles = self._load_profiles(
             self.get_parameter('crop_profiles_path').value)
         self.profile = self.profiles.get(self.crop_type, {})
+        self.infection_model = self._load_infection_model(self.profile)
         self.params = self._load_params(
             self.get_parameter('forecast_params_path').value)
 
@@ -140,7 +154,7 @@ class ForecastNode(Node):
         self.sub_fusion = self.create_subscription(
             FusionResult, '/fusion/diagnosis', self.on_fusion, 10)
         self.sub_env = self.create_subscription(
-            Environment, '/sensor/environment_mobile', self.on_env, qos)
+            Environment, '/sensor/environment_fixed', self.on_env, qos)
 
         self.sub_weather = self.create_subscription(
             WeatherForecast, '/weather/forecast', self.on_weather, 10)
@@ -194,6 +208,17 @@ class ForecastNode(Node):
         self.get_logger().warn(f'Forecast params not found: {path}, using defaults')
         return {}
 
+    def _load_infection_model(self, profile):
+        im = profile.get('infection_model')
+        if not im:
+            self.get_logger().warn(
+                f'No infection_model for crop={self.crop_type}, '
+                f'falling back to defaults')
+            return dict(DEFAULT_INFECTION_MODEL)
+        merged = dict(DEFAULT_INFECTION_MODEL)
+        merged.update(im)
+        return merged
+
     def on_fusion(self, msg: FusionResult):
         now = self.get_clock().now().nanoseconds / 1e9
         self.last_fusion = msg
@@ -204,6 +229,13 @@ class ForecastNode(Node):
         self.last_env = msg
         self.last_env_ts = now
 
+        # Fixed-interval resampling: history tracks wall-clock cadence,
+        # not the (bursty) environment message rate, so regression slopes
+        # are not diluted by duplicate risk values.
+        sample_interval = self.params.get('history_sample_sec', 300)
+        if self.history and (
+                now - self.history[-1]['timestamp']) < sample_interval:
+            return
         sample = {
             'timestamp': now,
             'risk_score': (self.last_fusion.risk_score
@@ -263,34 +295,37 @@ class ForecastNode(Node):
         risk_threshold = self.params.get('risk_threshold', 0.7)
         lwd_margin = self.params.get('lwd_margin_hours', 2.0)
         hum_trend_th = self.params.get('humidity_trend_threshold', 0.3)
-        lwd_threshold = self.profile.get('lwd_threshold_hours', 6.0)
+        lwd_threshold = float(self.infection_model['lwd_base_hours'])
         w_local = self.params.get('blend_weight_local', 0.4)
         w_weather = self.params.get('blend_weight_weather', 0.6)
-        boost_cap = self.params.get('disaster_boost_cap', 0.3)
 
-        # Local trend
-        local_risk = TrendForecaster.predict(self.history, prediction_hours, 'risk_score')
+        current_risk = float(self.last_fusion.risk_score)
+        current_lwd = float(self.last_fusion.lwd_hours)
+
+        # Trend slopes (direction only — never used for value extrapolation)
         humidity_slope = TrendForecaster.linear_trend(self.history, 'humidity')
+        risk_slope = TrendForecaster.linear_trend(self.history, 'risk_score')
 
-        # Weather risk
+        # Weather-driven future risk via infection model
         weather_available = (self.last_weather is not None
                              and (now - self.last_weather_ts) <= self.weather_stale_sec)
 
-        # Hybrid blend
         if weather_available:
-            weather_risk = weather_risk_model(
-                self.last_weather["hours"], prediction_hours)
-            d_factor = disaster_factor(self.last_weather["disaster_alerts"], boost_cap)
-            blended = w_local * local_risk + w_weather * weather_risk
+            future_risk = future_infection_risk(
+                self.infection_model, self.last_weather["hours"],
+                prediction_hours, current_lwd)
+            d_factor = disaster_factor(self.last_weather["disaster_alerts"])
+            blended = max(current_risk,
+                          w_local * current_risk + w_weather * future_risk)
             blended = max(0.0, min(1.0, blended + d_factor))
         else:
-            blended = local_risk
+            future_risk = 0.0
+            d_factor = 0.0
+            blended = current_risk
 
         alert_type = ALERT_NONE
         description = '风险平稳，无需预警'
         alert_source = 'LOCAL'
-
-        risk_slope = TrendForecaster.linear_trend(self.history, 'risk_score')
 
         # Weather-driven alerts first (higher priority)
         if weather_available:
@@ -319,21 +354,24 @@ class ForecastNode(Node):
                     description = f'未来3天持续高温 {heat_hours}h > 35°C'
                     alert_source = 'WEATHER'
 
-        # Local-driven alerts (fallback)
+        # Local/hybrid-driven alerts
         if alert_type == ALERT_NONE:
             if blended >= risk_threshold and risk_slope > 0:
                 alert_type = ALERT_RISING_RISK
-                description = f'预测 24h 风险 {blended:.2f}，呈上升趋势'
+                description = (
+                    f'预测 {prediction_hours}h 风险 {blended:.2f} '
+                    f'(当前 {current_risk:.2f}, 天气推算 {future_risk:.2f})，'
+                    f'呈上升趋势')
                 alert_source = 'HYBRID' if weather_available else 'LOCAL'
-            elif (self.last_fusion.lwd_hours >= (lwd_threshold - lwd_margin)
+            elif (current_lwd >= (lwd_threshold - lwd_margin)
                   and humidity_slope >= hum_trend_th):
                 alert_type = ALERT_LATENT_OUTBREAK
                 description = (
-                    f'LWD 接近阈值 ({self.last_fusion.lwd_hours:.1f}h / '
+                    f'LWD 接近阈值 ({current_lwd:.1f}h / '
                     f'{lwd_threshold:.1f}h)，湿度持续上升')
                 alert_source = 'LOCAL'
             elif (self.last_env is not None
-                  and (now - self.last_env_ts) <= self.mobile_stale_sec
+                  and (now - self.last_env_ts) <= self.env_stale_sec
                   and self.last_env.air_humidity <= 40.0
                   and self.last_env.air_temp >= 30.0):
                 alert_type = ALERT_DROUGHT_STRESS

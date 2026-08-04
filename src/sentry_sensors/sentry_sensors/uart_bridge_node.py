@@ -7,14 +7,14 @@ import serial
 import struct
 
 from geometry_msgs.msg import Twist
-from sentry_interfaces.msg import (
-    Environment, SoilNutrition, ChassisStatus, ServoCmd, ChassisConfig)
+from sentry_interfaces.msg import ChassisStatus, ServoCmd, ChassisConfig
 from std_srvs.srv import Trigger
 
 
 # ---- Protocol Constants ----
+# TYPE 0x01 (mobile sensor frame) is deprecated along with the mobile
+# environment sensors; such frames are ignored if they ever arrive.
 FRAME_HEADER = b'\xaa\x55'
-TYPE_SENSOR = 0x01
 TYPE_CHASSIS = 0x03
 TYPE_MOTION_CMD = 0x81
 TYPE_SERVO_CMD = 0x82
@@ -46,41 +46,6 @@ def encode_frame(frame_type: int, payload: bytes) -> bytes:
     body = bytes([frame_type, length]) + payload
     crc = crc16_ccitt(body)
     return FRAME_HEADER + body + struct.pack('>H', crc)
-
-
-def decode_sensor_frame(frame: bytes):
-    if len(frame) < 6:
-        return None
-    if frame[0:2] != FRAME_HEADER:
-        return None
-    frame_type = frame[2]
-    length = frame[3]
-    if len(frame) != 4 + length + 2:
-        return None
-    body = frame[2:4 + length]
-    payload = frame[4:4 + length]
-    rx_crc = struct.unpack('>H', frame[4 + length:4 + length + 2])[0]
-    if crc16_ccitt(body) != rx_crc:
-        return None
-    if frame_type != TYPE_SENSOR:
-        return None
-    if length != 24:
-        return None
-    (ts, at, ah, ac, st, sh, sec, sn, sp, sk, sph) = struct.unpack(
-        '<IhHHhHHHHHH', payload)
-    return {
-        'timestamp_ms': ts,
-        'air_temp': at / 10.0,
-        'air_humi': ah / 10.0,
-        'air_co2': ac,
-        'soil_temp': st / 10.0,
-        'soil_humi': sh / 10.0,
-        'soil_ec': sec,
-        'soil_n': sn,
-        'soil_p': sp,
-        'soil_k': sk,
-        'soil_ph': sph / 10.0,
-    }
 
 
 def decode_chassis_frame(frame: bytes):
@@ -162,10 +127,6 @@ class UartBridgeNode(Node):
             self.ser = None
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
-        self.pub_env = self.create_publisher(
-            Environment, '/sensor/environment_mobile', qos)
-        self.pub_soil = self.create_publisher(
-            SoilNutrition, '/sensor/soil_nutrition', qos)
         self.pub_chassis = self.create_publisher(
             ChassisStatus, '/sentry/chassis/status', qos)
 
@@ -233,33 +194,7 @@ class UartBridgeNode(Node):
 
     def handle_frame(self, frame: bytes):
         frame_type = frame[2]
-        if frame_type == TYPE_SENSOR:
-            data = decode_sensor_frame(frame)
-            if data:
-                now = self.get_clock().now().to_msg()
-                env = Environment()
-                env.header.stamp = now
-                env.air_temp = data['air_temp']
-                env.air_humidity = data['air_humi']
-                env.air_co2 = float(data['air_co2'])
-                env.soil_temp = data['soil_temp']
-                env.soil_humidity = data['soil_humi']
-                env.leaf_wetness = 0.0  # not available from mobile sensor
-                env.data_source = 'MOBILE'
-                self.pub_env.publish(env)
-
-                soil = SoilNutrition()
-                soil.header.stamp = now
-                soil.nitrogen = float(data['soil_n'])
-                soil.phosphorus = float(data['soil_p'])
-                soil.potassium = float(data['soil_k'])
-                soil.ph = data['soil_ph']
-                soil.ec = float(data['soil_ec'])
-                self.pub_soil.publish(soil)
-            else:
-                self.get_logger().debug(
-                    f'Invalid sensor frame discarded: {frame.hex()}')
-        elif frame_type == TYPE_CHASSIS:
+        if frame_type == TYPE_CHASSIS:
             data = decode_chassis_frame(frame)
             if data:
                 msg = ChassisStatus()

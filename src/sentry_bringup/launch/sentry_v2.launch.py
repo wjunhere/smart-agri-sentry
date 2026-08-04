@@ -346,7 +346,7 @@ def generate_launch_description():
             parameters=[{
                 'crop_type': LaunchConfiguration('crop_type'),
                 'crop_profiles_path': crop_profiles_path,
-                'mobile_stale_sec': 2.0,
+                'env_stale_sec': 180.0,
                 'fixed_env_window_sec': 10.0,
             }],
             condition=IfCondition(LaunchConfiguration('enable_advisory')),
@@ -408,7 +408,7 @@ def generate_launch_description():
                 'crop_type': LaunchConfiguration('crop_type'),
                 'crop_profiles_path': crop_profiles_path,
                 'forecast_params_path': os.path.join(config_dir, 'forecast_params.yaml'),
-                'mobile_stale_sec': 2.0,
+                'env_stale_sec': 180.0,
                 'fusion_stale_sec': 30.0,
             }],
             condition=IfCondition(LaunchConfiguration('enable_advisory')),

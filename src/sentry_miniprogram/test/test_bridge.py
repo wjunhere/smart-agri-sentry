@@ -143,13 +143,12 @@ def test_forecast_empty(client):
 
 
 def test_sensor_topic_names():
-    """Bridge must subscribe to the topics uart_bridge actually publishes."""
+    """Bridge subscribes to the fixed-node environment topic (sole source)."""
     node = MiniProgramBridgeNode()
     subscribed = [c.args[1] for c in node.create_subscription.call_args_list]
-    assert '/sensor/environment_mobile' in subscribed
-    assert '/sensor/soil_nutrition' in subscribed
-    assert '/sentry/sensor/environment_mobile' not in subscribed
-    assert '/sentry/sensor/soil_nutrition' not in subscribed
+    assert '/sensor/environment_fixed' in subscribed
+    assert '/sensor/environment_mobile' not in subscribed
+    assert '/sensor/soil_nutrition' not in subscribed
 
 
 def test_stack_status_idle(client):

@@ -37,8 +37,7 @@
 │  ├─ plant_detector_node   → /vision/plant_detected         │
 │  ├─ vision_diagnosis_node → /vision/diagnosis              │
 │  ├─ vision_pipeline_node  → 云台多角度扫描编排              │
-│  ├─ uart_bridge_node      → /sensor/environment_mobile     │
-│  │                         → /sensor/soil_nutrition        │
+│  ├─ uart_bridge_node      → /sentry/chassis/status         │
 │  ├─ lora_bridge_node      → /sensor/environment_fixed      │
 │  └─ imu_node              → /sensor/imu                    │
 └──────────────────────────┬──────────────────────────────────┘
@@ -64,7 +63,7 @@
 
 - **多作物支持**：动态切换番茄/小麦/草莓
 - **事件驱动巡检**：植株检测 → 停车 → 云台多角度扫描 → 分类 → 决策 → 恢复巡航
-- **24h 叶面湿润时长（LWD）**：固定环境节点 5 分钟采样，288 点滑动窗口，冷启动优雅降级
+- **24h 叶面湿润时长（LWD）**：固定环境节点每 60s 回传一帧，1440 点滑动窗口，冷启动优雅降级
 - **严格优先级门控**：VISION_DOMINANT → LATENT_SUSPICION → HIGH_HUMIDITY_PATHOGEN → DROUGHT_STRESS → BALANCED，带滞回缓冲防抖动
 - **结构化农艺建议**：YAML 规则引擎，毫秒级响应，比赛可解释
 - **Web 前端**：实时监控面板，支持 mock 模式离线测试
@@ -81,10 +80,9 @@
 | 激光雷达 | STL19P / LD19 | CP2102 UART，波特率 230400 |
 | IMU | YB-IMU（CH340 USB） | /dev/myimu，波特率 115200 |
 | 云台 | 2-DOF 舵机 | RDK X5 直接 PWM 控制 |
-| 移动传感器 | 七合一空气（CJ702）+ 土壤 NPK（RS485 ModBus）+ 叶面湿度（LWS10） | 通过底盘串口回传 |
 | 固定环境节点 | STM32F103RCT6 + SX1262（LoRa） | 太阳能供电，IP65 防水盒 |
-| LoRa 网关 | E22-400TBH-SC（ESP32-S3 + SX1262） | USB 串口直连 RDK X5 |
-| 固定节点传感器 | SHT30 + SCD40 + RS485 土壤 + LWS10 | 空气/CO₂/土壤/叶面湿度 |
+| LoRa 网关 | E22-400TBH-SC（内置 STM32F103CBT6 + SX1262） | USB 串口直连 RDK X5 |
+| 固定节点传感器 | CJ702 七合一空气 + 叶面湿度（RS485）+ 土壤 TTL（温湿度/EC） | 空气/CO₂/土壤/叶面湿度 |
 
 ---
 
@@ -194,7 +192,7 @@ smart_agri_sentry/
 | `plant_detector_node` | `image_raw` | `/vision/plant_detected` | YOLOv8n BPU 推理，触发停车 |
 | `vision_diagnosis_node` | `image_raw` | `/vision/diagnosis` | MobileNetV3 BPU 作物特异性病害分类 |
 | `vision_pipeline_node` | `image_raw`, `plant_detected` | `/vision/diagnosis`, 舵机指令 | 云台多角度扫描编排 |
-| `uart_bridge_node` | `cmd_vel`, `servo_cmd` | `/sensor/environment_mobile`, `/sensor/soil_nutrition`, `/sentry/chassis/status` | STM32F4 串口桥接 |
+| `uart_bridge_node` | `cmd_vel`, `servo_cmd` | `/sentry/chassis/status` | STM32F4 串口桥接 |
 | `lora_bridge_node` | LoRa 网关串口 | `/sensor/environment_fixed` | 固定环境节点数据（多点采集，融合时取平均） |
 | `imu_node` | - | `/sensor/imu` | YB-IMU 驱动（含 CH340 ARM 读取补丁） |
 
@@ -202,7 +200,7 @@ smart_agri_sentry/
 
 | 节点 | 订阅 | 发布 | 说明 |
 |------|------|------|------|
-| `fusion_node` | `/vision/diagnosis`, `/sensor/environment_fixed`, `/sensor/environment_mobile` | `/fusion/diagnosis` | LWD 滑动窗口 + 优先级门控 + 证据链 |
+| `fusion_node` | `/vision/diagnosis`, `/sensor/environment_fixed` | `/fusion/diagnosis` | LWD 滑动窗口 + 优先级门控 + 证据链 |
 | `forecast_node` | `/fusion/diagnosis` | `/forecast/alert` | 趋势外推（默认），预留 SIR-like 模型 |
 | `advisory_node` | `/fusion/diagnosis`, `/forecast/alert` | `/advisory/action` | YAML 规则引擎，事件触发 |
 
@@ -222,13 +220,13 @@ smart_agri_sentry/
 
 ### LWD 滑动窗口与冷启动
 
-固定环境节点每 5 分钟采样一次，维护 288 点（24 小时）滑动窗口：
+固定环境节点每 60s 回传一帧，维护 1440 点（24 小时）滑动窗口：
 
 | 阶段 | 时长 | LWD 策略 | LATENT_SUSPICION | 置信度 |
 |------|------|---------|------------------|--------|
-| COLD_BOOT | 0–30 分钟 | 回退瞬时湿度，上限 0.70 | 禁用 | ×0.75 |
-| WARM_UP | 30 分钟–24 小时 | 短时 LWD 线性外推 | 条件放宽 | ×0.90 |
-| NORMAL | ≥24 小时 | 完整 24h 查表 | 正常触发 | ×1.0 |
+| COLD_BOOT | 首帧到达前 | 回退瞬时湿度，上限 0.70 | 禁用 | ×0.75 |
+| WARM_UP | <12 点（约 12 分钟） | 短时 LWD 线性外推 | 条件放宽 | ×0.90 |
+| NORMAL | ≥12 点（窗口在 24h 内逐渐填满） | 完整 24h 查表 | 正常触发 | ×1.0 |
 
 作物特异性 LWD 阈值：
 

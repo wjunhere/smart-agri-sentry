@@ -191,7 +191,7 @@ STM32_Programmer_CLI -c port=SWD -w build/chassis.bin 0x08000000 -v -rst
 
 烧录后通过串口验证：
 
-- `TYPE=0x01` 传感器汇总帧：30 字节
+- `TYPE=0x01` 传感器汇总帧：30 字节（**已弃用**：该帧随移动环境传感器移除而废弃，仅保留作协议史参考）
 - `TYPE=0x03` 底盘状态帧：25 字节（含 19 字节 payload）
 - CRC16-CCITT 校验通过
 

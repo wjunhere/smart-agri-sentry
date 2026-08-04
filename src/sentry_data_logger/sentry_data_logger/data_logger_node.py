@@ -24,7 +24,7 @@ _TOPIC_TYPES = {
     '/mission/status': MissionStatus,
     '/forecast/alert': ForecastAlert,
     '/advisory/action': AdvisoryAction,
-    '/sensor/environment_mobile': Environment,
+    '/sensor/environment_fixed': Environment,
     '/vision/diagnosis': Diagnosis,
 }
 
@@ -37,7 +37,7 @@ class DataLoggerNode(Node):
             '/mission/status',
             '/forecast/alert',
             '/advisory/action',
-            '/sensor/environment_mobile',
+            '/sensor/environment_fixed',
             '/vision/diagnosis',
         ])
         self.declare_parameter('bag_base_dir', 'bags')
@@ -127,7 +127,7 @@ class DataLoggerNode(Node):
 
     def _latest_context(self):
         ctx = {}
-        env = self._latest.get('/sensor/environment_mobile')
+        env = self._latest.get('/sensor/environment_fixed')
         if env is not None:
             ctx['environment'] = {
                 'air_temp': float(env.air_temp),
