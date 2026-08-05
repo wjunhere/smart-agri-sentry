@@ -4,6 +4,7 @@ import importlib
 import os
 import sys
 import types
+from unittest.mock import MagicMock
 from pathlib import Path
 from unittest import mock
 
@@ -83,6 +84,18 @@ def test_hikrobot_launch_uses_adaptive_exposure():
     assert "'gamma': 2.0" in launch_source
 
 
+def test_hikrobot_launch_keeps_hardware_auto_limits():
+    repo_root = Path(__file__).parents[2]
+    launch_source = (repo_root / 'sentry_bringup' / 'launch' /
+                     'sentry_v2.launch.py').read_text(encoding='utf-8')
+
+    assert "'auto_exposure_min_us': 2000.0" in launch_source
+    assert "'auto_exposure_max_us': 40000.0" in launch_source
+    assert "'auto_gain_min': 0.0" in launch_source
+    assert "'auto_gain_max': 12.0" in launch_source
+    assert "'enable_image_enhancement': True" in launch_source
+
+
 def test_gamma_lut_brightens_dark_pixels():
     from sentry_bringup.hikrobot_camera_node import HikrobotCameraNode
 
@@ -133,6 +146,19 @@ def test_read_optional_float_returns_camera_hardware_value():
     node.cam.MV_CC_GetFloatValue.side_effect = set_camera_value
 
     assert node._read_optional_float('ExposureTime') == 23456.0
+
+
+def test_read_optional_float_limits_returns_camera_range():
+    from sentry_bringup.hikrobot_camera_node import HikrobotCameraNode
+
+    node = HikrobotCameraNode.__new__(HikrobotCameraNode)
+    node.mvs = types.SimpleNamespace(
+        MVCC_FLOATVALUE=lambda: types.SimpleNamespace(
+            fCurValue=5840.0, fMin=20.0, fMax=200000.0))
+    node.cam = MagicMock()
+    node.cam.MV_CC_GetFloatValue.return_value = 0
+
+    assert node._read_optional_float_limits('ExposureTime') == (20.0, 200000.0)
 
 
 def test_decode_ctypes_string_handles_null_terminated_bytes():

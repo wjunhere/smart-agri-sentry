@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
   float front_sector_half_angle = 30.0f;
   float front_sector_center_angle = 90.0f;
   float danger_threshold = 0.5f;
+  float front_corridor_half_width = 0.24f;
   bool enable_filter = false;
 
   node->declare_parameter<std::string>("product_name", product_name);
@@ -55,6 +56,7 @@ int main(int argc, char** argv) {
   node->declare_parameter<float>("front_sector_half_angle", front_sector_half_angle);
   node->declare_parameter<float>("front_sector_center_angle", front_sector_center_angle);
   node->declare_parameter<float>("danger_threshold", danger_threshold);
+  node->declare_parameter<float>("front_corridor_half_width", front_corridor_half_width);
   node->declare_parameter<bool>("enable_filter", enable_filter);
 
   node->get_parameter("product_name", product_name);
@@ -73,6 +75,7 @@ int main(int argc, char** argv) {
   node->get_parameter("front_sector_half_angle", front_sector_half_angle);
   node->get_parameter("front_sector_center_angle", front_sector_center_angle);
   node->get_parameter("danger_threshold", danger_threshold);
+  node->get_parameter("front_corridor_half_width", front_corridor_half_width);
   node->get_parameter("enable_filter", enable_filter);
 
   if (product_name == "LDLiDAR_LD06") {
@@ -139,7 +142,8 @@ int main(int argc, char** argv) {
         {
           auto obstacle_info = ldlidar::ObstacleProcessor::process(
             laser_scan_points, front_sector_half_angle, danger_threshold,
-            front_sector_center_angle, setting.laser_scan_dir);
+            front_sector_center_angle, setting.laser_scan_dir,
+            front_corridor_half_width, static_cast<float>(setting.min_range));
           obstacle_info.header.stamp = node->now();
           obstacle_info.header.frame_id = setting.frame_id;
           obstacle_pub->publish(obstacle_info);

@@ -1,0 +1,3 @@
+# Cruise speed saved from web frontend and loaded during preheat
+cruise_speed: 0.18
+fixed_point_stops: []

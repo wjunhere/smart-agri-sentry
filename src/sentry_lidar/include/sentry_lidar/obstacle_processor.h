@@ -13,7 +13,9 @@ class ObstacleProcessor {
     float front_sector_half_angle_deg,
     float danger_threshold_m,
     float front_sector_center_angle_deg = 0.0f,
-    bool reverse_direction = false);
+    bool reverse_direction = false,
+    float front_corridor_half_width_m = 0.24f,
+    float min_obstacle_range_m = 0.30f);
 };
 
 }  // namespace ldlidar

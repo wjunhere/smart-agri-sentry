@@ -224,6 +224,27 @@ def test_mission_status_not_complete_before_last_waypoint():
     assert _mission_status_is_complete(msg) is False
 
 
+def test_mission_status_syncs_manual_mode_after_external_stop():
+    from sentry_mission.web_remote_node import WebRemoteNode
+
+    web = WebRemoteNode.__new__(WebRemoteNode)
+    web.lock = threading.Lock()
+    web.mode = 'AUTO'
+    web.frontend_started_auto = True
+    web.completion_stop_started = True
+    web._last_mission_state = None
+    web.batch_recorder = mock.MagicMock()
+
+    WebRemoteNode.on_mission_status(
+        web,
+        types.SimpleNamespace(state='MANUAL', current_wp_idx=2, total_wps=3),
+    )
+
+    assert web.mode == 'MANUAL'
+    assert web.frontend_started_auto is False
+    assert web.completion_stop_started is False
+
+
 def test_validate_vision_inference_mode_accepts_known_modes():
     from sentry_mission.web_remote_node import _validate_vision_inference_mode
 
@@ -397,6 +418,74 @@ def test_set_cruise_speed_updates_mission_and_nav_controller():
         mock.call('/mission_control_node', 'cruise_speed', 0.22),
         mock.call('/controller_server', 'FollowPath.desired_linear_vel', 0.22),
     ]
+
+
+def test_fixed_point_stops_round_trip_preserves_cruise_speed(tmp_path):
+    from sentry_mission.web_remote_node import (
+        _read_mission_params,
+        _write_mission_params,
+    )
+
+    config_path = tmp_path / 'mission_params.yaml'
+    _write_mission_params(config_path, {
+        'cruise_speed': 0.22,
+        'fixed_point_stops': [{
+            'x': 1.2,
+            'y': -0.5,
+            'radius': 0.2,
+            'disease_class': 'early_blight',
+        }],
+    })
+
+    params = _read_mission_params(config_path)
+
+    assert params['cruise_speed'] == 0.22
+    assert params['fixed_point_stops'] == [{
+        'x': 1.2,
+        'y': -0.5,
+        'radius': 0.2,
+        'disease_class': 'early_blight',
+    }]
+
+
+def test_validate_fixed_point_stops_rejects_unknown_tomato_disease():
+    from sentry_mission.web_remote_node import _validate_fixed_point_stops
+
+    with pytest.raises(ValueError, match='disease_class'):
+        _validate_fixed_point_stops([{
+            'x': 0,
+            'y': 0,
+            'radius': 0.2,
+            'disease_class': 'unknown',
+        }])
+
+
+def test_write_fixed_point_stops_preserves_existing_mission_params(tmp_path):
+    from sentry_mission.web_remote_node import (
+        _read_mission_params,
+        _write_fixed_point_stops_file,
+        _write_mission_params,
+    )
+
+    config_path = tmp_path / 'mission_params.yaml'
+    _write_mission_params(config_path, {'cruise_speed': 0.23})
+
+    _write_fixed_point_stops_file(config_path, [{
+        'x': 0.0,
+        'y': 1.0,
+        'radius': 0.25,
+        'disease_class': 'healthy',
+    }])
+
+    assert _read_mission_params(config_path) == {
+        'cruise_speed': 0.23,
+        'fixed_point_stops': [{
+            'x': 0.0,
+            'y': 1.0,
+            'radius': 0.25,
+            'disease_class': 'healthy',
+        }],
+    }
 
 
 def test_capture_camera_image_saves_latest_jpeg_to_configured_directory(tmp_path):

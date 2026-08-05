@@ -24,6 +24,16 @@ def test_encode_frame_structure():
     assert frame[3] == 7
 
 
+def test_encode_frame_structure_legacy_sensor():
+    # Legacy 0x01 sensor frames still encode correctly (frame format is
+    # type-agnostic); decoding them is no longer supported by the bridge.
+    frame = encode_frame(0x01, bytes([0x00] * 24))
+    assert len(frame) == 30
+    assert frame[0:2] == b'\xaa\x55'
+    assert frame[2] == 0x01
+    assert frame[3] == 24
+
+
 def test_decode_chassis_frame_valid_legacy():
     # Legacy 7-byte chassis frame: left/right speed (mm/s), battery (0.01V),
     # alarm bits.

@@ -68,6 +68,32 @@ TEST(ObstacleProcessorTest, VehicleFrontUsesCorrectedLaserAngle) {
   EXPECT_TRUE(info.obstacle_detected);
   EXPECT_EQ(info.front_point_count, 1);
 }
+
+TEST(ObstacleProcessorTest, NearRangeSelfReflectionIsIgnored) {
+  Points2D points;
+  // 27 mm is below the configured 0.30 m lidar minimum range.
+  points.emplace_back(270.0f, 27, 100, 0);
+
+  ObstacleInfo info = ObstacleProcessor::process(
+      points, 90.0f, 0.5f, 90.0f, true);
+
+  EXPECT_TRUE(std::isnan(info.front_min_distance));
+  EXPECT_FALSE(info.obstacle_detected);
+  EXPECT_EQ(info.front_point_count, 0);
+}
+TEST(ObstacleProcessorTest, SideWallAtFortyFiveDegreesOutsideBodyCorridorIsIgnored) {
+  Points2D points;
+  // laser_scan_dir=true reverses 225 deg to 135 deg. With a vehicle-front
+  // angle of 90 deg this is a 45 deg side-wall return, not a path obstacle.
+  points.emplace_back(225.0f, 500, 100, 0);
+
+  ObstacleInfo info = ObstacleProcessor::process(
+      points, 90.0f, 0.5f, 90.0f, true);
+
+  EXPECT_TRUE(std::isnan(info.front_min_distance));
+  EXPECT_FALSE(info.obstacle_detected);
+  EXPECT_EQ(info.front_point_count, 0);
+}
 TEST(LaserScanAngleTest, ReversesRawClockwiseAnglesWhenConfigured) {
   EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(0.0f, true), 0.0f);
   EXPECT_FLOAT_EQ(NormalizeScanAngleDegrees(90.0f, true), 270.0f);
