@@ -71,6 +71,7 @@ models/*
 !models/yolo_quantize/
 models/yolo_quantize/*
 !models/yolo_quantize/output_r2/
+!models/yolo_quantize/output_11s/
 !models/quantization/
 models/quantization/*
 !models/quantization/*_config.yaml
