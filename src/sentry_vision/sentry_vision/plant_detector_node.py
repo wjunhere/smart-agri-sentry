@@ -30,6 +30,7 @@ class PlantDetectorNode(Node):
         self.vote_min = max(1, int(self.get_parameter('vote_min').value))
         self._votes = deque(maxlen=self.vote_window)
         self._last_hit = None  # (bbox, confidence, area_ratio) of latest raw hit
+        self._voted = False  # rising/falling edge logging of voted detection
 
         self._model = None
         self._dnn = None
@@ -136,7 +137,15 @@ class PlantDetectorNode(Node):
             self._last_hit = (bbox, confidence, area_ratio)
         if sum(self._votes) >= self.vote_min and self._last_hit is not None:
             hb, hc, ha = self._last_hit
+            if not self._voted:
+                self._voted = True
+                self.get_logger().info(
+                    f'Detection vote passed: confidence={hc:.3f}, '
+                    f'area_ratio={ha:.3f}')
             return True, hb, hc, ha
+        if self._voted:
+            self._voted = False
+            self.get_logger().info('Detection vote lost')
         return False, [0.0, 0.0, 0.0, 0.0], 0.0, 0.0
 
     def _detect(self, image):
