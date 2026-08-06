@@ -68,6 +68,9 @@ openspec/
 models/*
 !models/*.onnx
 !models/*.bin
+!models/yolo_quantize/
+models/yolo_quantize/*
+!models/yolo_quantize/output_r2/
 !models/quantization/
 models/quantization/*
 !models/quantization/*_config.yaml
