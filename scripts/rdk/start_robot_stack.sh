@@ -177,21 +177,19 @@ check_no_duplicate_nodes() {
     return 0
   fi
 
-  # With ROS2CLI_NO_DAEMON=1 the graph query is live, so any remaining
-  # duplicate is a real duplicate process — except for the known stale
-  # /mission_control_node graph entry, which we verify via pgrep.
-  local remaining=""
+  # With ROS2CLI_NO_DAEMON=1 the graph query is live, but DDS discovery can
+  # still retain ghost entries for recently killed processes. A duplicate
+  # only counts when two real processes carry the node name in their
+  # cmdline (this also catches a manually `ros2 run`-started duplicate).
+  local remaining="" node proc_count
   while IFS= read -r node; do
     [ -n "$node" ] || continue
-    if [ "$node" = "/mission_control_node" ]; then
-      local mission_count
-      mission_count="$(pgrep -fc '/sentry_mission/mission_control_node' || true)"
-      if [ "${mission_count:-0}" -le 1 ]; then
-        warn "Ignoring stale ROS graph duplicate for /mission_control_node; actual process count=${mission_count:-0}"
-        continue
-      fi
+    proc_count="$(pgrep -fc -- "${node#/}" || true)"
+    if [ "${proc_count:-0}" -le 1 ]; then
+      warn "Ignoring stale ROS graph duplicate for ${node}; actual process count=${proc_count:-0}"
+      continue
     fi
-    remaining="${remaining}${node}
+    remaining="${remaining}${node} (processes=${proc_count})
 "
   done <<EOF
 $duplicates
@@ -199,7 +197,7 @@ EOF
 
   if [ -n "$remaining" ]; then
     printf '%b' "$remaining"
-    fail "Duplicate ROS node names detected after full-clean start"
+    fail "Duplicate ROS node processes detected after full-clean start"
   fi
 }
 
