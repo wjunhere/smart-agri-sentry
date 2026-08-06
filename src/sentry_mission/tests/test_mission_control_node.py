@@ -24,6 +24,10 @@ def node(ros_context):
         n.destroy_node()
 
 
+def test_plant_subscription_uses_sensor_callback_group(node):
+    """Plant callbacks must run independently of the patrol timer."""
+    assert node.sub_plant.callback_group is node.sensor_callback_group
+
 def test_resume_does_not_publish_cruise_speed(node):
     """RESUME state should not publish non-zero cmd_vel even after delay expires."""
     node.state = 'RESUME'
@@ -555,10 +559,11 @@ def test_plant_trigger_clears_stale_fusion_before_analysis(node):
     node.current_wp_idx = 0
     node.sending_goal = True
     node.last_fusion = FusionResult()
-    node.last_plant = PlantDetection()
-    node.last_plant.detected = True
-    node.last_plant.confidence = 0.95
-    node.last_plant.area_ratio = 0.20
+    detection = PlantDetection()
+    detection.detected = True
+    detection.confidence = 0.95
+    detection.area_ratio = 0.20
+    node.on_plant_detected(detection)
     node.reference_x = 0.0
     node.reference_y = 0.0
     node.odom_x = 1.0
@@ -582,10 +587,11 @@ def test_first_plant_trigger_stops_before_dedup_distance(node):
     node.reference_y = 0.0
     node.odom_x = 0.10
     node.odom_y = 0.0
-    node.last_plant = PlantDetection()
-    node.last_plant.detected = True
-    node.last_plant.confidence = 0.60
-    node.last_plant.area_ratio = 0.35
+    detection = PlantDetection()
+    detection.detected = True
+    detection.confidence = 0.60
+    detection.area_ratio = 0.35
+    node.on_plant_detected(detection)
 
     with patch.object(node, '_cancel_nav2_task_async'), \
          patch.object(node.navigator, 'isTaskComplete', return_value=False):
@@ -593,6 +599,29 @@ def test_first_plant_trigger_stops_before_dedup_distance(node):
 
     assert node.state == 'STOPPED'
 
+
+def test_voted_plant_detection_survives_following_negative_frame(node):
+    """A confirmed plant must not be lost when the next frame is negative."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+
+    positive = PlantDetection()
+    positive.detected = True
+    positive.confidence = 0.60
+    positive.area_ratio = 0.20
+    negative = PlantDetection()
+    negative.detected = False
+
+    node.on_plant_detected(positive)
+    node.on_plant_detected(negative)
+
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node.navigator, 'isTaskComplete', return_value=False):
+        node.tick()
+
+    assert node.state == 'STOPPED'
 
 def test_fusion_before_current_diagnosis_is_ignored(node):
     """Only fusion generated after this scan's diagnosis may finish analysis."""

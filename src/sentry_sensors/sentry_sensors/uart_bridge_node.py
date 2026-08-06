@@ -1,6 +1,4 @@
 import math
-import threading
-import time
 
 import rclpy
 from rclpy.node import Node
@@ -9,14 +7,14 @@ import serial
 import struct
 
 from geometry_msgs.msg import Twist
-from sentry_interfaces.msg import ChassisStatus, ServoCmd, ChassisConfig
+from sentry_interfaces.msg import (
+    Environment, SoilNutrition, ChassisStatus, ServoCmd, ChassisConfig)
 from std_srvs.srv import Trigger
 
 
 # ---- Protocol Constants ----
-# TYPE 0x01 (mobile sensor frame) is deprecated along with the mobile
-# environment sensors; such frames are ignored if they ever arrive.
 FRAME_HEADER = b'\xaa\x55'
+TYPE_SENSOR = 0x01
 TYPE_CHASSIS = 0x03
 TYPE_MOTION_CMD = 0x81
 TYPE_SERVO_CMD = 0x82
@@ -48,6 +46,41 @@ def encode_frame(frame_type: int, payload: bytes) -> bytes:
     body = bytes([frame_type, length]) + payload
     crc = crc16_ccitt(body)
     return FRAME_HEADER + body + struct.pack('>H', crc)
+
+
+def decode_sensor_frame(frame: bytes):
+    if len(frame) < 6:
+        return None
+    if frame[0:2] != FRAME_HEADER:
+        return None
+    frame_type = frame[2]
+    length = frame[3]
+    if len(frame) != 4 + length + 2:
+        return None
+    body = frame[2:4 + length]
+    payload = frame[4:4 + length]
+    rx_crc = struct.unpack('>H', frame[4 + length:4 + length + 2])[0]
+    if crc16_ccitt(body) != rx_crc:
+        return None
+    if frame_type != TYPE_SENSOR:
+        return None
+    if length != 24:
+        return None
+    (ts, at, ah, ac, st, sh, sec, sn, sp, sk, sph) = struct.unpack(
+        '<IhHHhHHHHHH', payload)
+    return {
+        'timestamp_ms': ts,
+        'air_temp': at / 10.0,
+        'air_humi': ah / 10.0,
+        'air_co2': ac,
+        'soil_temp': st / 10.0,
+        'soil_humi': sh / 10.0,
+        'soil_ec': sec,
+        'soil_n': sn,
+        'soil_p': sp,
+        'soil_k': sk,
+        'soil_ph': sph / 10.0,
+    }
 
 
 def decode_chassis_frame(frame: bytes):
@@ -122,15 +155,17 @@ class UartBridgeNode(Node):
         self._last_sent_mode = None
 
         try:
-            # Blocking read with a short timeout: the RX thread sleeps in
-            # read() until bytes arrive instead of polling at 100 Hz.
-            self.ser = serial.Serial(port, baud, timeout=0.1)
+            self.ser = serial.Serial(port, baud, timeout=0)
             self.get_logger().info(f'UART open: {port} @ {baud}')
         except serial.SerialException as e:
             self.get_logger().error(f'Failed to open UART: {e}')
             self.ser = None
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.pub_env = self.create_publisher(
+            Environment, '/sensor/environment_mobile', qos)
+        self.pub_soil = self.create_publisher(
+            SoilNutrition, '/sensor/soil_nutrition', qos)
         self.pub_chassis = self.create_publisher(
             ChassisStatus, '/sentry/chassis/status', qos)
 
@@ -150,72 +185,81 @@ class UartBridgeNode(Node):
         self.srv_reset_enc = self.create_service(
             Trigger, '/sentry/reset_encoder', self.reset_encoder_cb)
 
+        self.timer_rx = self.create_timer(0.01, self.rx_tick)
         self.rx_buf = bytearray()
-        self._rx_lock = threading.Lock()
-        self._rx_running = False
-        self._rx_thread = None
-        if self.ser is not None:
-            self._rx_running = True
-            self._rx_thread = threading.Thread(
-                target=self._rx_loop, daemon=True,
-                name='uart_bridge_rx')
-            self._rx_thread.start()
 
         self.last_chassis_time = self.get_clock().now()
         self.chassis_timed_out = False
         self.timer_chassis_timeout = self.create_timer(
             1.0, self.check_chassis_timeout)
 
-    def _rx_loop(self):
-        """Dedicated blocking reader thread.
-
-        read() blocks until bytes arrive (or the 100ms serial timeout
-        fires), so the node idles at ~0% CPU instead of polling the UART
-        at 100 Hz. Frame parsing and publishing happen right here; rclpy
-        publish is thread-safe.
-        """
-        while self._rx_running:
+    def rx_tick(self):
+        if self.ser is None or not self.ser.is_open:
+            return
+        try:
             try:
+                waiting = self.ser.in_waiting
+            except OSError:
+                # Some UART drivers (e.g. RDK X5 dw-apb-uart) do not
+                # support the TIOCINQ ioctl used by in_waiting.
+                waiting = None
+            if waiting is None:
                 chunk = self.ser.read(256)
-            except serial.SerialException as e:
-                if not self._rx_running:
-                    break
-                self.get_logger().error(f'UART read error: {e}')
-                time.sleep(0.5)  # do not spin on a persistent error
-                continue
-            except OSError as e:
-                if not self._rx_running:
-                    break
-                self.get_logger().error(f'UART read error: {e}')
-                time.sleep(0.5)
-                continue
-            if not chunk:
-                continue
-            with self._rx_lock:
+            elif waiting:
+                chunk = self.ser.read(waiting)
+            else:
+                chunk = b''
+            if chunk:
                 self.rx_buf.extend(chunk)
-            self._parse_rx_buf()
+        except serial.SerialException as e:
+            self.get_logger().error(f'UART read error: {e}')
+            return
 
-    def _parse_rx_buf(self):
         while True:
-            with self._rx_lock:
-                idx = self.rx_buf.find(FRAME_HEADER)
-                if idx < 0:
-                    if len(self.rx_buf) > 256:
-                        self.rx_buf.clear()
-                    return
-                if len(self.rx_buf) < idx + 4:
-                    return
-                length = self.rx_buf[idx + 3]
-                total = 4 + length + 2
-                if len(self.rx_buf) < idx + total:
-                    return
-                frame = bytes(self.rx_buf[idx:idx + total])
-                del self.rx_buf[:idx + total]
+            idx = self.rx_buf.find(FRAME_HEADER)
+            if idx < 0:
+                if len(self.rx_buf) > 256:
+                    self.rx_buf.clear()
+                break
+            if len(self.rx_buf) < idx + 4:
+                break
+            length = self.rx_buf[idx + 3]
+            total = 4 + length + 2
+            if len(self.rx_buf) < idx + total:
+                break
+            frame = bytes(self.rx_buf[idx:idx + total])
+            self.rx_buf = self.rx_buf[idx + total:]
             self.handle_frame(frame)
 
     def handle_frame(self, frame: bytes):
         frame_type = frame[2]
-        if frame_type == TYPE_CHASSIS:
+        if frame_type == TYPE_SENSOR:
+            data = decode_sensor_frame(frame)
+            if data:
+                now = self.get_clock().now().to_msg()
+                env = Environment()
+                env.header.stamp = now
+                env.air_temp = data['air_temp']
+                env.air_humidity = data['air_humi']
+                env.air_co2 = float(data['air_co2'])
+                env.soil_temp = data['soil_temp']
+                env.soil_humidity = data['soil_humi']
+                env.leaf_wetness = 0.0  # not available from mobile sensor
+                env.data_source = 'MOBILE'
+                self.pub_env.publish(env)
+
+                soil = SoilNutrition()
+                soil.header.stamp = now
+                soil.nitrogen = float(data['soil_n'])
+                soil.phosphorus = float(data['soil_p'])
+                soil.potassium = float(data['soil_k'])
+                soil.ph = data['soil_ph']
+                soil.ec = float(data['soil_ec'])
+                self.pub_soil.publish(soil)
+            else:
+                self.get_logger().debug(
+                    f'Invalid sensor frame discarded: {frame.hex()}')
+        elif frame_type == TYPE_CHASSIS:
             data = decode_chassis_frame(frame)
             if data:
                 msg = ChassisStatus()
@@ -352,12 +396,6 @@ class UartBridgeNode(Node):
         return response
 
     def destroy_node(self):
-        self._rx_running = False
-        rx_thread = getattr(self, '_rx_thread', None)
-        if rx_thread is not None:
-            # read() returns within one serial timeout, so join is fast
-            rx_thread.join(timeout=1.0)
-            self._rx_thread = None
         if self.ser and self.ser.is_open:
             self.ser.close()
         super().destroy_node()

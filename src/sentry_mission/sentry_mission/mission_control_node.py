@@ -78,6 +78,7 @@ class MissionControlNode(Node):
         self.declare_parameter('cruise_speed', 0.3)
         self.declare_parameter('detection_confidence_threshold', 0.5)
         self.declare_parameter('min_area_ratio', 0.05)
+        self.declare_parameter('plant_trigger_latch_sec', 0.75)
         self.declare_parameter('analyze_timeout_sec', 5.0)
         self.declare_parameter('resume_delay_sec', 2.0)
         self.declare_parameter('waypoints_file', '')
@@ -135,6 +136,8 @@ class MissionControlNode(Node):
         self.det_conf_th = self.get_parameter(
             'detection_confidence_threshold').value
         self.min_area_ratio = self.get_parameter('min_area_ratio').value
+        self.plant_trigger_latch_sec = self.get_parameter(
+            'plant_trigger_latch_sec').value
         self.analyze_timeout = self.get_parameter('analyze_timeout_sec').value
         self.resume_delay = self.get_parameter('resume_delay_sec').value
         self.min_resume_distance = self.get_parameter('min_resume_distance').value
@@ -246,7 +249,8 @@ class MissionControlNode(Node):
         # -- Subscribers --
         self.sub_plant = self.create_subscription(
             PlantDetection, '/vision/plant_detected',
-            self.on_plant_detected, 10)
+            self.on_plant_detected, 10,
+            callback_group=self.sensor_callback_group)
         self.sub_fusion = self.create_subscription(
             FusionResult, '/fusion/diagnosis', self.on_fusion, 10)
         self.sub_resume = self.create_subscription(
@@ -302,6 +306,8 @@ class MissionControlNode(Node):
         self.plants_detected = 0
         self.plants_analyzed = 0
         self.last_plant = None
+        self.pending_plant = None
+        self.pending_plant_time = 0.0
         self._scanned_plant_positions = []
         self.last_fusion = None
         self.active_fixed_point_disease = None
@@ -312,6 +318,7 @@ class MissionControlNode(Node):
         self._cancel_in_progress = False
         self._nav_goal_lock = threading.Lock()
         self._state_lock = threading.Lock()
+        self._plant_lock = threading.Lock()
         self._next_goal_time = 0.0
         self.last_obstacle = None
         self.last_scan = None
@@ -605,9 +612,16 @@ class MissionControlNode(Node):
         self.last_nav_cmd_time = self.get_clock().now().nanoseconds / 1e9
 
     def on_plant_detected(self, msg: PlantDetection):
-        if self.state != STATE_PATROL:
-            return
-        self.last_plant = msg
+        with self._plant_lock:
+            if self.state != STATE_PATROL:
+                return
+            self.last_plant = msg
+            if msg.detected:
+                # Keep a voted positive long enough for the patrol tick to consume it;
+                # a following negative frame must not erase the stop request.
+                self.pending_plant = msg
+                self.pending_plant_time = (
+                    self.get_clock().now().nanoseconds / 1e9)
 
     def on_fusion(self, msg: FusionResult):
         stamp = msg.header.stamp
@@ -800,7 +814,10 @@ class MissionControlNode(Node):
                 return False
             # Do not carry a plant frame into the bypass maneuver. A new
             # patrol frame is required after the vehicle has rejoined.
-            self.last_plant = None
+            with self._plant_lock:
+                self.last_plant = None
+                self.pending_plant = None
+                self.pending_plant_time = 0.0
             self.saved_wp_idx = self.current_wp_idx
             self._cancel_nav2_task_async()
             self.sending_goal = False
@@ -1018,12 +1035,22 @@ class MissionControlNode(Node):
                         f'retrying waypoint {self.current_wp_idx} after delay')
                     self._next_goal_time = now + 2.0
 
+            # Keep a voted detection briefly so a following negative camera
+            # frame cannot race the patrol timer and erase the stop request.
+            with self._plant_lock:
+                pending_plant = self.pending_plant
+                if (pending_plant is not None
+                        and now - self.pending_plant_time > self.plant_trigger_latch_sec):
+                    self.pending_plant = None
+                    self.pending_plant_time = 0.0
+                    pending_plant = None
+
             # Check for plant detection trigger (with de-duplication)
             if (self.state == STATE_PATROL
-                    and self.last_plant is not None
-                    and self.last_plant.detected
-                    and self.last_plant.confidence >= self.det_conf_th
-                    and self.last_plant.area_ratio >= self.min_area_ratio
+                    and pending_plant is not None
+                    and pending_plant.detected
+                    and pending_plant.confidence >= self.det_conf_th
+                    and pending_plant.area_ratio >= self.min_area_ratio
                     and self._should_trigger_scan()):
                 self.saved_wp_idx = self.current_wp_idx
                 self.last_fusion = None
@@ -1033,9 +1060,13 @@ class MissionControlNode(Node):
                     (self.odom_x, self.odom_y))
                 self.get_logger().info(
                     'Plant stop trigger accepted: '
-                    f'confidence={self.last_plant.confidence:.3f}, '
-                    f'area_ratio={self.last_plant.area_ratio:.3f}, '
+                    f'confidence={pending_plant.confidence:.3f}, '
+                    f'area_ratio={pending_plant.area_ratio:.3f}, '
                     f'distance={self._distance_from_reference():.3f}m')
+                with self._plant_lock:
+                    self.pending_plant = None
+                    self.pending_plant_time = 0.0
+                    self.last_plant = None
                 self._cancel_nav2_task_async()
                 self.sending_goal = False
                 self.last_goal_sent_time = 0.0
@@ -1294,7 +1325,10 @@ class MissionControlNode(Node):
         self._publish_stop()
         self.sending_goal = False
         self.last_goal_sent_time = 0.0
-        self.last_plant = None
+        with self._plant_lock:
+            self.last_plant = None
+            self.pending_plant = None
+            self.pending_plant_time = 0.0
         self._scanned_plant_positions.clear()
         self.active_fixed_point_disease = None
         self.handled_fixed_point_stops.clear()
