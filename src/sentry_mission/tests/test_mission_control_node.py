@@ -768,3 +768,75 @@ def test_normal_diagnosis_is_unchanged_without_active_fixed_point(node):
     assert result is diagnosis
     assert result.disease_class == 'healthy'
     assert result.confidence == 0.72
+
+
+# ---- Avoidance suppression for already-scanned plants ----
+
+def _arm_obstacle(node):
+    """Set up a front obstacle that would normally trigger avoidance."""
+    node.enable_obstacle_avoidance = True
+    node.state = 'PATROL'
+    node.odom_x = 0.0
+    node.odom_y = 0.0
+    node.waypoints = [{'x': 10.0, 'y': 10.0, 'yaw': 0.0}]
+    node.current_wp_idx = 0
+    node.avoidance_suppress_until = 0.0
+    obstacle = ObstacleInfo()
+    obstacle.front_min_distance = 0.3
+    node.last_obstacle = obstacle
+
+
+def test_scanned_plant_suppresses_obstacle_avoidance(node):
+    """Within avoidance_scanned_radius of a scanned plant: no avoidance."""
+    _arm_obstacle(node)
+    node._scanned_plant_positions = [(0.2, 0.1)]
+    assert node._front_obstacle_too_close() is False
+
+
+def test_unscanned_obstacle_still_triggers_avoidance(node):
+    """Away from any scanned plant: avoidance triggers as before."""
+    _arm_obstacle(node)
+    node._scanned_plant_positions = [(5.0, 5.0)]
+    assert node._front_obstacle_too_close() is True
+
+
+def test_scanned_positions_cleared_on_mission_start(node):
+    """New cruise resets odometry, so stale scan positions must be dropped."""
+    node._scanned_plant_positions = [(1.0, 2.0)]
+    with patch.object(node, 'pub_cmd'), \
+         patch.object(node, 'reset_wheel_odom_client') as c1, \
+         patch.object(node, 'reset_encoder_client') as c2, \
+         patch.object(node, '_reset_ekf_pose_async'):
+        c1.wait_for_service.return_value = False
+        c2.wait_for_service.return_value = False
+        node._prepare_autonomous_start()
+    assert node._scanned_plant_positions == []
+
+
+def test_patrol_start_resumes_detector(node):
+    """Entering AUTO must unpause the plant detector when it is available."""
+    with patch.object(node, 'pub_cmd'), \
+         patch.object(node, 'reset_wheel_odom_client') as c1, \
+         patch.object(node, 'reset_encoder_client') as c2, \
+         patch.object(node, '_reset_ekf_pose_async'), \
+         patch.object(node, 'pause_detector_client') as pc:
+        c1.wait_for_service.return_value = False
+        c2.wait_for_service.return_value = False
+        pc.service_is_ready.return_value = True
+        node._prepare_autonomous_start()
+    pc.call_async.assert_called_once()
+    assert pc.call_async.call_args[0][0].data is False
+
+
+def test_patrol_start_warns_when_detector_missing(node):
+    """Detector process dead: no resume call, but start must not crash."""
+    with patch.object(node, 'pub_cmd'), \
+         patch.object(node, 'reset_wheel_odom_client') as c1, \
+         patch.object(node, 'reset_encoder_client') as c2, \
+         patch.object(node, '_reset_ekf_pose_async'), \
+         patch.object(node, 'pause_detector_client') as pc:
+        c1.wait_for_service.return_value = False
+        c2.wait_for_service.return_value = False
+        pc.service_is_ready.return_value = False
+        node._prepare_autonomous_start()
+    pc.call_async.assert_not_called()

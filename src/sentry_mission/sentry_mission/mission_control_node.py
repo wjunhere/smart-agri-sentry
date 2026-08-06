@@ -127,6 +127,9 @@ class MissionControlNode(Node):
         self.declare_parameter('min_row_segment_length', 0.0)
         self.declare_parameter('servo_flip_cooldown_sec', 8.0)
         self.declare_parameter('servo_flip_cooldown_distance', 0.8)
+        # Plants already scanned are expected obstacles near the row; don't
+        # run the avoidance maneuver when passing them again.
+        self.declare_parameter('avoidance_scanned_radius', 1.0)
 
         self.cruise_speed = self.get_parameter('cruise_speed').value
         self.det_conf_th = self.get_parameter(
@@ -208,6 +211,8 @@ class MissionControlNode(Node):
             'servo_flip_cooldown_sec').value
         self.servo_flip_cooldown_distance = self.get_parameter(
             'servo_flip_cooldown_distance').value
+        self.avoidance_scanned_radius = self.get_parameter(
+            'avoidance_scanned_radius').value
 
         # -- Waypoints --
         wp_file = self.get_parameter('waypoints_file').value
@@ -297,6 +302,7 @@ class MissionControlNode(Node):
         self.plants_detected = 0
         self.plants_analyzed = 0
         self.last_plant = None
+        self._scanned_plant_positions = []
         self.last_fusion = None
         self.active_fixed_point_disease = None
         self.handled_fixed_point_stops = set()
@@ -715,6 +721,10 @@ class MissionControlNode(Node):
         now = self.get_clock().now().nanoseconds / 1e9
         if now < self.avoidance_suppress_until:
             return False
+        for px, py in self._scanned_plant_positions:
+            if math.hypot(self.odom_x - px,
+                          self.odom_y - py) < self.avoidance_scanned_radius:
+                return False
         dist = self.last_obstacle.front_min_distance
         if not (
             math.isfinite(dist)
@@ -873,6 +883,26 @@ class MissionControlNode(Node):
         req.data = True
         return self.pause_detector_client.call_async(req)
 
+    def _resume_detector_at_patrol_start(self):
+        """Ensure the plant detector is live when a patrol starts.
+
+        Frontends pause the detector in MANUAL to save BPU load, but the
+        resume path depends on which frontend (or raw service call) started
+        the cruise — do it here so every patrol starts with detection on.
+        """
+        try:
+            ready = self.pause_detector_client.service_is_ready()
+        except Exception:
+            ready = False
+        if not ready:
+            self.get_logger().warn(
+                'Plant detector unavailable at patrol start — '
+                'plant stops will NOT trigger this cruise!')
+            return
+        req = SetBool.Request()
+        req.data = False
+        self.pause_detector_client.call_async(req)
+
     def _resume_detector_async(self):
         req = SetBool.Request()
         req.data = False
@@ -998,6 +1028,8 @@ class MissionControlNode(Node):
                 self.last_fusion = None
                 self._diagnosis_published_at_ns = 0
                 self.plants_detected += 1
+                self._scanned_plant_positions.append(
+                    (self.odom_x, self.odom_y))
                 self.get_logger().info(
                     'Plant stop trigger accepted: '
                     f'confidence={self.last_plant.confidence:.3f}, '
@@ -1262,9 +1294,11 @@ class MissionControlNode(Node):
         self.sending_goal = False
         self.last_goal_sent_time = 0.0
         self.last_plant = None
+        self._scanned_plant_positions.clear()
         self.active_fixed_point_disease = None
         self.handled_fixed_point_stops.clear()
         self.has_scan_reference = False
+        self._resume_detector_at_patrol_start()
         self._next_goal_time = self.get_clock().now().nanoseconds / 1e9 + 0.8
         self._call_trigger_service_async(
             self.reset_wheel_odom_client, 'wheel odometry reset')

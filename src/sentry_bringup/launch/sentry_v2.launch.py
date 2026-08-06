@@ -395,6 +395,7 @@ def generate_launch_description():
                 'min_row_segment_length': 0.0,
                 'servo_flip_cooldown_sec': 8.0,
                 'servo_flip_cooldown_distance': 0.8,
+                'avoidance_scanned_radius': 1.0,
             }],
             output='screen',
         ),
