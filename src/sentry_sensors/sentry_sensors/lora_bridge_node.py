@@ -3,30 +3,40 @@ import struct
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy
 import serial
 
 from sentry_interfaces.msg import Environment
 
 
-FRAME_HEADER = b'\xaa\x55'
-CRC8_POLY = 0x31
-CRC8_INIT = 0x00
-MSG_TYPE_ENV = 0x01
-MSG_TYPE_ERROR = 0xFF
+# Frame format (matches stm32_cj702_lora_opt_v2 lora_frame.c):
+#   [0]     SYNC  = 0xAA
+#   [1]     TYPE  = frame_type(high nibble) | status(low nibble)
+#   [2]     SEQ   = incrementing sequence number
+#   [3]     FLAG  = 0x00
+#   [4]     LEN   = payload length
+#   [5..N]  PAYLOAD
+#   [N+1..] CRC16-CCITT (poly 0x1021, init 0xFFFF) over bytes [1..N], big-endian
+SYNC_BYTE = 0xAA
+FRAME_TYPE_MASK = 0xF0
+FRAME_TYPE_DATA = 0x10
+STATUS_NODE_OK = 0x01
+STATUS_SRC_ACTIVE = 0x02
+FRAME_OVERHEAD = 7  # sync(1) + type(1) + seq(1) + flag(1) + len(1) + crc16(2)
 PAYLOAD_LEN_ENV = 24
 PAYLOAD_LEN_CJ702 = 14
+PAYLOAD_LEN_ERROR = 1
 
 
-def crc8_maxim(data: bytes) -> int:
-    crc = CRC8_INIT
+def crc16_ccitt(data: bytes) -> int:
+    """CRC-16/CCITT-FALSE: poly 0x1021, init 0xFFFF."""
+    crc = 0xFFFF
     for byte in data:
-        crc ^= byte
+        crc ^= byte << 8
         for _ in range(8):
-            if crc & 0x80:
-                crc = ((crc << 1) ^ CRC8_POLY) & 0xFF
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
             else:
-                crc = (crc << 1) & 0xFF
+                crc = (crc << 1) & 0xFFFF
     return crc
 
 
@@ -34,11 +44,10 @@ def _to_int16(value: int) -> int:
     return value if value < 0x8000 else value - 0x10000
 
 
-def decode_environment_frame(frame: bytes):
-    """Decode a validated environment frame into a dict of floats."""
-    if len(frame) != 5 + PAYLOAD_LEN_ENV + 1:
+def decode_environment_payload(payload: bytes):
+    """Decode a 24-byte environment payload into a dict of floats."""
+    if len(payload) != PAYLOAD_LEN_ENV:
         return None
-    payload = frame[5:5 + PAYLOAD_LEN_ENV]
     values = struct.unpack('>HHHHHHHHHHHH', payload)
     (co2, hcho, tvoc, pm25, pm10, air_temp_raw, air_humidity_raw,
      soil_temp_raw, soil_humidity_raw, ec_raw,
@@ -59,11 +68,10 @@ def decode_environment_frame(frame: bytes):
     }
 
 
-def decode_cj702_frame(frame: bytes):
-    """Decode a validated CJ702 air-sensor frame (14-byte payload) into a dict."""
-    if len(frame) != 5 + PAYLOAD_LEN_CJ702 + 1:
+def decode_cj702_payload(payload: bytes):
+    """Decode a 14-byte CJ702 air-sensor payload into a dict."""
+    if len(payload) != PAYLOAD_LEN_CJ702:
         return None
-    payload = frame[5:5 + PAYLOAD_LEN_CJ702]
     values = struct.unpack('>HHHHHHH', payload)
     (co2, hcho, tvoc, pm25, pm10, air_temp_raw, air_humidity_raw) = values
     return {
@@ -116,7 +124,7 @@ MOCK_JITTER = {
 class LoraBridgeNode(Node):
     def __init__(self, **kwargs):
         super().__init__('lora_bridge_node', **kwargs)
-        self.declare_parameter('uart_port', '/dev/ttyACM0')
+        self.declare_parameter('uart_port', '/dev/lora')
         self.declare_parameter('baudrate', 9600)
         self.declare_parameter('use_mock', False)
         self._use_mock = self.get_parameter('use_mock').value
@@ -134,9 +142,11 @@ class LoraBridgeNode(Node):
                 self.get_logger().error(f'Failed to open LoRa UART: {e}')
                 self.ser = None
 
-        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+        # Reliable QoS: only 1 msg/min, and it keeps default-QoS subscribers
+        # (miniprogram bridge, advisory, data logger, rosbridge web frontend)
+        # compatible — BEST_EFFORT here would silently starve them.
         self.pub_env = self.create_publisher(
-            Environment, '/sensor/environment_fixed', qos)
+            Environment, '/sensor/environment_fixed', 10)
 
         if self._use_mock:
             self.timer_mock = self.create_timer(5.0, self._mock_tick)
@@ -153,7 +163,7 @@ class LoraBridgeNode(Node):
             self.ser = serial.Serial(port, baud, timeout=0.01)
             self.get_logger().info(f'LoRa UART reopened: {port} @ {baud}')
             return True
-        except (serial.SerialException, OSError) as e:
+        except (serial.SerialException, OSError):
             return False
 
     def _generate_mock_data(self):
@@ -197,7 +207,7 @@ class LoraBridgeNode(Node):
             return
 
         while True:
-            idx = self.rx_buf.find(FRAME_HEADER)
+            idx = self.rx_buf.find(bytes([SYNC_BYTE]))
             if idx < 0:
                 if len(self.rx_buf) > 512:
                     self.rx_buf.clear()
@@ -205,7 +215,7 @@ class LoraBridgeNode(Node):
             if len(self.rx_buf) < idx + 5:
                 break
             payload_len = self.rx_buf[idx + 4]
-            total = 5 + payload_len + 1
+            total = 5 + payload_len + 2
             if len(self.rx_buf) < idx + total:
                 break
             frame = bytes(self.rx_buf[idx:idx + total])
@@ -213,28 +223,34 @@ class LoraBridgeNode(Node):
             self._handle_frame(frame)
 
     def _handle_frame(self, frame: bytes):
-        msg_type = frame[3]
-        payload_len = frame[4]
-        if msg_type == MSG_TYPE_ENV:
-            if crc8_maxim(frame[:-1]) != frame[-1]:
-                self.get_logger().warn('CRC mismatch on environment frame')
-                return
-            if payload_len == PAYLOAD_LEN_ENV:
-                data = decode_environment_frame(frame)
-            elif payload_len == PAYLOAD_LEN_CJ702:
-                data = decode_cj702_frame(frame)
-            else:
-                self.get_logger().warn(
-                    f'Unexpected payload length: {payload_len}')
-                return
-            if data is None:
-                return
-            self._publish_environment(data)
-        elif msg_type == MSG_TYPE_ERROR:
-            error_code = frame[5] if payload_len >= 1 else None
-            self.get_logger().warn(f'LoRa error frame: code={error_code}')
+        if crc16_ccitt(frame[1:-2]) != struct.unpack('>H', frame[-2:])[0]:
+            self.get_logger().warn('CRC16 mismatch on LoRa frame')
+            return
+        frame_type = frame[1] & FRAME_TYPE_MASK
+        status = frame[1] & 0x0F
+        seq = frame[2]
+        payload = frame[5:-2]
+        if frame_type != FRAME_TYPE_DATA:
+            self.get_logger().warn(f'Unknown frame type: 0x{frame_type:02x}')
+            return
+        if len(payload) == PAYLOAD_LEN_ERROR:
+            self.get_logger().warn(
+                f'LoRa error frame: seq={seq} code={payload[0]}')
+            return
+        if len(payload) == PAYLOAD_LEN_ENV:
+            data = decode_environment_payload(payload)
+        elif len(payload) == PAYLOAD_LEN_CJ702:
+            data = decode_cj702_payload(payload)
         else:
-            self.get_logger().warn(f'Unknown msg_type: {msg_type}')
+            self.get_logger().warn(
+                f'Unexpected payload length: {len(payload)}')
+            return
+        if data is None:
+            return
+        if not (status & STATUS_NODE_OK):
+            self.get_logger().warn(
+                f'LoRa node status flags: 0x{status:02x} (seq={seq})')
+        self._publish_environment(data)
 
     def _publish_environment(self, data: dict):
         msg = Environment()

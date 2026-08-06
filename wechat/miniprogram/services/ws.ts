@@ -149,6 +149,12 @@ function applySensorData(d: any) {
     envSoilP: d.soil_p ?? null,
     envSoilK: d.soil_k ?? null,
     envLeafWetness: d.leaf_wetness ?? null,
+    envLeafTemp: d.leaf_temp ?? null,
+    envHcho: d.hcho ?? null,
+    envTvoc: d.tvoc ?? null,
+    envPm25: d.pm25 ?? null,
+    envPm10: d.pm10 ?? null,
+    envEc: d.ec ?? null,
     envDataSource: d.data_source || '',
   });
 }

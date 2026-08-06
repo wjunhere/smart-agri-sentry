@@ -1,6 +1,6 @@
 import { getStore, onStoreChange } from '../../services/store';
 import { getCameraSnapshotUrl } from '../../services/api';
-import { formatTemp, formatHumidity, formatCO2, formatNPK } from '../../utils/format';
+import { formatTemp, formatHumidity, formatCO2, formatNPK, formatUgM3, formatPpb, formatEc } from '../../utils/format';
 
 const REFRESH_MS = 200;
 
@@ -17,12 +17,18 @@ Component({
     airTemp: '--',
     airHumidity: '--',
     co2: '--',
+    hcho: '--',
+    tvoc: '--',
+    pm25: '--',
+    pm10: '--',
     soilTemp: '--',
     soilHumidity: '--',
+    soilEc: '--',
     soilN: '--',
     soilP: '--',
     soilK: '--',
     leafWetness: '--',
+    leafTemp: '--',
     dataSource: '--',
   },
   lifetimes: {
@@ -61,12 +67,18 @@ Component({
         airTemp: ph(s.envAirTemp, formatTemp),
         airHumidity: ph(s.envAirHumidity, formatHumidity),
         co2: ph(s.envCO2, formatCO2),
+        hcho: ph(s.envHcho, formatUgM3),
+        tvoc: ph(s.envTvoc, formatPpb),
+        pm25: ph(s.envPm25, formatUgM3),
+        pm10: ph(s.envPm10, formatUgM3),
         soilTemp: ph(s.envSoilTemp, formatTemp),
         soilHumidity: ph(s.envSoilHumidity, formatHumidity),
+        soilEc: ph(s.envEc, formatEc),
         soilN: ph(s.envSoilN, formatNPK),
         soilP: ph(s.envSoilP, formatNPK),
         soilK: ph(s.envSoilK, formatNPK),
         leafWetness: ph(s.envLeafWetness, formatHumidity),
+        leafTemp: ph(s.envLeafTemp, formatTemp),
         dataSource: s.envDataSource || (s.connected ? '·' : '--'),
       });
     },

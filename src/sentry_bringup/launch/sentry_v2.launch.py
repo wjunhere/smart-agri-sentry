@@ -26,6 +26,9 @@ def generate_launch_description():
     imu_launch_path = os.path.join(
         get_package_share_directory('sentry_sensors'), 'launch', 'imu.launch.py')
 
+    lora_launch_path = os.path.join(
+        get_package_share_directory('sentry_sensors'), 'launch', 'lora_bridge.launch.py')
+
     mission_pkg = get_package_share_directory('sentry_mission')
     ekf_config = os.path.join(mission_pkg, 'config', 'ekf.yaml')
     nav2_config = os.path.join(mission_pkg, 'config', 'nav2_no_map.yaml')
@@ -236,6 +239,11 @@ def generate_launch_description():
         # IMU
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(imu_launch_path)
+        ),
+
+        # LoRa fixed-station sensor bridge (/sensor/environment_fixed)
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(lora_launch_path)
         ),
 
         # Wheel odometry

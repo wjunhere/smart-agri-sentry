@@ -44,6 +44,12 @@ const store = {
   envSoilP: null as number | null,
   envSoilK: null as number | null,
   envLeafWetness: null as number | null,
+  envLeafTemp: null as number | null,
+  envHcho: null as number | null,
+  envTvoc: null as number | null,
+  envPm25: null as number | null,
+  envPm10: null as number | null,
+  envEc: null as number | null,
   envDataSource: '',
 
   missionState: 'IDLE',

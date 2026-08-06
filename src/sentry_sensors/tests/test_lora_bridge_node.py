@@ -5,12 +5,15 @@ import rclpy
 from unittest.mock import patch, MagicMock
 
 from sentry_sensors.lora_bridge_node import (
-    crc8_maxim,
-    decode_environment_frame,
-    decode_cj702_frame,
+    crc16_ccitt,
+    decode_environment_payload,
+    decode_cj702_payload,
     LoraBridgeNode,
     MOCK_BASELINE,
     MOCK_JITTER,
+    FRAME_TYPE_DATA,
+    STATUS_NODE_OK,
+    STATUS_SRC_ACTIVE,
 )
 
 
@@ -21,24 +24,32 @@ def ros_context():
     rclpy.shutdown()
 
 
-def _build_frame(values):
-    payload = struct.pack('>HHHHHHHHHHHH', *values)
-    header = bytes([0xAA, 0x55, 0x01, 0x01, len(payload)])
+def _build_frame(payload: bytes, frame_type=FRAME_TYPE_DATA,
+                 status=STATUS_NODE_OK | STATUS_SRC_ACTIVE, seq=0):
+    header = bytes([0xAA, frame_type | status, seq, 0x00, len(payload)])
     frame = header + payload
-    return frame + bytes([crc8_maxim(frame)])
+    return frame + struct.pack('>H', crc16_ccitt(frame[1:]))
 
 
-def test_crc8_maxim_empty():
-    assert crc8_maxim(b'') == 0x00
+def _build_env_frame(values, **kwargs):
+    return _build_frame(struct.pack('>HHHHHHHHHHHH', *values), **kwargs)
 
 
-def test_crc8_maxim_header_only():
-    # Computed with current CRC-8/MAXIM implementation (no reflection)
-    assert crc8_maxim(b'\xaa\x55') == 0x9A
+def _build_cj702_frame(values, **kwargs):
+    return _build_frame(struct.pack('>HHHHHHH', *values), **kwargs)
 
 
-def test_decode_environment_frame_valid():
-    frame = _build_frame([
+def test_crc16_ccitt_empty():
+    assert crc16_ccitt(b'') == 0xFFFF
+
+
+def test_crc16_ccitt_known_vector():
+    # CRC-16/CCITT-FALSE of "123456789" is 0x29B1
+    assert crc16_ccitt(b'123456789') == 0x29B1
+
+
+def test_decode_environment_payload_valid():
+    payload = struct.pack('>HHHHHHHHHHHH', *[
         303, 20, 120, 35, 50,          # co2, hcho, tvoc, pm25, pm10
         2700, 6000,                    # air_temp, air_humidity
         2500, 5000,                    # soil_temp, soil_humidity
@@ -46,7 +57,7 @@ def test_decode_environment_frame_valid():
         7000,                          # leaf_wetness
         2800,                          # leaf_temp
     ])
-    data = decode_environment_frame(frame)
+    data = decode_environment_payload(payload)
     assert data['air_co2'] == 303.0
     assert data['hcho'] == 20.0
     assert data['tvoc'] == 120.0
@@ -61,8 +72,8 @@ def test_decode_environment_frame_valid():
     assert data['leaf_temp'] == 28.0
 
 
-def test_decode_environment_frame_negative_temperatures():
-    frame = _build_frame([
+def test_decode_environment_payload_negative_temperatures():
+    payload = struct.pack('>HHHHHHHHHHHH', *[
         0, 0, 0, 0, 0,
         0xF63C, 0,      # -25.00 C
         0xF63C, 0,      # -25.00 C
@@ -70,26 +81,18 @@ def test_decode_environment_frame_negative_temperatures():
         0,
         0xF63C,         # -25.00 C
     ])
-    data = decode_environment_frame(frame)
+    data = decode_environment_payload(payload)
     assert data['air_temp'] == -25.0
     assert data['soil_temp'] == -25.0
     assert data['leaf_temp'] == -25.0
 
 
-def test_decode_environment_frame_wrong_length():
-    assert decode_environment_frame(b'\xaa\x55\x01\x01\x00\x00') is None
+def test_decode_environment_payload_wrong_length():
+    assert decode_environment_payload(b'\x00' * 10) is None
 
 
-def _build_cj702_frame(values):
-    """Build a 14-byte CJ702 frame with header, payload, CRC."""
-    payload = struct.pack('>HHHHHHH', *values)
-    header = bytes([0xAA, 0x55, 0x01, 0x01, len(payload)])
-    frame = header + payload
-    return frame + bytes([crc8_maxim(frame)])
-
-
-def test_decode_cj702_frame_valid():
-    frame = _build_cj702_frame([
+def test_decode_cj702_payload_valid():
+    payload = struct.pack('>HHHHHHH', *[
         450,   # co2 ppm
         15,    # hcho raw
         80,    # tvoc ppb
@@ -98,7 +101,7 @@ def test_decode_cj702_frame_valid():
         2650,  # air_temp 26.5 C
         5500,  # air_humidity 55.0% RH
     ])
-    data = decode_cj702_frame(frame)
+    data = decode_cj702_payload(payload)
     assert data['air_co2'] == 450.0
     assert data['hcho'] == 15.0
     assert data['tvoc'] == 80.0
@@ -113,22 +116,38 @@ def test_decode_cj702_frame_valid():
     assert data['leaf_temp'] == 0.0
 
 
-def test_decode_cj702_frame_negative_temp():
-    frame = _build_cj702_frame([
+def test_decode_cj702_payload_negative_temp():
+    payload = struct.pack('>HHHHHHH', *[
         0, 0, 0, 0, 0,
         0xF63C,  # -25.0 C
         0,       # humidity
     ])
-    data = decode_cj702_frame(frame)
+    data = decode_cj702_payload(payload)
     assert data['air_temp'] == -25.0
 
 
-def test_decode_cj702_frame_wrong_length():
-    assert decode_cj702_frame(b'\xaa\x55\x01\x01\x00\x00') is None
+def test_decode_cj702_payload_wrong_length():
+    assert decode_cj702_payload(b'\x00' * 10) is None
+
+
+def test_handle_frame_real_capture(node):
+    """Real frame captured from the fixed node over LoRa (2026-08-06)."""
+    frame = bytes.fromhex(
+        'aa 13 17 00 18 01 db 00 07 00 2f 00 05 00 06 09 63'
+        ' 14 52 00 00 01 d5 00 00 01 e7 00 00 b9 b3')
+    node.pub_env.publish = MagicMock()
+    node._handle_frame(frame)
+    node.pub_env.publish.assert_called_once()
+    msg = node.pub_env.publish.call_args[0][0]
+    assert msg.air_co2 == 475.0
+    assert msg.air_temp == pytest.approx(24.03)
+    assert msg.air_humidity == pytest.approx(52.02)
+    assert msg.soil_humidity == pytest.approx(4.69)
+    assert msg.data_source == 'FIXED_LORA'
 
 
 def test_handle_frame_cj702(node):
-    """14-byte CJ702 frame should be parsed and published."""
+    """14-byte CJ702 payload should be parsed and published."""
     frame = _build_cj702_frame([450, 15, 80, 25, 40, 2650, 5500])
     node.pub_env.publish = MagicMock()
     node._handle_frame(frame)
@@ -137,6 +156,14 @@ def test_handle_frame_cj702(node):
     assert msg.air_co2 == 450.0
     assert msg.soil_temp == 0.0
     assert msg.data_source == 'FIXED_LORA'
+
+
+def test_handle_frame_error(node):
+    """1-byte payload is an error frame: logged, not published."""
+    frame = _build_frame(bytes([0x42]))
+    node.pub_env.publish = MagicMock()
+    node._handle_frame(frame)
+    node.pub_env.publish.assert_not_called()
 
 
 @pytest.fixture
@@ -151,18 +178,20 @@ def test_node_creates_publisher(node):
     assert node.pub_env.topic_name == '/sensor/environment_fixed'
 
 
+def test_node_default_port(node):
+    assert node.get_parameter('uart_port').value == '/dev/lora'
+
+
 def test_handle_frame_crc_mismatch(node):
-    bad_frame = bytes([0xAA, 0x55, 0x01, 0x01, 24]) + bytes(24) + bytes([0xFF])
+    frame = bytearray(_build_env_frame([0] * 12))
+    frame[-1] ^= 0xFF  # corrupt CRC
     node.pub_env.publish = MagicMock()
-    node._handle_frame(bad_frame)
+    node._handle_frame(bytes(frame))
     node.pub_env.publish.assert_not_called()
 
 
-def test_handle_frame_unknown_msg_type(node):
-    payload = bytes(24)
-    header = bytes([0xAA, 0x55, 0x01, 0xAB, len(payload)])
-    frame = header + payload
-    frame += bytes([crc8_maxim(frame)])
+def test_handle_frame_unknown_type(node):
+    frame = _build_frame(bytes(24), frame_type=0x20)
     node.pub_env.publish = MagicMock()
     node._handle_frame(frame)
     node.pub_env.publish.assert_not_called()

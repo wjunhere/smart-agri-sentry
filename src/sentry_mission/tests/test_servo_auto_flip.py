@@ -275,3 +275,40 @@ def test_servo_config_initial_angle_is_zero():
         'sentry_servo', 'config', 'servo_config.yaml')
     data = yaml.safe_load(cfg.resolve().read_text(encoding='utf-8'))
     assert data['servos']['yaw']['initial_angle'] == 0
+
+
+# ---- Servo restore-to-home after patrol ----
+
+def test_restore_servo_home_after_left_flip(node):
+    """Patrol ending with servo on the left side restores yaw to home."""
+    node.enable_servo_auto_flip = True
+    node._servo_side = 'left'
+    node._servo_flip_time = 100.0
+    node._servo_flip_position = (1.0, 2.0)
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        node._restore_servo_home()
+    mock_pub.assert_called_once()
+    msg = mock_pub.call_args[0][0]
+    assert msg.yaw == node.servo_yaw_right
+    assert msg.pitch == int(node.servo_pitch_hold)
+    assert node._servo_side == 'right'
+    assert node._servo_flip_time is None
+    assert node._servo_flip_position is None
+
+
+def test_restore_servo_home_noop_when_already_home(node):
+    """Servo already on the right (home) side: no command sent."""
+    node.enable_servo_auto_flip = True
+    node._servo_side = 'right'
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        node._restore_servo_home()
+    mock_pub.assert_not_called()
+
+
+def test_restore_servo_home_noop_when_auto_flip_disabled(node):
+    """Auto-flip off means the node never moved the servo: don't touch it."""
+    node.enable_servo_auto_flip = False
+    node._servo_side = 'left'
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        node._restore_servo_home()
+    mock_pub.assert_not_called()

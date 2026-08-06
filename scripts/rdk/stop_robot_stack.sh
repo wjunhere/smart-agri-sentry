@@ -89,6 +89,7 @@ stop_patterns() {
   fi
   terminate_pattern "$signal" "keyboard_control_node"
   terminate_pattern "$signal" "uart_bridge_node"
+  terminate_pattern "$signal" "lora_bridge_node"
   terminate_pattern "$signal" "wheel_odom_node"
   terminate_pattern "$signal" "controller_server"
   terminate_pattern "$signal" "planner_server"

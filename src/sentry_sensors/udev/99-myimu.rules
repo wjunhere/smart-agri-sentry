@@ -1,1 +1,3 @@
-KERNEL=="ttyUSB*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE:="0777", SYMLINK+="myimu"
+# IMU (CH340) on hub port 1-1.1 - bind by physical port, not chip type
+# (LoRa receiver is also a CH340, chip-based matching is ambiguous)
+ACTION=="add", SUBSYSTEM=="tty", KERNELS=="1-1.1", SYMLINK+="myimu", MODE="0666"

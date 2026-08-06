@@ -547,6 +547,27 @@ class MissionControlNode(Node):
         self.reference_y = self.odom_y
         self.has_scan_reference = True
 
+    def _restore_servo_home(self) -> None:
+        """Return the servo to its home (right) position after patrol.
+
+        Row-switch flips leave the yaw at servo_yaw_left; without this the
+        camera would start the next cruise facing the wrong side.
+        """
+        if not self.enable_servo_auto_flip:
+            return
+        if self._servo_side == 'right':
+            return
+        msg = ServoCmd()
+        msg.yaw = int(self.servo_yaw_right)
+        msg.pitch = int(self.servo_pitch_hold)
+        self.pub_servo_cmd.publish(msg)
+        self._servo_side = 'right'
+        self._servo_flip_time = None
+        self._servo_flip_position = None
+        self.get_logger().info(
+            f'Patrol finished, servo restored to home '
+            f'(yaw={int(self.servo_yaw_right)})')
+
     # ---- Callbacks ----
 
     def on_odom(self, msg: Odometry):
@@ -959,6 +980,7 @@ class MissionControlNode(Node):
                         self._send_next_waypoint()
                     else:
                         self.get_logger().info('All waypoints completed')
+                        self._restore_servo_home()
                 else:
                     self.get_logger().warn(
                         f'Nav2 task failed ({result}), '

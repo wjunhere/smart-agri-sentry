@@ -1,0 +1,2 @@
+# LoRa receiver (E22-400TBH-SC via CH340) on hub port 1-1.4
+ACTION=="add", SUBSYSTEM=="tty", KERNELS=="1-1.4", SYMLINK+="lora", MODE="0666"

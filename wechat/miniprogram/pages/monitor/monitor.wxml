@@ -26,7 +26,7 @@
   <!-- 环境 -->
   <view class="shell">
     <view class="core">
-      <text class="eyebrow">ENV · 环境</text>
+      <text class="eyebrow">ENV · 空气环境</text>
       <view class="sensor-grid">
         <view class="sensor-item">
           <text class="s-label">🌡 空气温度</text>
@@ -41,18 +41,42 @@
           <text class="s-val">{{co2}}</text>
         </view>
         <view class="sensor-item">
-          <text class="s-label">🌱 土壤温度</text>
-          <text class="s-val">{{soilTemp}}</text>
+          <text class="s-label">🧪 甲醛 HCHO</text>
+          <text class="s-val">{{hcho}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">💨 TVOC</text>
+          <text class="s-val">{{tvoc}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">🌫 PM2.5</text>
+          <text class="s-val">{{pm25}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">🌁 PM10</text>
+          <text class="s-val">{{pm10}}</text>
         </view>
       </view>
     </view>
   </view>
 
-  <!-- 土壤 NPK -->
+  <!-- 土壤 -->
   <view class="shell">
     <view class="core">
-      <text class="eyebrow">SOIL · 土壤 NPK</text>
+      <text class="eyebrow">SOIL · 土壤</text>
       <view class="sensor-grid sensor-grid-3col">
+        <view class="sensor-item">
+          <text class="s-label">🌱 温度</text>
+          <text class="s-val">{{soilTemp}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">💧 湿度</text>
+          <text class="s-val">{{soilHumidity}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">⚡ EC</text>
+          <text class="s-val">{{soilEc}}</text>
+        </view>
         <view class="sensor-item">
           <text class="s-label">N 氮</text>
           <text class="s-val">{{soilN}}</text>
@@ -73,9 +97,15 @@
   <view class="shell">
     <view class="core">
       <text class="eyebrow">LEAF · 叶面传感器</text>
-      <view class="sensor-item">
-        <text class="s-label">💧 湿度</text>
-        <text class="s-val blue">{{leafWetness}}</text>
+      <view class="sensor-grid">
+        <view class="sensor-item">
+          <text class="s-label">💧 湿度</text>
+          <text class="s-val blue">{{leafWetness}}</text>
+        </view>
+        <view class="sensor-item">
+          <text class="s-label">🌡 温度</text>
+          <text class="s-val">{{leafTemp}}</text>
+        </view>
       </view>
     </view>
   </view>

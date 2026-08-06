@@ -15,7 +15,7 @@ def generate_launch_description():
             executable='lora_bridge_node',
             name='lora_bridge_node',
             parameters=[{
-                'uart_port': '/dev/ttyACM0',
+                'uart_port': '/dev/lora',
                 'baudrate': 9600,
                 'use_mock': use_mock,
             }],

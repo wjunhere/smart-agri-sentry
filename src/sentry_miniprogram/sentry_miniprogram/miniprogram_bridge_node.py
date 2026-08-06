@@ -24,7 +24,21 @@ from sentry_interfaces.srv import SetCropType
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+import numpy as np
 import uvicorn
+
+
+def _json_safe(obj):
+    """Recursively convert numpy scalars (ROS float32 message fields arrive
+    as numpy.float32, which json.dumps cannot serialize) to native Python
+    types."""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    return obj
 
 
 def _stack_script_env():
@@ -145,12 +159,20 @@ class MiniProgramBridgeNode(Node):
     # --- Subscription callbacks ---
 
     def _on_environment(self, msg):
-        self.sensors['air_temp'] = round(msg.air_temp, 1)
-        self.sensors['air_humidity'] = round(msg.air_humidity, 1)
-        self.sensors['co2'] = round(msg.air_co2, 0)
-        self.sensors['soil_temp'] = round(msg.soil_temp, 1)
-        self.sensors['soil_humidity'] = round(msg.soil_humidity, 1)
-        self.sensors['leaf_wetness'] = round(msg.leaf_wetness, 1)
+        # float32 fields arrive as numpy.float32, which json.dumps cannot
+        # serialize — convert explicitly before rounding.
+        self.sensors['air_temp'] = round(float(msg.air_temp), 1)
+        self.sensors['air_humidity'] = round(float(msg.air_humidity), 1)
+        self.sensors['co2'] = round(float(msg.air_co2), 0)
+        self.sensors['soil_temp'] = round(float(msg.soil_temp), 1)
+        self.sensors['soil_humidity'] = round(float(msg.soil_humidity), 1)
+        self.sensors['leaf_wetness'] = round(float(msg.leaf_wetness), 1)
+        self.sensors['leaf_temp'] = round(float(msg.leaf_temp), 1)
+        self.sensors['hcho'] = round(float(msg.hcho), 1)
+        self.sensors['tvoc'] = round(float(msg.tvoc), 0)
+        self.sensors['pm25'] = round(float(msg.pm25), 0)
+        self.sensors['pm10'] = round(float(msg.pm10), 0)
+        self.sensors['ec'] = round(float(msg.ec), 0)
         # Environment carries no NPK fields; keep the payload keys present
         # (null) so the mini-program frontend degrades gracefully.
         self.sensors['soil_n'] = None
@@ -259,6 +281,7 @@ class MiniProgramBridgeNode(Node):
         return int(time.time() * 1000)
 
     def _push_ws(self, data: dict):
+        data = _json_safe(data)
         for q in self.ws_queues:
             try:
                 q.put_nowait(data)
@@ -449,7 +472,7 @@ class MiniProgramBridgeNode(Node):
         }
 
     def get_status(self) -> dict:
-        return {
+        return _json_safe({
             'mode': self.mode,
             'linear': self.linear,
             'angular': self.angular,
@@ -458,7 +481,7 @@ class MiniProgramBridgeNode(Node):
             'mission': self.mission,
             'plant_detect': self.plant_detect,
             'stack': self.get_stack_status(),
-        }
+        })
 
 
 # ============ FastAPI App ============

@@ -21,6 +21,21 @@ export function formatNPK(val: number | null): string {
   return val.toFixed(1);
 }
 
+export function formatUgM3(val: number | null): string {
+  if (val == null) return '--';
+  return Math.round(val).toString() + ' µg/m³';
+}
+
+export function formatPpb(val: number | null): string {
+  if (val == null) return '--';
+  return Math.round(val).toString() + ' ppb';
+}
+
+export function formatEc(val: number | null): string {
+  if (val == null) return '--';
+  return Math.round(val).toString() + ' µS/cm';
+}
+
 export function formatPercent(val: number | null): string {
   if (val == null) return '--';
   return (val * 100).toFixed(1) + '%';
