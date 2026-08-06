@@ -1,6 +1,6 @@
 # 当前任务与阻塞项
 
-> 更新日期：2026-07-19
+> 更新日期：2026-08-06
 
 ---
 
@@ -9,7 +9,7 @@
 1. 完成文档重组与 GPS 清理。
 2. 推进 LiDAR SLAM/mapping 导航方案落地。
 3. **传感器协议验证 ✅**：CJ702 空气 + 叶面 RS485 + 土壤 NPK ModBus 驱动完成。
-4. **固定环境节点固件 🔄**：三传感器采集 + LoRa 帧打包完成，待低功耗睡眠与 LoRa 发送联调。
+4. **固定环境节点固件 + LoRa 上行 🔄**：三传感器采集 + LoRa 帧打包完成；RDK 侧 LoRa 上行链路已接通（`lora_bridge` opt_v2、`/dev/lora`、进任务栈，2026-08-06）；待节点端低功耗睡眠与野外部署。
 
 ---
 
@@ -51,9 +51,9 @@
 - [x] **三传感器同步采集固件**：CJ702 空气 + 叶面 RS485 ModBus + 土壤 TTL ModBus 驱动完成，60s 窗口聚合，LoRa 帧打包就绪（`test/stm32_cj702_lora_hal/`）
 - [ ] **组装 STM32F103RCT6 + E22-400TBH-SC 固定环境节点硬件**
 - [ ] **实现低功耗睡眠逻辑**：5 分钟睡眠、秒级采集唤醒
-- [ ] **实现 LoRa 网关转发**：E22-400TBH-SC 内置 CBT6 接收后通过 UART（USB 转串口）输出给 RDK X5
+- [x] **实现 LoRa 网关转发（RDK 侧）**：`lora_bridge_node` 切 opt_v2 帧协议（0xAA sync + TYPE/SEQ/FLAG/LEN + CRC16-CCITT），默认口 `/dev/lora`（udev 按 hub 物理口 1-1.4 绑定），RELIABLE QoS；进 `sentry_v2.launch` 任务栈 + `stop_robot_stack.sh` 清理名单（2026-08-06）
 - [ ] **确认 IP65 外壳、太阳能板、电池安装方式**
-- [ ] **LoRa 发送联调**：板端 TX/RX 端到端收发验证
+- [x] **LoRa 发送联调（端到端）**：固定节点运行中 60s 一帧，RDK `lora_bridge_node` 解析并经 `/sensor/environment_fixed` 发布，前端/小程序消费 12 字段（2026-08-06）
 
 ### 部署与验证
 
@@ -76,12 +76,13 @@
 | `YbImuLib` 在 RDK X5 可用性未知 | IMU 节点无法运行 | 先验证依赖，必要时改用标准 `sensor_msgs/Imu` 驱动 |
 | `rosbag2_py` 在 RDK X5 可用性未知 | data_logger 可能失败 | 已实现 JSON fallback |
 | 小麦/草莓模型缺失 | 当前仅番茄可识别 | v2.0 先写通用框架，模型后续补全 |
-| 固定节点 LoRa 联调未完成 | 固定环境数据无法回传 | 三传感器驱动已就绪，LoRa 模块待接线联调 |
+| ~~固定节点 LoRa 联调未完成~~ ✅ | ~~固定环境数据无法回传~~ | RDK 侧上行已接通（2026-08-06）；剩余节点端低功耗睡眠与野外部署 |
 
 ---
 
 ## 近期已完成
 
+- [x] **任务栈巡航可靠性 + LoRa 上行 + 相机翻转 (2026-08-06, ADR-013)**：LoRa 上行进栈（opt_v2 协议、`/dev/lora`、RELIABLE QoS、前端/小程序消费 12 字段）；相机倒装 `flip_code=-1`；舵机/换行自动翻转默认开启 + 巡航自动结束/手动停止均复原舵机；修复"识别到植株不停下"（巡航开始恢复检测器 + `avoidance_scanned_radius` 抑制已扫描植株避障）；视觉节点 respawn 自愈；重复节点检查改进程数；检测投票边沿日志
 - [x] **小程序 UI 优化 (2026-07-22)**：state-block 三态组件 + 四页排版/布局/微交互优化（风格不变）；控制页状态条合并、监测页 16:9+三态、分析页序号色块、天气页湿度真实映射；错误 IP offline 实测通过
 - [x] **前端免 SSH 板端联调 (rdk1, 2026-07-22)**：修复 sentry_weather setup.cfg、weather 真实模式 60s 重发、stop 脚本误杀网关、llm 气象字段名；补装 flask/imu_filter_madgwick；网关自启 + /stack/* 全周期 + 四页 UI + DeepSeek 分析全部验证通过
 - [x] **前端免 SSH 直连小车 (PR #3, 2026-07-19)**：bridge 新增 `/stack/*` 巡航编排端点 + WS `stack_status` 推送；修复话题名断链（`/sentry/sensor/*`→`/sensor/*`）与 `wsConnect()` 未接线两个 bug；网关层 launch（+weather_node +web_remote）；systemd `sentry-bridge.service` 开机自启；小程序 IP 配置化 + 巡航按钮组 + 连接角标；bridge mock 测试基建修复（13 测试通过）
@@ -139,3 +140,4 @@ Next incremental work:
 4. **肥料袋/纯绿图案硬负样本补强**：yolo11s 残留的 4/160 误检集中在这两类，下轮数据迭代时精准补拍。
 5. **yolo11s + 全栈巡航实测**：新模型下"检测→停车→扫描诊断"全链路田间验证未做。
 6. **第三次微调数据集已就绪**：`D:\wjun\data\yolo\train_plant_full`（5108 张单类）；训练/导出/量化/部署全流程已跑通三轮，可直接复用脚本（`train_yolo11s.py`、`export_monkey_patch.py`、`models/yolo_quantize/mapper.py`）。
+7. **巡航可靠性修复田间回归 (2026-08-06 改动)**：在真实植株场景验证"识别→停车→扫描→继续"，重点覆盖：MANUAL→AUTO 切换后检测器在线（无 WARN）、手动停止舵机回中、已扫描植株再次经过不再触发避障。

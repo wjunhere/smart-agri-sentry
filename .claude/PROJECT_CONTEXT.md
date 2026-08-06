@@ -1,6 +1,6 @@
 # 智农哨兵 · 项目快速概览
 
-> 架构版本 v3.2 · 更新日期 2026-07-30  
+> 架构版本 v3.3 · 更新日期 2026-08-06  
 > 详细文档见 [`docs/`](../docs/)。
 
 ---
@@ -39,7 +39,7 @@
 | 云台 | 2-DOF 舵机，RDK X5 直接 PWM |
 | 环境传感 | 固定 LoRa 节点（CJ702 七合一空气 + 叶面湿度 RS485 + 土壤 TTL 温湿度/EC） |
 
-**注意**：GPS 模块已移除，不再使用。USB 串口设备识别：CH340=ttyUSB0=IMU，CP2102=ttyUSB2=LiDAR。LiDAR 波特率 230400。
+**注意**：GPS 模块已移除，不再使用。USB 串口设备按物理口绑 udev（避免同类 CH340 芯片级匹配误匹配）：IMU=hub 口 1-1.1→`/dev/myimu`，LoRa 接收（E22-400TBH-SC, CH340）=hub 口 1-1.4→`/dev/lora`，LiDAR=CP2102→`/dev/wheeltec_lidar`。LiDAR 波特率 230400，LoRa 9600。摄像头现为倒装，`flip_code=-1`（180°）纠正（见条目 29）。
 
 ---
 
@@ -75,7 +75,7 @@
 3. **YOLOv8 植株检测 ✅**：Crop/Weed 二分类检测模型训练完成（mAP50=0.860），已量化为 BPU `.bin`（cosine ≥ 0.997）。
 4. 导航升级：从 mapless Nav2 迁移到 LiDAR SLAM/mapping。
 5. **传感器协议 ✅**：CJ702 七合一空气传感器 UART 协议已解析；叶面传感器 RS485 ModBus 驱动完成；土壤 NPK 七合一 TTL ModBus 驱动完成（含地址自动探针）。
-6. **固定环境节点固件 🔄**：STM32F103RCT6 三传感器同步采集固件完成（空气 CJ702 + 叶面 RS485 + 土壤 NPK ModBus），LoRa 帧打包就绪；待完成低功耗睡眠逻辑与 LoRa 发送联调。
+6. **固定环境节点固件 + LoRa 上行 ✅（上行链路）/ 🔄（节点端）**：STM32F103RCT6 三传感器同步采集固件完成（空气 CJ702 + 叶面 RS485 + 土壤 NPK ModBus），LoRa 帧打包就绪；**RDK 侧 LoRa 上行链路已接通并进任务栈**（`lora_bridge_node` opt_v2 协议、`/dev/lora`、前端/小程序消费 12 字段，见条目 28）；剩余：节点端低功耗睡眠逻辑与野外部署。
 7. **植株检测 + 病害分类两阶段管线 ✅**：YOLOv8n BPU 接入 `plant_detector_node`，新建 `vision_pipeline_node` 云台多角度扫描编排，`mission_control_node` 重构（移除 APPROACHING，新增 SCANNING + 里程计去重）。板端相机驱动（IMX219 overlay）和 YOLO 推理已调通。舵机初始位置已校准（yaw=67.5°, pitch=45°）。待 MobileNet 联调和全链路实测。
 8. **键盘控制底盘 ✅**：新增 `keyboard_control_node`（`sentry_mission` 包），方向键控制线速度 ±0.05 m/s，角速度 ±0.05 rad/s，空格急停，Q 退出。复用 `web_remote_node` 的 MANUAL 模式 + `/cmd_vel` 发布机制，0.5s 无操作自动停车。注册为 `ros2 run sentry_mission keyboard_control` 入口点。
 9. **STM32 GCC 构建 ✅**：新增 `firmware/chassis/Makefile`，使用 `arm-none-eabi-gcc` 直接编译烧录，绕过 Keil AC5/AC6 兼容问题。`make` 编译，`make flash` 通过 STM32_Programmer_CLI(SWD) 烧录。
@@ -97,6 +97,9 @@
 25. **YOLO 植株检测演进：单类 yolo11s ✅ (2026-07-28)**：原 crop/weed 二分类模型对屏幕/打印病害图不出框。诊断三因：阈值+min_area 过滤过狠、训练 letterbox vs 板端直接 resize、校准集全是数据集图。数据闭环：板端翻拍 330 正样本 + 160 硬负样本（风扇/吊灯/遮阳网/地膜等 13 类），两轮微调（R1/R2）有效但接力微调漂移、误检感加重。最终 **yolo11s 从 COCO 基座全量重训**（5108 张 = PlantDoc 2009 + crop/weed 2681 + 板端 478，30 类叶子合并为单类 plant）：mAP50 0.970 / mAP50-95 0.645，硬负样本误检 21→4/160，风扇误检消除。板端 conf 0.35 + **时序投票**（`vote_window=3`/`vote_min=2`）。后处理置信度优先 DFL 解码（8400 锚点只解高置信），检测 13→15fps 满帧，检测节点 CPU 117%→65%。板端预处理 resize 拉伸问题与类别合并决策见 `docs/DECISIONS.md` ADR-011。
 26. **前端相机/推理开关 + 状态同步 ✅ (2026-07-28)**：顶栏"开启/关闭摄像头""开启/关闭推理"切换按钮，`/status` 返回 ROS 图真实节点状态（`camera_running`/`inference_running`），前端 3s 轮询同步，启动/停止均先杀后启防重复节点。修复积帧 bug：rosbridge 积压帧导致重开页面"快速回放"，改为 rAF 只渲染最新帧。相机 15fps（关闭低光增强/锐化腾 CPU，去畸变保留）。Nav2 降频与巡航/监测双帧率档记为后续优化（`docs/TODO.md`）。
 27. **番茄病害 v5 域适应微调 + YOLO 裁剪管线 ✅ (2026-07-30)**：打印病叶在板端认不出（healthy/错类）的根因是"打印→翻拍"域差 + 整帧分类，模型本身没问题（数字原图 0.946 认对）。数据闭环：平板播放训练图 → 板端翻拍 638 张（7 类达标，分批继承标签 + ORB 回源校验 + 亮度/屏占比质量门），与数字原图混合（2108 张）微调 v4.2 → **v5**：数字基准 92.0%（超 v4.2），失败用例 YOLO 裁剪下 early_blight 0.78/0.91。推理侧配套：`vision_pipeline_node`/`vision_diagnosis_node` 均改 **YOLO 框外扩 20% 裁剪 + letterbox 224**（与训练分布一致，共享 `diagnosis_utils.crop_letterbox`）；诊断节点订阅 `/vision/plant_detected` 取框，无框回退整帧。同时修复三个掩盖真实结果的 bug：前端 mock 占位 healthy 0.85（无数据时显示假结果，已改 `--`）、`healthy_threshold=0` 恒真强判 healthy（0 现表示禁用）、推理栈此前不启动流式诊断节点导致前端无真实数据。量化校准集换板端翻拍图。完整流程（采集→校验→微调→量化→部署）可直接复用于小麦/草莓，详见 `docs/DECISIONS.md` ADR-012 与 `D:\wjun\data\toamtos\finetune\`。
+28. **LoRa 固定节点上行集成 ✅ (2026-08-06)**：`lora_bridge_node` 切 **opt_v2 帧协议**（0xAA sync + TYPE/SEQ/FLAG/LEN + CRC16-CCITT），默认口 `/dev/lora`（9600），`RELIABLE` QoS（默认可靠订阅方 bridge/advisory/data_logger/rosbridge 才能收到帧）；`sentry_v2.launch` 纳入 `lora_bridge.launch.py`，`stop_robot_stack.sh` 清理名单加 `lora_bridge_node`；udev 按物理口绑定（LoRa=hub 1-1.4，myimu 修正为 1-1.1，避免 CH340 芯片级匹配被 LoRa 劫持）。bridge 转发全部 12 个环境字段 + numpy float32 JSON 序列化消毒（防 ws 推送崩溃）；小程序监测页展示完整 LoRa 数据集（HCHO/TVOC/PM2.5/PM10/土壤 EC/叶温等）。
+29. **相机倒装翻转 ✅ (2026-08-06)**：IMX477/MIPI 为走线方便倒装，`mipi_camera_node` 新增 `flip_code` 参数（cv2.flip 约定：-2=off、-1=180°、0=垂直、1=水平），在 NV12→BGR 之后、去畸变之前应用；launch 与相机栈脚本默认 `flip_code=-1`（180°）。
+30. **任务栈巡航可靠性修复 ✅ (2026-08-06, 详见 ADR-013)**：① **舵机复原**：巡航自动结束与手动停止（`/set_auto_mode=false`）均调用 `_restore_servo_home()` 回中（yaw_right），行为一致；② **植物停止可靠**：修复"摄像头识别到植株但不停下"——根因是 MANUAL 下推理节点被暂停、新巡航未恢复检测；`_prepare_autonomous_start()` 每次巡航开始都恢复 `pause_detector` 服务（不可用时显式告警）；③ **已扫描植株不再避障**：`_scanned_plant_positions` 记录停车扫描位置，`_front_obstacle_too_close()` 在 `avoidance_scanned_radius`（默认 1.0m）内对已扫描植株直接放行（视为正常行内障碍）；④ **视觉节点自愈**：`plant_detector_node`/`vision_pipeline_node` `respawn=True, respawn_delay=2.0`；⑤ **重复节点检查改进程数**：`start_robot_stack.sh` 按 `pgrep` 真实进程数判断，容忍 DDS 幽灵图条目，也能捕获手动 `ros2 run` 拉起的重复；⑥ **检测投票边沿日志**：`plant_detector_node` 投票通过/丢失打点，便于巡航停止排查。
 
 ## 模型矩阵
 

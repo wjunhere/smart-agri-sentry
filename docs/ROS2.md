@@ -500,3 +500,34 @@ ros2 run sentry_mission imu_turn --stop         # 急停
 
 - 顶栏相机/推理按钮为开关式（toggle），文字反映 ROS 图真实状态（3s 轮询 `/status`，启动/停止进行中不同步防打架）。
 - 视频帧渲染：requestAnimationFrame 只画最新帧，修复 rosbridge 积帧导致的"快速回放"。
+
+---
+
+## 11. 任务栈巡航可靠性与 LoRa 上行（2026-08-06）
+
+### 11.1 lora_bridge_node（固定节点 LoRa 上行）
+
+- 协议：**opt_v2 帧协议**（0xAA sync + TYPE/SEQ/FLAG/LEN + CRC16-CCITT），默认口 `/dev/lora`（9600，udev 按 hub 物理口 1-1.4 绑定）。
+- **RELIABLE QoS**：固定节点 60s 一帧数据量小，改用可靠传输，保证默认可靠订阅方（bridge/advisory/data_logger/rosbridge）能收到帧。
+- `sentry_v2.launch` 已 include `lora_bridge.launch.py`（进任务栈），`stop_robot_stack.sh` 清理名单含 `lora_bridge_node`。
+
+### 11.2 mission_control_node 巡航可靠性参数
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `avoidance_scanned_radius` | `1.0` | 距已扫描植株（`_scanned_plant_positions`）小于该半径时 `_front_obstacle_too_close()` 不再触发避障——已扫描植株视为正常行内障碍 |
+| `enable_servo_auto_flip` | launch 参数 | 舵机/换行自动翻转（`start_robot_stack.sh` 默认开启） |
+| `servo_flip_cooldown_sec` / `servo_flip_cooldown_distance` | `8.0` / `0.8` | 自动翻转冷却：时间 + 距离双重限制 |
+| `servo_yaw_right` / `servo_yaw_left` / `servo_pitch_hold` | `0` / `180` / `0` | 舵机回中（home）角度：`_restore_servo_home()` 回到 `yaw_right` |
+
+### 11.3 行为改动
+
+- **巡航开始恢复检测器**：前端 MANUAL 下会暂停推理省 BPU，但恢复依赖具体启动前端，导致部分巡航全程检测器停着、植物不停车。`_prepare_autonomous_start()` 每次进入 AUTO 都调用 `_resume_detector_at_patrol_start()` 恢复 `pause_detector`（服务不可用则打 WARN，巡航仍可运行但不会停车）。
+- **手动停止舵机复原**：`/set_auto_mode=false`（手动停止巡航）与巡航自动结束一样调用 `_restore_servo_home()` 回中，行为一致。
+- **已扫描植株避障抑制**：停车扫描过的植株位置记入 `_scanned_plant_positions`（巡航开始清空，与里程计重置同步），再次经过时不再触发避障机动。
+- **视觉节点自愈**：`plant_detector_node` / `vision_pipeline_node` `respawn=True, respawn_delay=2.0`，崩溃 2s 后自动拉起。
+- **检测投票边沿日志**：`plant_detector_node` 投票通过/丢失时各打一条日志，巡航停止排查可据此判断检测是否真正触发过。
+
+### 11.4 start_robot_stack.sh 重复节点检查
+
+`check_no_duplicate_nodes` 改为按真实进程数判断：对每个重复图条目 `pgrep -fc -- "<节点名>"`，进程数 ≤1 视为 DDS 幽灵图条目（进程刚被杀仍残留），忽略；否则按真重复报错。可同时捕获手动 `ros2 run` 拉起的重复节点。

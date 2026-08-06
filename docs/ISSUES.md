@@ -1,6 +1,6 @@
 # 已知问题、硬件限制与规避方案
 
-> 更新日期：2026-07-19
+> 更新日期：2026-08-06
 
 ---
 
@@ -33,6 +33,10 @@
 | **data_logger YAML 格式** | ROS2 参数不支持顶层列表 | ✅ 已修复：加 `ros__parameters` 包装层（2026-07-08） |
 | **bridge 订阅话题名错误** | 订阅 `/sentry/sensor/*`，uart_bridge 实际发 `/sensor/*`，小程序环境数据全断 | ✅ 已修复：改为 `/sensor/*`（2026-07-19, PR #3） |
 | **小程序 WS 通道未接线** | `wsConnect()` 定义但无调用点，实时推送全断、只剩 REST 轮询 | ✅ 已修复：`app.ts onLaunch` 接线 + 断线重连（2026-07-19, PR #3） |
+| **摄像头识别到植株但不停下** | MANUAL 下推理节点被暂停省 BPU，新巡航未恢复检测 → 植物停车触发条件永不满足；已扫描植株再次经过还会重复触发避障机动 | ✅ 已修复（2026-08-06）：`_prepare_autonomous_start()` 每次巡航开始恢复 `pause_detector`（服务不可用打 WARN）；`avoidance_scanned_radius`（默认 1.0m）内已扫描植株直接放行。详见 ADR-013 |
+| **手动停止巡航舵机不复位** | `/set_auto_mode=false` 路径漏调 `_restore_servo_home()`，舵机停在翻转位直到下次巡航 | ✅ 已修复（2026-08-06）：手动停止与自动结束一样回中（yaw_right） |
+| **视觉/推理节点崩溃后检测静默失效** | 单进程崩溃，栈继续跑但无检测/诊断 | ✅ 已修复（2026-08-06）：`plant_detector_node`/`vision_pipeline_node` `respawn=True, respawn_delay=2.0` |
+| **DDS 幽灵图条目误报重复节点** | 进程刚被杀，ROS graph 仍残留条目，`check_no_duplicate_nodes` 误报"重复"，启动被阻断 | ✅ 已修复（2026-08-06）：改为按 `pgrep` 真实进程数判断，≤1 忽略；也能捕获手动 `ros2 run` 拉起的真重复 |
 
 ---
 
@@ -79,6 +83,8 @@
 | Start Cruise button does nothing | Stack not preheated, `/set_auto_mode` not ready, or stale ROS process conflict | Use Preheat first; if it still fails, run `./scripts/rdk/stop_robot_stack.sh` and preheat again |
 | Robot turns immediately at startup | Obstacle is considered blocking the active waypoint, or stale costmap/process state exists | Clear stale stack and verify obstacle is not between robot and current waypoint |
 | Avoidance re-triggers after rejoin | Robot is still close to the obstacle or side crops are briefly seen | `avoidance_retrigger_suppression_sec=2.5` suppresses the short handoff window; internal hard thresholds still protect the robot |
+| Camera detects a plant but the robot does not stop | Plant detector was paused in MANUAL and not resumed on patrol start (or detector process is dead) | Fixed 2026-08-06: detector is resumed inside `_prepare_autonomous_start`; a WARN is logged when the `pause_detector` service is unavailable. Restart the stack to load the fix |
+| Manual cruise stop leaves the servo flipped | `/set_auto_mode=false` skipped `_restore_servo_home()` | Fixed 2026-08-06: manual stop now restores the servo to home (`yaw_right`), same as auto stop |
 
 ## 4. 已弃用 / 遗留代码
 
