@@ -34,6 +34,9 @@ class MipiCameraNode(Node):
         self.declare_parameter('sensor_width', 1920)
         self.declare_parameter('sensor_height', 1080)
         self.declare_parameter('yuv_format', 'nv12')
+        # cv2.flip code: -2 = disabled, -1 = rotate 180 (upside-down mount),
+        # 0 = vertical flip, 1 = horizontal flip
+        self.declare_parameter('flip_code', -2)
         self.declare_parameter('enable_color_correction', False)
         self.declare_parameter('blue_gain', 1.0)
         self.declare_parameter('green_gain', 1.0)
@@ -59,6 +62,11 @@ class MipiCameraNode(Node):
             self.get_logger().warn(
                 f'Unsupported yuv_format={self.yuv_format}; using nv12')
             self.yuv_format = 'nv12'
+        self.flip_code = int(self.get_parameter('flip_code').value)
+        if self.flip_code not in (-2, -1, 0, 1):
+            self.get_logger().warn(
+                f'Unsupported flip_code={self.flip_code}; disabling flip')
+            self.flip_code = -2
         self.enable_color_correction = self.get_parameter(
             'enable_color_correction').value
         self.blue_gain = float(self.get_parameter('blue_gain').value)
@@ -316,6 +324,8 @@ class MipiCameraNode(Node):
             frame = self._nv12_to_bgr(img_buf, self.width, self.height, actual_size)
             if frame is None:
                 return
+            if self.flip_code != -2:
+                frame = cv2.flip(frame, self.flip_code)
             frame = self._apply_undistort(frame)
             frame = self._apply_color_correction(frame)
             frame = self._apply_low_light_enhancement(frame)

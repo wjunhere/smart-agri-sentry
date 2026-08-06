@@ -88,6 +88,7 @@ def generate_launch_description():
                 'sensor_width': 1920,
                 'sensor_height': 1080,
                 'yuv_format': 'nv12',
+                'flip_code': -1,
                 'enable_color_correction': True,
                 'blue_gain': 1.0,
                 'green_gain': 0.98,

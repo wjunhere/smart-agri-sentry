@@ -37,6 +37,7 @@ log "Starting mipi_camera_node (undistort enabled)..."
 setsid ros2 run sentry_bringup mipi_camera_node --ros-args \
   -p device_id:=2 -p width:=640 -p height:=480 -p fps:=15.0 \
   -p sensor_width:=1920 -p sensor_height:=1080 -p yuv_format:=nv12 \
+  -p flip_code:=-1 \
   -p enable_color_correction:=true -p blue_gain:=1.0 -p green_gain:=0.98 -p red_gain:=1.0 \
   -p enable_low_light_enhancement:=false -p denoise_h:=0.0 -p gamma:=1.10 \
   -p saturation_scale:=0.95 -p sharpen_amount:=0.0 \
