@@ -639,6 +639,7 @@ class MissionControlNode(Node):
                 self._transition(STATE_MANUAL)
                 self._publish_stop()
                 self._cancel_nav2_task_async()
+                self._restore_servo_home()
             response.success = True
             response.message = 'Switched to MANUAL mode'
         return response

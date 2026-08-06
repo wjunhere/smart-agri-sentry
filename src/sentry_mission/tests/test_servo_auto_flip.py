@@ -312,3 +312,22 @@ def test_restore_servo_home_noop_when_auto_flip_disabled(node):
     with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
         node._restore_servo_home()
     mock_pub.assert_not_called()
+
+
+def test_manual_stop_restores_servo_home(node):
+    """Manual cruise stop (set_auto_mode False) restores servo like patrol end."""
+    from std_srvs.srv import SetBool
+    node.state = 'PATROL'
+    node.enable_servo_auto_flip = True
+    node._servo_side = 'left'
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node, 'pub_cmd'), \
+         patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        request = SetBool.Request()
+        request.data = False
+        response = node.set_auto_mode_cb(request, SetBool.Response())
+    assert response.success is True
+    assert node.state == 'MANUAL'
+    mock_pub.assert_called_once()
+    assert mock_pub.call_args[0][0].yaw == node.servo_yaw_right
+    assert node._servo_side == 'right'
