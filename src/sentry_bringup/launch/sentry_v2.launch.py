@@ -183,6 +183,8 @@ def generate_launch_description():
             package='sentry_vision',
             executable='plant_detector_node',
             name='plant_detector_node',
+            respawn=True,
+            respawn_delay=2.0,
             parameters=[{
                 'confidence_threshold': 0.35,
                 'min_area_ratio': 0.01,
@@ -198,6 +200,8 @@ def generate_launch_description():
             package='sentry_vision',
             executable='vision_pipeline_node',
             name='vision_pipeline_node',
+            respawn=True,
+            respawn_delay=2.0,
             parameters=[{
                 'yolo_model_path': '/home/sunrise/dev_ws/models/best_plant_11s_bayese_640x640_nv12.bin',
             }],
