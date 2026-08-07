@@ -569,9 +569,8 @@ def test_plant_trigger_clears_stale_fusion_before_analysis(node):
     node.odom_x = 1.0
     node.odom_y = 0.0
 
-    with patch.object(node, '_cancel_nav2_task_async'), \
-         patch.object(node.navigator, 'isTaskComplete', return_value=False):
-        node.tick()
+    with patch.object(node, '_cancel_nav2_task_async'):
+        node.on_plant_detected(detection)
 
     assert node.state == 'STOPPED'
     assert node.last_fusion is None
@@ -593,10 +592,6 @@ def test_first_plant_trigger_stops_before_dedup_distance(node):
     detection.area_ratio = 0.35
     node.on_plant_detected(detection)
 
-    with patch.object(node, '_cancel_nav2_task_async'), \
-         patch.object(node.navigator, 'isTaskComplete', return_value=False):
-        node.tick()
-
     assert node.state == 'STOPPED'
 
 
@@ -616,10 +611,6 @@ def test_voted_plant_detection_survives_following_negative_frame(node):
 
     node.on_plant_detected(positive)
     node.on_plant_detected(negative)
-
-    with patch.object(node, '_cancel_nav2_task_async'), \
-         patch.object(node.navigator, 'isTaskComplete', return_value=False):
-        node.tick()
 
     assert node.state == 'STOPPED'
 
@@ -660,10 +651,7 @@ def test_plant_is_counted_only_when_patrol_accepts_stop_trigger(node):
     node.on_plant_detected(detection)
     node.on_plant_detected(detection)
 
-    assert node.plants_detected == 0
-    with patch.object(node, '_cancel_nav2_task_async'), \
-         patch.object(node.navigator, 'isTaskComplete', return_value=False):
-        node.tick()
+    assert node.state == 'STOPPED'
     assert node.plants_detected == 1
 
 
@@ -869,3 +857,68 @@ def test_patrol_start_warns_when_detector_missing(node):
         pc.service_is_ready.return_value = False
         node._prepare_autonomous_start()
     pc.call_async.assert_not_called()
+
+
+def test_patrol_start_reloads_waypoints(node, tmp_path):
+    """Waypoint edits made while the stack is resident apply to the next cruise."""
+    import yaml as _yaml
+    wp_file = tmp_path / 'waypoints.yaml'
+    wp_file.write_text(_yaml.safe_dump({'waypoints': [
+        {'x': 5.0, 'y': 5.0, 'yaw': 0.0},
+        {'x': 6.0, 'y': 5.0, 'yaw': 0.0},
+    ]}))
+    node.waypoints_file = str(wp_file)
+    node.waypoints = [{'x': 1.0, 'y': 1.0, 'yaw': 0.0}]
+    with patch.object(node, 'pub_cmd'), \
+         patch.object(node, 'reset_wheel_odom_client') as c1, \
+         patch.object(node, 'reset_encoder_client') as c2, \
+         patch.object(node, '_reset_ekf_pose_async'), \
+         patch.object(node, 'pause_detector_client') as pc:
+        c1.wait_for_service.return_value = False
+        c2.wait_for_service.return_value = False
+        pc.service_is_ready.return_value = False
+        node._prepare_autonomous_start()
+    assert len(node.waypoints) == 2
+    assert node.waypoints[0]['x'] == 5.0
+    assert len(node.waypoint_labels) == 2
+
+
+def test_load_waypoints_keeps_old_list_on_error(node):
+    """A broken/missing waypoints file must not wipe the in-memory route."""
+    node.waypoints_file = '/nonexistent/waypoints.yaml'
+    node.waypoints = [{'x': 1.0, 'y': 1.0, 'yaw': 0.0}]
+    node._load_waypoints()
+    assert len(node.waypoints) == 1
+
+
+def test_no_crop_scan_is_discarded(node):
+    """An empty scan (no_crop_detected) must not count or publish a diagnosis,
+    but still sets the dedup reference to avoid a stop loop."""
+    node.state = 'STOPPED'
+    node._pending_action = 'pipeline'
+    node.plants_detected = 1
+    node.odom_x = 0.5
+    node.odom_y = 0.0
+    node.has_scan_reference = False
+    node.waypoints = [{'x': 1.0, 'y': 0.0, 'yaw': 0.0}]
+    node.current_wp_idx = 0
+
+    diag = Diagnosis()
+    diag.disease_class = 'no_crop_detected'
+    service_result = MagicMock()
+    service_result.success = True
+    service_result.result = diag
+    future = MagicMock()
+    future.done.return_value = True
+    future.result.return_value = service_result
+    node._pending_future = future
+
+    with patch.object(node, '_resume_detector_async'), \
+         patch.object(node, 'pub_diag') as mock_diag:
+        node.tick()
+
+    assert node.plants_detected == 0
+    mock_diag.publish.assert_not_called()
+    assert node.state == 'RESUME'
+    assert node.has_scan_reference is True
+    assert node.reference_x == 0.5

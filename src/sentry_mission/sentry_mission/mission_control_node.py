@@ -218,26 +218,14 @@ class MissionControlNode(Node):
             'avoidance_scanned_radius').value
 
         # -- Waypoints --
-        wp_file = self.get_parameter('waypoints_file').value
+        self.waypoints_file = self.get_parameter('waypoints_file').value
         self.waypoints = []
-        if wp_file:
-            try:
-                with open(wp_file, 'r') as f:
-                    data = yaml.safe_load(f)
-                    self.waypoints = data.get('waypoints', [])
-                self.get_logger().info(
-                    f'Loaded {len(self.waypoints)} waypoints from {wp_file}')
-            except Exception as e:
-                self.get_logger().error(f'Failed to load waypoints: {e}')
-
-        self.min_row_segment_length = self._derive_min_segment_length()
+        self.waypoint_labels = []
+        self.min_row_segment_length = None
+        self._load_waypoints()
 
         self.current_wp_idx = 0
         self.saved_wp_idx = 0
-        self.waypoint_labels = [
-            f'WP{i}: ({wp["x"]:.1f}, {wp["y"]:.1f})'
-            for i, wp in enumerate(self.waypoints)
-        ]
         self.fixed_point_stops = self._load_fixed_point_stops(
             self.mission_params_file)
 
@@ -421,6 +409,30 @@ class MissionControlNode(Node):
                     self.last_goal_sent_time = 0.0
 
         threading.Thread(target=_send, daemon=True).start()
+
+    def _load_waypoints(self):
+        """(Re)read the waypoints file; keeps the previous list on error.
+
+        Called at node start and at every patrol start, so waypoint edits
+        made from a frontend while the stack is resident take effect on
+        the next cruise without a stack restart.
+        """
+        if not self.waypoints_file:
+            return
+        try:
+            with open(self.waypoints_file, 'r') as f:
+                data = yaml.safe_load(f)
+            self.waypoints = data.get('waypoints', [])
+            self.waypoint_labels = [
+                f'WP{i}: ({wp["x"]:.1f}, {wp["y"]:.1f})'
+                for i, wp in enumerate(self.waypoints)
+            ]
+            self.min_row_segment_length = self._derive_min_segment_length()
+            self.get_logger().info(
+                f'Loaded {len(self.waypoints)} waypoints from '
+                f'{self.waypoints_file}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load waypoints: {e}')
 
     def _load_fixed_point_stops(self, params_file: str) -> list:
         if not params_file:
@@ -612,16 +624,21 @@ class MissionControlNode(Node):
         self.last_nav_cmd_time = self.get_clock().now().nanoseconds / 1e9
 
     def on_plant_detected(self, msg: PlantDetection):
+        now = self.get_clock().now().nanoseconds / 1e9
         with self._plant_lock:
             if self.state != STATE_PATROL:
                 return
             self.last_plant = msg
             if msg.detected:
-                # Keep a voted positive long enough for the patrol tick to consume it;
-                # a following negative frame must not erase the stop request.
+                # Keep a voted positive long enough for the patrol logic to
+                # consume it; a following negative frame must not erase the
+                # stop request.
                 self.pending_plant = msg
-                self.pending_plant_time = (
-                    self.get_clock().now().nanoseconds / 1e9)
+                self.pending_plant_time = now
+        if msg.detected:
+            # Fast path: evaluate the stop trigger right away instead of
+            # waiting for the next 10 Hz patrol tick.
+            self._maybe_trigger_plant_stop(now)
 
     def on_fusion(self, msg: FusionResult):
         stamp = msg.header.stamp
@@ -699,6 +716,51 @@ class MissionControlNode(Node):
             f'Suppressing plant stop trigger: distance={self._distance_from_reference():.2f}m '
             f'< min_resume_distance={self.min_resume_distance}m')
         return False
+
+    def _maybe_trigger_plant_stop(self, now: float) -> bool:
+        """Evaluate the plant stop trigger; returns True when it fired.
+
+        Called both from the patrol tick and directly from the detection
+        callback (fast path), so a voted positive does not wait for the
+        next 10 Hz tick. The state lock serializes the two callers.
+        """
+        with self._state_lock:
+            if self.state != STATE_PATROL:
+                return False
+            with self._plant_lock:
+                pending_plant = self.pending_plant
+                if (pending_plant is not None
+                        and now - self.pending_plant_time > self.plant_trigger_latch_sec):
+                    self.pending_plant = None
+                    self.pending_plant_time = 0.0
+                    pending_plant = None
+            if not (pending_plant is not None
+                    and pending_plant.detected
+                    and pending_plant.confidence >= self.det_conf_th
+                    and pending_plant.area_ratio >= self.min_area_ratio):
+                return False
+            if not self._should_trigger_scan():
+                return False
+            self.saved_wp_idx = self.current_wp_idx
+            self.last_fusion = None
+            self._diagnosis_published_at_ns = 0
+            self.plants_detected += 1
+            self._scanned_plant_positions.append(
+                (self.odom_x, self.odom_y))
+            self.get_logger().info(
+                'Plant stop trigger accepted: '
+                f'confidence={pending_plant.confidence:.3f}, '
+                f'area_ratio={pending_plant.area_ratio:.3f}, '
+                f'distance={self._distance_from_reference():.3f}m')
+            with self._plant_lock:
+                self.pending_plant = None
+                self.pending_plant_time = 0.0
+                self.last_plant = None
+            self._cancel_nav2_task_async()
+            self.sending_goal = False
+            self.last_goal_sent_time = 0.0
+            self._transition(STATE_STOPPED, now)
+            return True
 
     def _find_unhandled_fixed_point_stop(self):
         if self.state != STATE_PATROL:
@@ -1035,42 +1097,9 @@ class MissionControlNode(Node):
                         f'retrying waypoint {self.current_wp_idx} after delay')
                     self._next_goal_time = now + 2.0
 
-            # Keep a voted detection briefly so a following negative camera
-            # frame cannot race the patrol timer and erase the stop request.
-            with self._plant_lock:
-                pending_plant = self.pending_plant
-                if (pending_plant is not None
-                        and now - self.pending_plant_time > self.plant_trigger_latch_sec):
-                    self.pending_plant = None
-                    self.pending_plant_time = 0.0
-                    pending_plant = None
-
-            # Check for plant detection trigger (with de-duplication)
-            if (self.state == STATE_PATROL
-                    and pending_plant is not None
-                    and pending_plant.detected
-                    and pending_plant.confidence >= self.det_conf_th
-                    and pending_plant.area_ratio >= self.min_area_ratio
-                    and self._should_trigger_scan()):
-                self.saved_wp_idx = self.current_wp_idx
-                self.last_fusion = None
-                self._diagnosis_published_at_ns = 0
-                self.plants_detected += 1
-                self._scanned_plant_positions.append(
-                    (self.odom_x, self.odom_y))
-                self.get_logger().info(
-                    'Plant stop trigger accepted: '
-                    f'confidence={pending_plant.confidence:.3f}, '
-                    f'area_ratio={pending_plant.area_ratio:.3f}, '
-                    f'distance={self._distance_from_reference():.3f}m')
-                with self._plant_lock:
-                    self.pending_plant = None
-                    self.pending_plant_time = 0.0
-                    self.last_plant = None
-                self._cancel_nav2_task_async()
-                self.sending_goal = False
-                self.last_goal_sent_time = 0.0
-                self._transition(STATE_STOPPED, now)
+            # Plant stop trigger (also evaluated directly in the detection
+            # callback; whichever runs first wins).
+            self._maybe_trigger_plant_stop(now)
 
         elif self.state == STATE_OBSTACLE_STOP:
             status.state = STATE_OBSTACLE_STOP
@@ -1210,23 +1239,42 @@ class MissionControlNode(Node):
                     result = self._pending_future.result()
                     self._pending_action = ''
                     if result is not None and result.success:
-                        self._diagnosis_published_at_ns = (
-                            self.get_clock().now().nanoseconds)
-                        self.last_fusion = None
                         diagnosis = self._apply_fixed_point_diagnosis_override(
                             result.result)
-                        self.pub_diag.publish(diagnosis)
-                        self.get_logger().info(
-                            f'Pipeline result: {diagnosis.disease_class} '
-                            f'conf={diagnosis.confidence:.3f}')
-                        self.reference_x = self.odom_x
-                        self.reference_y = self.odom_y
-                        self.has_scan_reference = True
+                        if diagnosis.disease_class == 'no_crop_detected':
+                            # Empty scan: nothing was actually there (false
+                            # trigger, or the plant left the frame by the
+                            # time we stopped). Don't count it and don't
+                            # publish a diagnosis — but set the dedup
+                            # reference so this spot cannot immediately
+                            # retrigger into a stop loop.
+                            self.plants_detected = max(
+                                0, self.plants_detected - 1)
+                            self.reference_x = self.odom_x
+                            self.reference_y = self.odom_y
+                            self.has_scan_reference = True
+                            self.get_logger().warn(
+                                'Scan found no crop at stop point — '
+                                'discarding as false trigger')
+                            self._resume_detector_async()
+                            self._transition(STATE_RESUME, now)
+                        else:
+                            self._diagnosis_published_at_ns = (
+                                self.get_clock().now().nanoseconds)
+                            self.last_fusion = None
+                            self.pub_diag.publish(diagnosis)
+                            self.get_logger().info(
+                                f'Pipeline result: {diagnosis.disease_class} '
+                                f'conf={diagnosis.confidence:.3f}')
+                            self.reference_x = self.odom_x
+                            self.reference_y = self.odom_y
+                            self.has_scan_reference = True
+                            self._resume_detector_async()
+                            self._transition(STATE_ANALYZING, now)
                     else:
                         self.get_logger().warn('Pipeline failed or timed out')
-
-                    self._resume_detector_async()
-                    self._transition(STATE_ANALYZING, now)
+                        self._resume_detector_async()
+                        self._transition(STATE_ANALYZING, now)
 
         elif self.state == STATE_ANALYZING:
             status.state = STATE_ANALYZING
@@ -1323,6 +1371,7 @@ class MissionControlNode(Node):
 
     def _prepare_autonomous_start(self):
         self._publish_stop()
+        self._load_waypoints()
         self.sending_goal = False
         self.last_goal_sent_time = 0.0
         with self._plant_lock:

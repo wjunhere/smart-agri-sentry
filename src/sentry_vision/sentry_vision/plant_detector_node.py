@@ -21,6 +21,10 @@ class PlantDetectorNode(Node):
         self.declare_parameter('model_path', '')
         self.declare_parameter('vote_window', 3)
         self.declare_parameter('vote_min', 2)
+        # Strong single-frame hits bypass the temporal vote so the stop
+        # trigger does not wait for a second frame at cruise speed.
+        self.declare_parameter('fast_confidence', 0.5)
+        self.declare_parameter('fast_area_ratio', 0.03)
 
         self.conf_threshold = self.get_parameter('confidence_threshold').value
         self.min_area_ratio = self.get_parameter('min_area_ratio').value
@@ -28,6 +32,8 @@ class PlantDetectorNode(Node):
         model_path = self.get_parameter('model_path').value
         self.vote_window = max(1, int(self.get_parameter('vote_window').value))
         self.vote_min = max(1, int(self.get_parameter('vote_min').value))
+        self.fast_confidence = self.get_parameter('fast_confidence').value
+        self.fast_area_ratio = self.get_parameter('fast_area_ratio').value
         self._votes = deque(maxlen=self.vote_window)
         self._last_hit = None  # (bbox, confidence, area_ratio) of latest raw hit
         self._voted = False  # rising/falling edge logging of voted detection
@@ -113,8 +119,11 @@ class PlantDetectorNode(Node):
         else:
             detected, bbox, confidence, area_ratio = self._detect(cv_image)
 
+        fast = (detected
+                and confidence >= self.fast_confidence
+                and area_ratio >= self.fast_area_ratio)
         detected, bbox, confidence, area_ratio = self._vote(
-            detected, bbox, confidence, area_ratio)
+            detected, bbox, confidence, area_ratio, force=fast)
 
         out = PlantDetection()
         out.header.stamp = self.get_clock().now().to_msg()
@@ -125,22 +134,28 @@ class PlantDetectorNode(Node):
         out.area_ratio = area_ratio
         self.pub.publish(out)
 
-    def _vote(self, detected, bbox, confidence, area_ratio):
+    def _vote(self, detected, bbox, confidence, area_ratio, force=False):
         """Temporal voting: report detection only when at least vote_min of
         the last vote_window frames fired. Suppresses single-frame false
         positives; the last real hit's bbox is republished during a
-        single-frame miss so the overlay stays stable."""
-        if self.vote_window <= 1:
+        single-frame miss so the overlay stays stable. force=True (strong
+        single-frame hit) bypasses the vote and reports immediately."""
+        if self.vote_window <= 1 and not force:
             return detected, bbox, confidence, area_ratio
         self._votes.append(bool(detected))
         if detected:
             self._last_hit = (bbox, confidence, area_ratio)
-        if sum(self._votes) >= self.vote_min and self._last_hit is not None:
-            hb, hc, ha = self._last_hit
+        if self._last_hit is not None and (
+                force or sum(self._votes) >= self.vote_min):
+            if force:
+                hb, hc, ha = bbox, confidence, area_ratio
+            else:
+                hb, hc, ha = self._last_hit
             if not self._voted:
                 self._voted = True
+                tag = 'fast-path' if force else 'vote passed'
                 self.get_logger().info(
-                    f'Detection vote passed: confidence={hc:.3f}, '
+                    f'Detection {tag}: confidence={hc:.3f}, '
                     f'area_ratio={ha:.3f}')
             return True, hb, hc, ha
         if self._voted:

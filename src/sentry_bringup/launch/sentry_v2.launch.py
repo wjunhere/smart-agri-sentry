@@ -190,6 +190,8 @@ def generate_launch_description():
                 'min_area_ratio': 0.01,
                 'vote_window': 3,
                 'vote_min': 2,
+                'fast_confidence': 0.5,
+                'fast_area_ratio': 0.03,
                 'use_simulation': LaunchConfiguration('use_sim_plant'),
                 'model_path': '/home/sunrise/dev_ws/models/best_plant_11s_bayese_640x640_nv12.bin',
             }],
