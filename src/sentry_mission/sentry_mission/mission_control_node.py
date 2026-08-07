@@ -759,6 +759,10 @@ class MissionControlNode(Node):
             self._cancel_nav2_task_async()
             self.sending_goal = False
             self.last_goal_sent_time = 0.0
+            # Brake immediately — the patrol tick forwards nav velocity until
+            # the state transition, which would cost up to one tick (~100 ms)
+            # of continued motion before the chassis sees a zero command.
+            self._publish_stop()
             self._transition(STATE_STOPPED, now)
             return True
 
