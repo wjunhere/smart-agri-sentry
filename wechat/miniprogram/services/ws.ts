@@ -73,6 +73,7 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
         weatherHours: data.hours || [],
         weatherDisasterAlerts: data.disaster_alerts || [],
         weatherStale: Boolean(data.stale),
+        weatherTs: msg.ts || Date.now(),
       });
       break;
 
@@ -91,6 +92,7 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
       }
       if (data.sensors) applySensorData(data.sensors);
       if (data.mission) applyMissionData(data.mission);
+      if (data.fusion) applyFusionData(data.fusion, msg.ts);
       break;
 
     case 'sensor':
@@ -115,7 +117,12 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
         diagnosisDisease: data.disease,
         diagnosisConfidence: data.confidence,
         diagnosisProbabilities: data.probabilities || [],
+        diagnosisTs: msg.ts || Date.now(),
       });
+      break;
+
+    case 'fusion':
+      applyFusionData(data, msg.ts);
       break;
 
     case 'plant_detect':
@@ -154,8 +161,26 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
   }
 }
 
+function applyFusionData(d: any, ts?: number) {
+  if (!d) return;
+  updateStore({
+    fusionRiskScore: d.risk_score != null ? d.risk_score : null,
+    fusionAlertLevel: d.alert_level != null ? d.alert_level : 0,
+    fusionAlertName: d.alert_name || 'NORMAL',
+    fusionMode: d.mode || '',
+    fusionEvidence: d.evidence_chain || [],
+    fusionLwdHours: d.lwd_hours != null ? d.lwd_hours : null,
+    fusionConfidence: d.confidence != null ? d.confidence : null,
+    fusionVisionTerm: d.vision_term || 0,
+    fusionEnvTerm: d.env_term || 0,
+    fusionInteractionTerm: d.interaction_term || 0,
+    fusionTs: ts || Date.now(),
+  });
+}
+
 function applySensorData(d: any) {
   updateStore({
+    envTs: Date.now(),
     envAirTemp: d.air_temp != null ? d.air_temp : null,
     envAirHumidity: d.air_humidity != null ? d.air_humidity : null,
     envCO2: d.co2 != null ? d.co2 : null,

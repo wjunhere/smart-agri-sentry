@@ -87,6 +87,7 @@ class MiniProgramBridgeNode(Node):
         self.weather = {}
         self.forecast = {}
         self.advisory = None
+        self.fusion = None
 
         # Camera frame
         self._latest_frame = None
@@ -108,6 +109,13 @@ class MiniProgramBridgeNode(Node):
             'stack_stop_script',
             '/home/sunrise/dev_ws/scripts/rdk/stop_robot_stack.sh')
         self.declare_parameter('stack_script_timeout_sec', 180.0)
+        # Fusion risk history (JSONL, one point per minute) for the
+        # mini-program risk-trend chart. Survives bridge restarts.
+        self.declare_parameter('fusion_history_path',
+                               'logs/fusion_history.jsonl')
+        self.fusion_history_path = self.get_parameter(
+            'fusion_history_path').value
+        self._last_history_append = 0.0
         self.stack_start_script = self.get_parameter('stack_start_script').value
         self.stack_stop_script = self.get_parameter('stack_stop_script').value
         self.stack_script_timeout = float(
@@ -123,6 +131,7 @@ class MiniProgramBridgeNode(Node):
             Environment, ChassisStatus,
             Diagnosis, MissionStatus, PlantDetection,
             WeatherForecast, ForecastAlert, AdvisoryAction,
+            FusionResult,
         )
         from sensor_msgs.msg import CompressedImage
 
@@ -150,6 +159,9 @@ class MiniProgramBridgeNode(Node):
         self.create_subscription(
             AdvisoryAction, '/advisory/action',
             self._on_advisory, 10)
+        self.create_subscription(
+            FusionResult, '/fusion/diagnosis',
+            self._on_fusion, 10)
         self.create_subscription(
             CompressedImage, '/out/compressed',
             self._on_camera_frame, 10)
@@ -290,6 +302,67 @@ class MiniProgramBridgeNode(Node):
             'priority': msg.priority,
             'steps': list(msg.steps),
         }
+
+    _ALERT_NAMES = {0: 'NORMAL', 1: 'SUSPICION', 2: 'WARNING', 3: 'CRITICAL'}
+
+    def _on_fusion(self, msg):
+        self.fusion = {
+            'risk_score': round(float(msg.risk_score), 3),
+            'alert_level': int(msg.alert_level),
+            'alert_name': self._ALERT_NAMES.get(int(msg.alert_level), 'NORMAL'),
+            'mode': msg.mode,
+            'evidence_chain': list(msg.evidence_chain),
+            'lwd_hours': round(float(msg.lwd_hours), 1),
+            'confidence': round(float(msg.confidence), 2),
+            'vision_term': round(float(msg.vision_term), 3),
+            'env_term': round(float(msg.env_term), 3),
+            'interaction_term': round(float(msg.interaction_term), 3),
+        }
+        self._push_ws({'type': 'fusion', 'ts': self._now_ms(),
+                       'data': self.fusion})
+        self._append_fusion_history()
+
+    def _append_fusion_history(self):
+        """One JSONL point per minute: {ts, risk, level}. Trims at 2 MB."""
+        now = time.time()
+        if now - self._last_history_append < 60.0:
+            return
+        self._last_history_append = now
+        try:
+            path = Path(self.fusion_history_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists() and path.stat().st_size > 2 * 1024 * 1024:
+                lines = path.read_text().splitlines()[-5000:]
+                path.write_text('\n'.join(lines) + '\n')
+            with open(path, 'a') as f:
+                f.write(json.dumps({
+                    'ts': int(now * 1000),
+                    'risk': self.fusion['risk_score'],
+                    'level': self.fusion['alert_level'],
+                }) + '\n')
+        except Exception as e:
+            self.get_logger().warn(f'fusion history append failed: {e}')
+
+    def get_fusion_history(self, hours: float = 72.0,
+                           max_points: int = 500) -> list:
+        cutoff = (time.time() - hours * 3600.0) * 1000.0
+        points = []
+        try:
+            path = Path(self.fusion_history_path)
+            if path.exists():
+                for line in path.read_text().splitlines():
+                    try:
+                        p = json.loads(line)
+                    except ValueError:
+                        continue
+                    if p.get('ts', 0) >= cutoff:
+                        points.append(p)
+        except Exception as e:
+            self.get_logger().warn(f'fusion history read failed: {e}')
+        if len(points) > max_points:
+            step = len(points) / max_points
+            points = [points[int(i * step)] for i in range(max_points)]
+        return points
 
     def _on_camera_frame(self, msg):
         # /out/compressed is already JPEG — forward as-is. The previous
@@ -512,6 +585,7 @@ class MiniProgramBridgeNode(Node):
             'sensors': self.sensors,
             'mission': self.mission,
             'plant_detect': self.plant_detect,
+            'fusion': self.fusion,
             'stack': self.get_stack_status(),
         })
 
@@ -571,7 +645,15 @@ def get_app() -> FastAPI:
             'forecast': _node.forecast,
             'advisory': _node.advisory,
             'diagnosis': _node.diagnosis,
+            'fusion': _node.fusion,
         }
+
+    @_app.get('/api/fusion/history')
+    async def api_fusion_history(hours: float = 72.0):
+        if _node is None:
+            return {'points': []}
+        hours = max(1.0, min(hours, 168.0))
+        return {'points': _node.get_fusion_history(hours)}
 
     @_app.post('/api/mode')
     async def api_set_mode(data: dict):

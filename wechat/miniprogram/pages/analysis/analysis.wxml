@@ -1,17 +1,123 @@
 <view class="v2-page">
-  <!-- 病害诊断 -->
-  <view class="shell accent-amber">
+  <!-- ① 输入层：三路数据源 -->
+  <view class="shell">
     <view class="core">
-      <text class="eyebrow">DIAGNOSIS · 病害诊断 · {{cropType}}</text>
-      <text class="dg-name amber">{{disease}}</text>
-      <text class="dg-conf">置信度 <text class="mono amber">{{confidence}}%</text></text>
+      <text class="eyebrow">INPUT · 数据输入</text>
+      <view class="src-row">
+        <view class="src-dot amber"></view>
+        <view class="src-main">
+          <text class="src-label">视觉巡航 · {{cropName}}</text>
+          <text class="src-value">{{visionText}}<text class="dim" wx:if="{{visionConf}}"> · {{visionConf}}</text></text>
+        </view>
+        <text class="src-age">{{visionAge}}</text>
+      </view>
+      <view class="src-row">
+        <view class="src-dot blue"></view>
+        <view class="src-main">
+          <text class="src-label">田间环境节点<text class="dim" wx:if="{{envSource}}"> · {{envSource}}</text></text>
+          <text class="src-value">{{envText}}</text>
+        </view>
+        <text class="src-age">{{envAge}}</text>
+      </view>
+      <view class="src-row">
+        <view class="src-dot green"></view>
+        <view class="src-main">
+          <text class="src-label">天气趋势 · 未来预报</text>
+          <text class="src-value">{{weatherText}}</text>
+        </view>
+        <text class="src-age">{{weatherAge}}</text>
+      </view>
     </view>
   </view>
 
-  <!-- 分类概率 -->
+  <view class="chain-arrow"><text class="chain-arrow-text">▼ 融合引擎</text></view>
+
+  <!-- ② 融合层：风险判级 -->
+  <view class="shell fusion-{{alertClass}}" wx:if="{{hasFusion}}">
+    <view class="core">
+      <view class="fusion-head">
+        <text class="eyebrow" style="margin-bottom:0">FUSION · 风险融合</text>
+        <text class="src-age">{{fusionAge}}</text>
+      </view>
+      <view class="fusion-score-row">
+        <text class="fusion-score {{alertClass}}">{{riskPct}}</text>
+        <view class="fusion-score-side">
+          <view class="alert-badge {{alertClass}}">{{alertCn}}</view>
+          <text class="fusion-mode">{{modeCn}}</text>
+        </view>
+      </view>
+
+      <!-- 贡献分段条 + 判级阈值刻度 -->
+      <view class="risk-track">
+        <view class="risk-seg seg-vision" style="width:{{segVisionW}}%"></view>
+        <view class="risk-seg seg-env" style="width:{{segEnvW}}%"></view>
+        <view class="risk-seg seg-inter" style="width:{{segInterW}}%"></view>
+        <view class="risk-tick" style="left:35%"></view>
+        <view class="risk-tick" style="left:60%"></view>
+        <view class="risk-tick tick-red" style="left:80%"></view>
+      </view>
+      <view class="risk-scale">
+        <text>0</text><text class="dim">关注 35</text><text class="dim">预警 60</text><text class="dim">紧急 80</text><text>100</text>
+      </view>
+      <view class="risk-legend">
+        <text><text class="lg-dot seg-vision-bg"></text>视觉 {{visionTerm}}</text>
+        <text><text class="lg-dot seg-env-bg"></text>环境 {{envTerm}}</text>
+        <text><text class="lg-dot seg-inter-bg"></text>交互 {{interTerm}}</text>
+      </view>
+      <view class="fusion-meta" wx:if="{{fusionConfPct || lwdText}}">
+        <text class="muted">{{fusionConfPct}}<text wx:if="{{fusionConfPct && lwdText}}"> · </text>{{lwdText}}</text>
+      </view>
+    </view>
+  </view>
+  <view class="shell" wx:else>
+    <view class="core">
+      <text class="eyebrow">FUSION · 风险融合</text>
+      <state-block type="empty" text="等待融合数据" subtext="融合节点启动后每秒更新" />
+    </view>
+  </view>
+
+  <!-- ③ 推理层：证据链 -->
+  <view class="shell" wx:if="{{evidence.length}}">
+    <view class="core">
+      <text class="eyebrow">EVIDENCE · 判定依据</text>
+      <view class="ev-item" wx:for="{{evidence}}" wx:key="*this">
+        <view class="ev-dot"></view>
+        <text class="ev-text">{{item}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ④ 决策层：农艺建议 -->
+  <view class="chain-arrow" wx:if="{{advisoryText}}"><text class="chain-arrow-text">▼ 决策输出</text></view>
+  <view class="shell accent-green" wx:if="{{advisoryText}}">
+    <view class="core">
+      <view class="fusion-head">
+        <text class="eyebrow" style="margin-bottom:0">ADVISORY · 农艺建议</text>
+        <view class="alert-badge {{advisoryPriority === 'CRITICAL' ? 'critical' : (advisoryPriority === 'HIGH' ? 'warning' : 'normal')}}" wx:if="{{advisoryAction}}">{{advisoryAction}}</view>
+      </view>
+      <text class="adv-text">{{advisoryText}}</text>
+      <view class="adv-prio" wx:if="{{advisoryPriority}}">
+        紧急度 <text class="amber">{{advisoryPriority}}</text>
+      </view>
+      <view wx:if="{{advisorySteps.length}}" style="margin-top:12rpx">
+        <view class="llm-step" wx:for="{{advisorySteps}}" wx:key="*this">
+          <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <alert-bar
+    wx:if="{{forecastActive}}"
+    level="danger"
+    title="⚠ 病害预警"
+    message="未来{{forecastHoursAhead}}h内: {{forecastDescription}}"
+  />
+
+  <!-- 诊断细节：分类概率 -->
   <view class="shell">
     <view class="core">
-      <text class="eyebrow">PROBS · 分类概率</text>
+      <text class="eyebrow">PROBS · 分类概率 · {{disease}} {{confidence}}%</text>
       <view class="prob-row" wx:for="{{probs}}" wx:key="name">
         <view class="prob-label">
           <text class="mono dim" style="font-size:20rpx">{{item.name}}</text>
@@ -26,36 +132,17 @@
     </view>
   </view>
 
-  <!-- 农艺建议 -->
-  <view class="shell accent-green" wx:if="{{advisoryText}}">
-    <view class="core">
-      <text class="eyebrow">ADVISORY · 农艺建议</text>
-      <text class="adv-text">{{advisoryText}}</text>
-      <view class="adv-prio" wx:if="{{advisoryPriority}}">
-        紧急度 <text class="amber">{{advisoryPriority}}</text>
-      </view>
-      <view wx:if="{{advisorySteps.length}}" style="margin-top:12rpx">
-        <view class="llm-step" wx:for="{{advisorySteps}}" wx:key="*this">
-          <text class="step-idx">{{index+1}}</text><text>{{item}}</text>
-        </view>
-      </view>
-    </view>
-  </view>
-
   <!-- 风险趋势 -->
   <view class="shell">
     <view class="core">
       <text class="eyebrow">TREND · 风险趋势 (3日)</text>
-      <state-block type="empty" text="数据收集中…" />
+      <view class="trend-track" wx:if="{{hasTrend}}">
+        <canvas type="2d" id="riskTrendCanvas" class="trend-canvas" wx:if="{{trendReady}}"></canvas>
+      </view>
+      <state-block wx:else type="empty" text="数据收集中…"
+                   subtext="融合节点运行后每分钟记录一个风险点" />
     </view>
   </view>
-
-  <alert-bar
-    wx:if="{{forecastActive}}"
-    level="danger"
-    title="⚠ 病害预警"
-    message="未来{{forecastHoursAhead}}h内: {{forecastDescription}}"
-  />
 
   <!-- AI 综合分析 -->
   <view class="shell accent-purple" wx:if="{{llmSummary || llmLoading}}">

@@ -23,6 +23,25 @@ const store = {
   advisoryText: '',
   advisoryPriority: '',
   advisorySteps: [] as string[],
+  advisoryActionType: '',
+
+  // 融合引擎输出（/fusion/diagnosis 经桥接推送）
+  fusionRiskScore: null as number | null,
+  fusionAlertLevel: 0,
+  fusionAlertName: 'NORMAL',
+  fusionMode: '',
+  fusionEvidence: [] as string[],
+  fusionLwdHours: null as number | null,
+  fusionConfidence: null as number | null,
+  fusionVisionTerm: 0,
+  fusionEnvTerm: 0,
+  fusionInteractionTerm: 0,
+
+  // 各数据源最后更新时间（ms），用于输入层新鲜度显示
+  diagnosisTs: 0,
+  envTs: 0,
+  weatherTs: 0,
+  fusionTs: 0,
 
   forecastActive: false,
   forecastAlertType: '',

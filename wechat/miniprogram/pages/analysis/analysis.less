@@ -19,8 +19,104 @@
 .prob-fill { height: 10rpx; border-radius: 999rpx; }
 
 /* 建议卡 */
-.adv-text { font-size: 26rpx; color: var(--text); line-height: 1.7; }
+.adv-text { font-size: 26rpx; color: var(--text); line-height: 1.7; display: block; margin-top: 16rpx; }
 .adv-prio { font-size: 20rpx; color: var(--text-muted); margin-top: 12rpx; }
+
+/* ===== 决策链：① 输入层 ===== */
+.src-row {
+  display: flex; align-items: center; gap: 16rpx;
+  padding: 18rpx 0; border-bottom: 1rpx solid rgba(255,255,255,0.05);
+}
+.src-row:last-child { border-bottom: none; padding-bottom: 4rpx; }
+.src-dot { flex-shrink: 0; width: 14rpx; height: 14rpx; border-radius: 50%; }
+.src-dot.amber { background: var(--amber); box-shadow: 0 0 8rpx rgba(245,158,11,0.6); }
+.src-dot.blue { background: var(--blue); box-shadow: 0 0 8rpx rgba(56,189,248,0.6); }
+.src-dot.green { background: var(--green); box-shadow: 0 0 8rpx rgba(16,185,129,0.6); }
+.src-main { flex: 1; min-width: 0; }
+.src-label { font-size: 20rpx; color: var(--text-muted); display: block; margin-bottom: 4rpx; }
+.src-value { font-size: 24rpx; color: var(--text); display: block; }
+.src-age { flex-shrink: 0; font-size: 18rpx; color: var(--text-muted); }
+
+/* 层级衔接箭头 */
+.chain-arrow { display: flex; justify-content: center; padding: 4rpx 0; }
+.chain-arrow-text { font-size: 18rpx; color: var(--text-muted); letter-spacing: 0.2em; }
+
+/* ===== 决策链：② 融合层 ===== */
+.fusion-normal   { background: linear-gradient(90deg, rgba(16,185,129,0.35), rgba(255,255,255,0.03) 30%); }
+.fusion-suspicion { background: linear-gradient(90deg, rgba(245,158,11,0.35), rgba(255,255,255,0.03) 30%); }
+.fusion-warning  { background: linear-gradient(90deg, rgba(251,146,60,0.35), rgba(255,255,255,0.03) 30%); }
+.fusion-critical { background: linear-gradient(90deg, rgba(248,113,113,0.35), rgba(255,255,255,0.03) 30%); }
+
+.fusion-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20rpx; }
+.fusion-score-row { display: flex; align-items: center; gap: 24rpx; margin-bottom: 24rpx; }
+.fusion-score { font-size: 72rpx; font-weight: 800; line-height: 1; }
+.fusion-score.normal { color: var(--green); }
+.fusion-score.suspicion { color: var(--amber); }
+.fusion-score.warning { color: #FB923C; }
+.fusion-score.critical { color: var(--red); }
+.fusion-score-side { display: flex; flex-direction: column; gap: 10rpx; }
+.fusion-mode { font-size: 22rpx; color: var(--text-dim); }
+
+.alert-badge {
+  align-self: flex-start; font-size: 20rpx; font-weight: 700;
+  padding: 6rpx 20rpx; border-radius: 999rpx;
+}
+.alert-badge.normal { background: rgba(16,185,129,0.15); color: var(--green); border: 1rpx solid rgba(16,185,129,0.4); }
+.alert-badge.suspicion { background: rgba(245,158,11,0.15); color: var(--amber); border: 1rpx solid rgba(245,158,11,0.4); }
+.alert-badge.warning { background: rgba(251,146,60,0.15); color: #FB923C; border: 1rpx solid rgba(251,146,60,0.4); }
+.alert-badge.critical { background: rgba(248,113,113,0.15); color: var(--red); border: 1rpx solid rgba(248,113,113,0.4); }
+
+/* 贡献分段条 + 阈值刻度 */
+.risk-track {
+  position: relative; display: flex; height: 20rpx; border-radius: 999rpx;
+  background: rgba(255,255,255,0.06); overflow: hidden;
+}
+.risk-seg { height: 20rpx; }
+.seg-vision { background: #F59E0B; }
+.seg-env { background: #38BDF8; }
+.seg-inter { background: #A78BFA; }
+.risk-tick {
+  position: absolute; top: 0; bottom: 0; width: 2rpx;
+  background: rgba(255,255,255,0.55);
+}
+.risk-tick.tick-red { background: rgba(248,113,113,0.8); }
+.risk-scale {
+  display: flex; justify-content: space-between;
+  font-size: 16rpx; color: var(--text-muted); margin-top: 6rpx;
+}
+.risk-legend {
+  display: flex; gap: 28rpx; font-size: 20rpx; color: var(--text-dim);
+  margin-top: 16rpx;
+}
+.lg-dot {
+  display: inline-block; width: 14rpx; height: 14rpx; border-radius: 4rpx;
+  margin-right: 8rpx;
+}
+.seg-vision-bg { background: #F59E0B; }
+.seg-env-bg { background: #38BDF8; }
+.seg-inter-bg { background: #A78BFA; }
+.fusion-meta { margin-top: 12rpx; font-size: 20rpx; }
+
+/* ===== 决策链：③ 证据链 ===== */
+.ev-item {
+  position: relative; display: flex; align-items: flex-start; gap: 20rpx;
+  padding: 10rpx 0 10rpx 8rpx;
+}
+.ev-item::before {
+  content: ''; position: absolute; left: 13rpx; top: 34rpx; bottom: -10rpx;
+  width: 2rpx; background: rgba(255,255,255,0.10);
+}
+.ev-item:last-child::before { display: none; }
+.ev-dot {
+  flex-shrink: 0; width: 12rpx; height: 12rpx; border-radius: 50%;
+  background: var(--blue); margin-top: 10rpx;
+  box-shadow: 0 0 6rpx rgba(56,189,248,0.5);
+}
+.ev-text { font-size: 22rpx; color: var(--text-dim); line-height: 1.6; }
+
+/* ===== 风险趋势图 ===== */
+.trend-track { position: relative; height: 220rpx; margin-top: 8rpx; }
+.trend-canvas { width: 100%; height: 100%; }
 
 /* LLM 卡 */
 .llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20rpx; }

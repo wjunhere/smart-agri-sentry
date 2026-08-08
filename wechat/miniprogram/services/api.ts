@@ -57,6 +57,11 @@ export function apiGetForecast() {
   return request<any>('GET', '/api/forecast');
 }
 
+export function apiGetFusionHistory(hours = 72) {
+  return request<{points: Array<{ts: number, risk: number, level: number}>}>(
+    'GET', `/api/fusion/history?hours=${hours}`, undefined, 5000);
+}
+
 export function getCameraUrl(): string {
   return getBaseUrl() + '/api/camera';
 }
