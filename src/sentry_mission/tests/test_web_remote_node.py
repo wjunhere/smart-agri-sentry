@@ -653,3 +653,25 @@ def test_mission_owned_states_keep_mode_auto():
         node.mode = 'MANUAL'
         node.on_mission_status(_status(state))
         assert node.mode == 'AUTO', state
+
+
+def test_negative_frame_after_positive_does_not_drop_snapshot():
+    """Regression: while braking, the detector publishes negative frames
+    before the STOPPED status tick arrives. The latch must survive them."""
+    import time
+    node = _make_wired_node()
+    node.batch_recorder.on_mode_change('AUTO')
+
+    positive = types.SimpleNamespace(
+        detected=True, bbox=[0.1, 0.1, 0.5, 0.5], confidence=0.9)
+    negative = types.SimpleNamespace(
+        detected=False, bbox=[], confidence=0.0)
+    node._on_plant_detected(positive)
+    node._on_plant_detected(negative)
+
+    node.on_mission_status(_status('PATROL'))
+    node.on_mission_status(_status('STOPPED'))
+
+    assert len(node.batch_recorder.current.records) == 1
+    rec = node.batch_recorder.current.records[0]
+    assert rec.plant_confidence == 0.9

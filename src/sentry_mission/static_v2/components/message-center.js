@@ -39,5 +39,8 @@ const MessageCenter = {
   props: { visible: Boolean },
   emits: ['close'],
   data() { return { preview: null }; },
-  methods: { close() { this.preview = null; this.$emit('close'); } },
+  methods: {
+    apiFullUrl,
+    close() { this.preview = null; this.$emit('close'); },
+  },
 };

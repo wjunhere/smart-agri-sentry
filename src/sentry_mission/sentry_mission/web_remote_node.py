@@ -303,12 +303,15 @@ class WebRemoteNode(Node):
             self.latest_camera_jpeg = bytes(msg.data)
 
     def _on_plant_detected(self, msg):
-        with self.lock:
-            if msg.detected:
+        # Latch positive frames only. While the car brakes the plant
+        # leaves the frame, so the detector publishes negatives before the
+        # STOPPED status tick reaches us; clearing on a negative frame
+        # would silently drop the snapshot. The 2 s freshness check in
+        # _record_detection_snapshot is the guard instead.
+        if msg.detected:
+            with self.lock:
                 self.latest_plant = (list(msg.bbox), float(msg.confidence))
                 self.latest_plant_time = time.time()
-            else:
-                self.latest_plant = None
 
     def _on_diagnosis(self, msg):
         if getattr(msg, 'class_id', 0) == 254:
@@ -322,6 +325,8 @@ class WebRemoteNode(Node):
             plant_time = self.latest_plant_time
             jpeg = self.latest_camera_jpeg
         if plant is None or (time.time() - plant_time) > 2.0:
+            self.get_logger().info(
+                'Detection snapshot skipped: no recent plant detection')
             return  # 固定点停车且无有效检测框 -> 不记录
         if not jpeg:
             self.get_logger().warn('Detection snapshot skipped: no frame')
@@ -333,6 +338,8 @@ class WebRemoteNode(Node):
             self.get_logger().warn(f'bbox draw failed: {exc}')
             snap = jpeg
         self.batch_recorder.on_stop_trigger(bbox, conf, snap)
+        self.get_logger().info(
+            f'Detection snapshot recorded (conf={conf:.2f})')
 
     def capture_camera_image(self):
         with self.lock:
