@@ -52,8 +52,10 @@ def test_valid_frame_after_timeout_resets(node):
         node.on_chassis(_make_chassis_msg(100, 100, comm_timeout=True))
         node.on_chassis(_make_chassis_msg(100, 100, comm_timeout=False))
         node.on_chassis(_make_chassis_msg(200, 200, comm_timeout=False))
-        # timeout publishes holding pose (1), valid frame publishes odom (1)
-        assert mock_pub.call_count == 2
+        # timeout publishes holding pose (1), first valid frame initializes
+        # the baseline and publishes an initial pose (1), the second valid
+        # frame publishes motion odometry (1)
+        assert mock_pub.call_count == 3
 
 
 def test_valid_frame_computes_odometry(node):
@@ -70,7 +72,9 @@ def test_valid_frame_computes_odometry(node):
         node.on_chassis(_make_chassis_msg(100, 100))
         node.on_chassis(_make_chassis_msg(200, 200))
 
-        assert mock_pub.call_count == 1
+        # First frame publishes the initial pose, second the motion odom;
+        # call_args holds the most recent (motion) publish.
+        assert mock_pub.call_count == 2
         odom = mock_pub.call_args[0][0]
         expected_dist = 100.0 / node.pulses_per_m
         expected_linear = expected_dist / 0.05
@@ -151,3 +155,17 @@ def test_reset_odom_service_clears_pose_and_encoder_baseline(node):
     assert node.y == 0.0
     assert node.theta == 0.0
     assert node.last_timeout_log_time is None
+
+
+def test_first_frame_all_zero_pulses_still_publishes(node):
+    """After an STM32 reboot the encoder counters are zero; the node must
+    still take them as the baseline and publish an initial pose instead of
+    staying silent until the wheels first move."""
+    with patch.object(node.pub, 'publish') as mock_pub:
+        node.on_chassis(_make_chassis_msg(0, 0))
+        assert mock_pub.call_count == 1
+        assert node.last_left == 0
+        assert node.last_right == 0
+        odom = mock_pub.call_args[0][0]
+        assert odom.pose.pose.position.x == 0.0
+        assert odom.twist.twist.linear.x == 0.0

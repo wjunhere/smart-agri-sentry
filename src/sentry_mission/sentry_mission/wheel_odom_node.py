@@ -94,16 +94,19 @@ class WheelOdomNode(Node):
         left_pulse = msg.left_pulse
         right_pulse = msg.right_pulse
 
-        # Skip if no encoder data yet (old firmware or not initialized)
-        if left_pulse == 0 and right_pulse == 0 and self.last_left is None:
-            return
-
         now = self.get_clock().now()
 
         if self.last_left is None:
+            # First frame after (re)start: take whatever the counters say as
+            # the baseline — including all zeros right after an STM32 reboot.
+            # Publish an initial pose right away so the EKF and any odom
+            # consumers see the topic before the wheels first move. On old
+            # firmware without encoder counters this just publishes a static
+            # pose, which is still preferable to silence.
             self.last_left = left_pulse
             self.last_right = right_pulse
             self.last_time = now
+            self._publish_odom(now, 0.0, 0.0, 0.0, 0.0)
             return
 
         # Pulse jump detection
