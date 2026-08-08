@@ -105,6 +105,7 @@ window.store = Vue.reactive({
     low_light_enhancement: null,
     detection_confidence: null,
     servo_start_side: null,
+    plant_stop_offset: null,
   },
   settingsBusy: false,
   settingsMsg: '',

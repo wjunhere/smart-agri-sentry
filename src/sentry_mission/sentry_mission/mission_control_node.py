@@ -389,6 +389,11 @@ class MissionControlNode(Node):
                 self.min_area_ratio = float(value)
                 self.get_logger().info(
                     f'min_area_ratio -> {self.min_area_ratio}')
+            elif p.name == 'servo_plant_stop_offset_deg':
+                self.servo_plant_stop_offset_deg = float(value)
+                self.get_logger().info(
+                    f'servo_plant_stop_offset_deg -> '
+                    f'{self.servo_plant_stop_offset_deg}')
         return SetParametersResult(successful=True)
 
     # ---- Waypoint helpers ----

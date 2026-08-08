@@ -42,6 +42,16 @@ const SettingsModal = {
                     @click="setSide('right')">朝右</button>
           </div>
         </div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="setting-name">停车舵机偏移角</span>
+            <span class="setting-desc">检测到植株停车后，摄像头向车头方向偏转角度（当前 {{ offsetText }}°）</span>
+          </div>
+          <input type="range" min="0" max="45" step="1"
+                 :value="store.settings.plant_stop_offset"
+                 :disabled="store.settingsBusy"
+                 @change="onOffsetChange" class="setting-slider" />
+        </div>
         <div class="settings-msg" v-if="store.settingsMsg">{{ store.settingsMsg }}</div>
         <div class="settings-hint">参数立即生效，栈重启后恢复默认值</div>
       </div>
@@ -51,6 +61,10 @@ const SettingsModal = {
     confText() {
       const v = this.store.settings.detection_confidence;
       return v == null ? '--' : Number(v).toFixed(2);
+    },
+    offsetText() {
+      const v = this.store.settings.plant_stop_offset;
+      return v == null ? '--' : Number(v).toFixed(0);
     }
   },
   watch: {
@@ -70,6 +84,10 @@ const SettingsModal = {
     },
     setSide(side) {
       updateSetting('servo_start_side', side)
+        .catch(err => console.error(err));
+    },
+    onOffsetChange(e) {
+      updateSetting('plant_stop_offset', Number(e.target.value))
         .catch(err => console.error(err));
     }
   }

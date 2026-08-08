@@ -1038,6 +1038,10 @@ def _get_app(node: WebRemoteNode):
             'type': 'str', 'choices': ['left', 'right'],
             'targets': [('/mission_control_node', 'servo_start_side')],
         },
+        'plant_stop_offset': {
+            'type': 'float', 'min': 0.0, 'max': 45.0,
+            'targets': [('/mission_control_node', 'servo_plant_stop_offset_deg')],
+        },
     }
 
     @_app.route('/api/settings', methods=['GET'])
