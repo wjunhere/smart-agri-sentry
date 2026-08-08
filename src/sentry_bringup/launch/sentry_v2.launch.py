@@ -49,6 +49,10 @@ def generate_launch_description():
         DeclareLaunchArgument('cruise_speed', default_value='0.18'),
         DeclareLaunchArgument('enable_live_diagnosis', default_value='false'),
         DeclareLaunchArgument('enable_advisory', default_value='true'),
+        DeclareLaunchArgument(
+            'mock_history_hours', default_value='0',
+            description='>0 时 fusion_node 启动即用南京8月昼夜模型回填 LWD '
+                        '历史窗口（演示用，跳过冷启动）'),
         DeclareLaunchArgument('enable_web', default_value='true'),
         DeclareLaunchArgument('enable_servo', default_value='false'),
         DeclareLaunchArgument(
@@ -371,6 +375,7 @@ def generate_launch_description():
                 'crop_profiles_path': crop_profiles_path,
                 'env_stale_sec': 180.0,
                 'fixed_env_window_sec': 10.0,
+                'mock_history_hours': LaunchConfiguration('mock_history_hours'),
             }],
             condition=IfCondition(LaunchConfiguration('enable_advisory')),
             output='screen',

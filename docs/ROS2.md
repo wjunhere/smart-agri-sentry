@@ -91,7 +91,7 @@
 
 | 话题名 | 类型 | 发布者 | 订阅者 | 频率 | 说明 |
 |---|---|---|---|---|---|
-| `/fusion/diagnosis` | `FusionResult` | `fusion_node` | `forecast`, `advisory`, `mission_control`, `data_logger` | 事件 | 融合输出：risk + alert + mode + 证据链 |
+| `/fusion/diagnosis` | `FusionResult` | `fusion_node` | `forecast`, `advisory`, `mission_control`, `data_logger`, `miniprogram_bridge` | 事件 | 融合输出：risk + alert + mode + 证据链 + 三路贡献分量 |
 | `/forecast/alert` | `ForecastAlert` | `forecast_node` | `advisory`, `data_logger` | 10 min | 预测预警 |
 | `/advisory/action` | `AdvisoryAction` | `advisory_node` | `mission_control`, `data_logger` | 事件 | 农艺建议 |
 
@@ -234,21 +234,15 @@ float32 ec                    # 电导率 us/cm
 
 ```yaml
 std_msgs/Header header
-string crop_type
-string disease_class
-uint8 disease_class_id
-float32 risk                  # [0.0, 1.0]
-float32 confidence            # [0.0, 1.0]
-string alert                  # NORMAL / SUSPICION / WARNING / CRITICAL
-string mode                   # 门控模式
-string data_quality           # COLD_BOOT / WARM_UP / NORMAL
-float32 p_vis                 # 视觉概率
-float32 e_norm                # 当前环境危险度
-float32 e_norm_history        # 24h 滑动平均
-float32 lwd_hours             # 叶面湿润时长（-1 表示冷启动无效）
-float32 interaction           # 交互项值
-float32 trend_factor          # 湿度趋势修正系数
+float32 risk_score            # [0.0, 1.0] 三路加权风险分
+uint8 alert_level             # 0 NORMAL / 1 SUSPICION / 2 WARNING / 3 CRITICAL
+string mode                   # 门控模式（VISION_DOMINANT / HIGH_HUMIDITY_PATHOGEN 等）
 string[] evidence_chain       # 人类可读证据列表
+float32 lwd_hours             # 叶面湿润时长（24h 滑窗）
+float32 confidence            # 数据充分度（COLD_BOOT 0.3 / WARM_UP 0.5-1.0）
+float32 vision_term           # 视觉分支加权贡献（三项之和 = risk_score）
+float32 env_term              # 环境分支加权贡献
+float32 interaction_term      # 交互项加权贡献
 ```
 
 ### 4.6 ForecastAlert（预测预警）

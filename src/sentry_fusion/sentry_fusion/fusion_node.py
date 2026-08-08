@@ -70,6 +70,24 @@ class FusionNode(Node):
         self.lwd_calc = LWDCalculator(
             window_hours=24, interval_minutes=1, warm_up_points=12)
 
+        # Demo support: seed the LWD window with synthetic past environment
+        # data (Nanjing August diurnal model) so the fusion chain does not
+        # start in COLD_BOOT at competition time. 0 = disabled (default).
+        # Only the LWD history is warmed; ongoing env data still comes from
+        # the real LoRa node (or lora_bridge use_mock).
+        # dynamic_typing: launch/CLI overrides arrive as int ('24'), double
+        # ('24.0') or string depending on the path — accept all and coerce.
+        from rcl_interfaces.msg import ParameterDescriptor
+        self.declare_parameter(
+            'mock_history_hours', 0.0,
+            ParameterDescriptor(dynamic_typing=True))
+        try:
+            mock_hours = float(self.get_parameter('mock_history_hours').value)
+        except (TypeError, ValueError):
+            mock_hours = 0.0
+        if mock_hours > 0.0:
+            self._backfill_mock_history(mock_hours)
+
         # State
         self.last_vision = None
         self.last_env = None
@@ -174,6 +192,47 @@ class FusionNode(Node):
             f'rh=[{merged["rh_onset"]},{merged["rh_full"]}], '
             f'lwd_base={merged["lwd_base_hours"]}h, refs={len(refs)}')
         return merged
+
+    def _backfill_mock_history(self, hours: float):
+        """Backfill the LWD window with synthetic past samples.
+
+        Nanjing August diurnal model (27-34.5C, RH ~75-96%): piecewise
+        temperature curve (05:00 low, 15:00 high, linear night decay),
+        humidity inverse of temperature, small seeded noise. Samples are
+        spaced by the calculator's interval and backdated, so phase
+        becomes NORMAL and lwd_hours reflects a realistic humid night
+        instead of a cold boot.
+        """
+        import random
+        import time as _time
+
+        rng = random.Random(42)
+        t_low, t_high = 27.0, 34.5
+        humi_min = max(55.0, 96.0 - (t_high - t_low) * 2.8)  # ~75%
+
+        def diurnal(h):
+            if 5.0 <= h <= 15.0:
+                return (1.0 - math.cos(math.pi * (h - 5.0) / 10.0)) / 2.0
+            past = h - 15.0 if h > 15.0 else h + 24.0 - 15.0
+            return max(0.0, 1.0 - past / 14.0)
+
+        step_min = self.lwd_calc.interval_minutes
+        n = min(int(hours * 60.0 / step_min), self.lwd_calc.max_points)
+        now = _time.time()
+        for i in range(n, 0, -1):
+            ts = now - i * step_min * 60.0
+            lt = _time.localtime(ts)
+            hour = lt.tm_hour + lt.tm_min / 60.0
+            d = diurnal(hour)
+            temp = t_low + (t_high - t_low) * d + rng.uniform(-0.4, 0.4)
+            humi = min(99.0, 96.0 - (96.0 - humi_min) * d
+                       + rng.uniform(-1.5, 1.5))
+            soil_h = 58.0 + rng.uniform(-3.0, 3.0)
+            self.lwd_calc.update(temp, humi, soil_h, None, ts)
+        self.get_logger().info(
+            f'Mock env history backfilled: {n} points over {hours:.1f}h, '
+            f'phase={self.lwd_calc.phase.value}, '
+            f'lwd={self.lwd_calc.lwd_hours:.1f}h')
 
     def on_vision(self, msg: Diagnosis):
         self.last_vision = msg
@@ -313,9 +372,10 @@ class FusionNode(Node):
 
         # --- Risk score ---
         trend_factor = 1.0 + 0.2 * max(0.0, trend)  # rising humidity amplifies
-        risk = (w_v * p_vis
-                + w_e * e_norm * trend_factor
-                + w_i * interaction)
+        vision_term = w_v * p_vis
+        env_term = w_e * e_norm * trend_factor
+        interaction_term = w_i * interaction
+        risk = vision_term + env_term + interaction_term
 
         # Cold-start penalty on confidence
         confidence = 1.0
@@ -376,6 +436,9 @@ class FusionNode(Node):
         msg.evidence_chain = evidence
         msg.lwd_hours = float(lwd)
         msg.confidence = float(confidence)
+        msg.vision_term = float(vision_term)
+        msg.env_term = float(env_term)
+        msg.interaction_term = float(interaction_term)
         return msg
 
     def _effective_env(self, now: float):

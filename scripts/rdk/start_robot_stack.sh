@@ -29,6 +29,8 @@ ENABLE_WEB="${ENABLE_WEB:-true}"
 CAMERA_BACKEND="${CAMERA_BACKEND:-mipi}"
 ENABLE_SERVO="${ENABLE_SERVO:-true}"
 ENABLE_SERVO_AUTO_FLIP="${ENABLE_SERVO_AUTO_FLIP:-true}"
+# >0 时 fusion_node 启动即回填 LWD 历史（演示跳过冷启动），0 = 关闭
+MOCK_HISTORY_HOURS="${MOCK_HISTORY_HOURS:-0}"
 MISSION_PARAMS_FILE="${MISSION_PARAMS_FILE:-${WS_DIR}/src/sentry_mission/config/mission_params.yaml}"
 CRUISE_SPEED="${CRUISE_SPEED:-}"
 if [ -z "$CRUISE_SPEED" ] && [ -f "$MISSION_PARAMS_FILE" ]; then
@@ -270,6 +272,7 @@ main() {
     enable_web:="${ENABLE_WEB}" \
     enable_servo:="${ENABLE_SERVO}" \
     enable_servo_auto_flip:="${ENABLE_SERVO_AUTO_FLIP}" \
+    mock_history_hours:="${MOCK_HISTORY_HOURS}" \
     >"${LAUNCH_LOG}" 2>&1 &
   echo "$!" >/tmp/sentry_v2.launch.pid
 
