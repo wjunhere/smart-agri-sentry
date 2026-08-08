@@ -60,6 +60,10 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
   const { type, data } = msg;
 
   switch (type) {
+    case 'camera':
+      updateStore({ cameraFrameUrl: 'data:image/jpeg;base64,' + data.jpeg_b64 });
+      break;
+
     case 'weather':
       updateStore({
         weatherCity: data.city || '',
@@ -152,21 +156,21 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
 
 function applySensorData(d: any) {
   updateStore({
-    envAirTemp: d.air_temp ?? null,
-    envAirHumidity: d.air_humidity ?? null,
-    envCO2: d.co2 ?? null,
-    envSoilTemp: d.soil_temp ?? null,
-    envSoilHumidity: d.soil_humidity ?? null,
-    envSoilN: d.soil_n ?? null,
-    envSoilP: d.soil_p ?? null,
-    envSoilK: d.soil_k ?? null,
-    envLeafWetness: d.leaf_wetness ?? null,
-    envLeafTemp: d.leaf_temp ?? null,
-    envHcho: d.hcho ?? null,
-    envTvoc: d.tvoc ?? null,
-    envPm25: d.pm25 ?? null,
-    envPm10: d.pm10 ?? null,
-    envEc: d.ec ?? null,
+    envAirTemp: d.air_temp != null ? d.air_temp : null,
+    envAirHumidity: d.air_humidity != null ? d.air_humidity : null,
+    envCO2: d.co2 != null ? d.co2 : null,
+    envSoilTemp: d.soil_temp != null ? d.soil_temp : null,
+    envSoilHumidity: d.soil_humidity != null ? d.soil_humidity : null,
+    envSoilN: d.soil_n != null ? d.soil_n : null,
+    envSoilP: d.soil_p != null ? d.soil_p : null,
+    envSoilK: d.soil_k != null ? d.soil_k : null,
+    envLeafWetness: d.leaf_wetness != null ? d.leaf_wetness : null,
+    envLeafTemp: d.leaf_temp != null ? d.leaf_temp : null,
+    envHcho: d.hcho != null ? d.hcho : null,
+    envTvoc: d.tvoc != null ? d.tvoc : null,
+    envPm25: d.pm25 != null ? d.pm25 : null,
+    envPm10: d.pm10 != null ? d.pm10 : null,
+    envEc: d.ec != null ? d.ec : null,
     envDataSource: d.data_source || '',
   });
 }

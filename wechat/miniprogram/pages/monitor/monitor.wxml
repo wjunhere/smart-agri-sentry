@@ -2,12 +2,7 @@
   <!-- 视频区 -->
   <view class="cam-shell">
     <view class="camera-wrap">
-      <view class="camera-frame {{active === 'A' ? 'back' : 'front'}}">
-        <image class="camera" src="{{urlB}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="B" />
-      </view>
-      <view class="camera-frame {{active === 'A' ? 'front' : 'back'}}">
-        <image class="camera" src="{{urlA}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" bindload="onImgLoad" binderror="onImgError" data-key="A" />
-      </view>
+      <image class="camera" src="{{cameraUrl}}" mode="aspectFit" fade-show="{{false}}" lazy-load="{{false}}" />
       <view class="camera-hud">
         <text wx:if="{{plantDetected}}" class="green">● 植株检测</text>
         <text wx:else class="muted">○ 未检测</text>

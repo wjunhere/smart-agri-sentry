@@ -8,6 +8,7 @@ Serves WeChat mini-program with:
 """
 
 import asyncio
+import base64
 import json
 import os
 import subprocess
@@ -90,6 +91,7 @@ class MiniProgramBridgeNode(Node):
         # Camera frame
         self._latest_frame = None
         self._latest_jpeg = None
+        self._last_cam_push = 0.0
 
         # Subscriptions
         self._setup_subscriptions()
@@ -155,6 +157,21 @@ class MiniProgramBridgeNode(Node):
         self.create_subscription(
             LLMAnalysisMsg, '/llm/analysis',
             self._on_llm_analysis, 10)
+
+        # Publisher for runtime weather-location updates (mini-program
+        # geolocation button -> REST endpoint -> this topic -> weather_node)
+        from sensor_msgs.msg import NavSatFix
+        self.weather_loc_pub = self.create_publisher(
+            NavSatFix, '/weather/set_location', 10)
+
+    def publish_weather_location(self, lat: float, lon: float) -> None:
+        from sensor_msgs.msg import NavSatFix
+        msg = NavSatFix()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'miniprogram'
+        msg.latitude = lat
+        msg.longitude = lon
+        self.weather_loc_pub.publish(msg)
 
     # --- Subscription callbacks ---
 
@@ -244,6 +261,8 @@ class MiniProgramBridgeNode(Node):
             'disaster_alerts': list(msg.disaster_alerts),
             'stale': msg.stale,
         }
+        self._push_ws({'type': 'weather', 'ts': self._now_ms(),
+                       'data': self.weather})
 
     def _on_forecast(self, msg):
         self.forecast = {
@@ -276,6 +295,19 @@ class MiniProgramBridgeNode(Node):
         # /out/compressed is already JPEG — forward as-is. The previous
         # decode + re-encode per frame cost ~1 CPU core at 30fps.
         self._latest_jpeg = bytes(msg.data)
+        # Push frames to mini-program clients over WS as base64 data URIs.
+        # Real devices often refuse plain-HTTP <image> loads, which left the
+        # phone stuck on "视频连接中"; the WS path works wherever /ws works.
+        now = time.monotonic()
+        if self.ws_queues and now - self._last_cam_push >= 0.2:
+            self._last_cam_push = now
+            self._push_ws({
+                'type': 'camera',
+                'ts': self._now_ms(),
+                'data': {
+                    'jpeg_b64': base64.b64encode(self._latest_jpeg).decode('ascii'),
+                },
+            })
 
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
@@ -516,6 +548,20 @@ def get_app() -> FastAPI:
     @_app.get('/api/weather')
     async def api_weather():
         return _node.weather if _node else {}
+
+    @_app.post('/api/weather/location')
+    async def api_weather_location(data: dict):
+        if _node is None:
+            return {'status': 'error', 'message': 'Bridge node not ready'}
+        try:
+            lat = float(data.get('lat'))
+            lon = float(data.get('lon'))
+        except (TypeError, ValueError):
+            return {'status': 'error', 'message': 'lat/lon must be numbers'}
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+            return {'status': 'error', 'message': 'lat/lon out of range'}
+        _node.publish_weather_location(lat, lon)
+        return {'status': 'ok', 'lat': lat, 'lon': lon}
 
     @_app.get('/api/forecast')
     async def api_forecast():
