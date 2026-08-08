@@ -38,6 +38,9 @@ window.store = Vue.reactive({
   advisoryText: '',
   advisoryUrgency: 0,
   advisoryFungicide: '',
+  advisoryPriority: '',
+  advisoryActionType: '',
+  advisorySteps: [],
   forecastAlerts: [],
   weatherDays: [],
   weatherDisasterAlerts: [],
@@ -45,6 +48,11 @@ window.store = Vue.reactive({
   weatherLat: null,
   weatherLon: null,
   fusionResults: [],
+  fusionLatest: null,   // 最新一帧 /fusion/diagnosis（决策链面板用）
+  mockFieldOn: false,   // MOCK 演示模式（mock-field.js 注入模拟田间数据）
+  diagnosisTs: 0,       // 各数据源最后到达时间（输入层新鲜度）
+  envTs: 0,
+  weatherTs: 0,
   weatherDays: [],
   weatherHours: [],
   weatherDisasterAlerts: [],
@@ -132,6 +140,22 @@ function missionStateToMode(state) {
 let ros = null;
 let lastRealEnvTime = 0;  // real /sensor/environment_fixed overrides sim
 
+// 融合判级 / 判因模式 / 作业类型的中文映射（决策链面板、建议卡共用）
+const ALERT_LEVEL_NAMES = ['NORMAL', 'SUSPICION', 'WARNING', 'CRITICAL'];
+const ALERT_CN = { NORMAL: '正常', SUSPICION: '关注', WARNING: '预警', CRITICAL: '紧急' };
+const MODE_CN = {
+  VISION_DOMINANT: '视觉确诊主导',
+  LATENT_SUSPICION: '潜伏疑似',
+  HIGH_HUMIDITY_PATHOGEN: '高湿致病路径',
+  DROUGHT_STRESS: '干旱胁迫',
+  UNKNOWN_DISEASE: '未知病害',
+  BALANCED: '综合平衡',
+};
+const ACTION_CN = {
+  SPRAY: '喷施作业', IRRIGATE: '灌溉补水', PROTECT: '防护保温',
+  MONITOR: '加强监测', NONE: '暂无操作',
+};
+
 function rosConnect() {
   ros = new ROSLIB.Ros({ url: ROS_CONFIG.url });
 
@@ -204,6 +228,7 @@ const TOPICS = [
      store.diagnosisDisease = maxCls;
      store.diagnosisConfidence = avgConf;
      store.diagnosisProbabilities = avgProbs;
+     store.diagnosisTs = Date.now();
 
      // Mock mode: real inference runs unchanged; only the displayed class is
      // forced to the selected disease with confidence jitter in [0.80, 0.90].
@@ -223,14 +248,25 @@ const TOPICS = [
        }
      }
    }],
-  // === MOCK START: advisory (remove after test) ===
   ['/advisory/action', 'sentry_interfaces/AdvisoryAction',
-   (msg) => { /* real data ignored; injectMock handles advisory */ }],
-  // === MOCK END ===
-  // === MOCK START: forecast (remove after test) ===
+   (msg) => {
+     store.advisoryText = msg.description || '';
+     store.advisoryPriority = msg.priority || '';
+     store.advisoryActionType = msg.action_type || '';
+     store.advisorySteps = msg.steps || [];
+   }],
   ['/forecast/alert', 'sentry_interfaces/ForecastAlert',
-   (msg) => { /* real data ignored; injectMock handles forecast */ }],
-  // === MOCK END ===
+   (msg) => {
+     store.forecastAlerts.push({
+       time: new Date().toISOString(),
+       active: msg.active,
+       alert_type: msg.alert_type,
+       probability: msg.probability,
+       description: msg.description,
+       hours_ahead: msg.hours_ahead,
+     });
+     if (store.forecastAlerts.length > 200) store.forecastAlerts.shift();
+   }],
   ['/weather/forecast', 'sentry_interfaces/WeatherForecast',
    (msg) => {
      store.weatherDays = msg.days || [];
@@ -240,13 +276,27 @@ const TOPICS = [
      store.weatherCity = msg.city;
      store.weatherLat = msg.lat;
      store.weatherLon = msg.lon;
+     store.weatherTs = Date.now();
    }],
   ['/fusion/diagnosis', 'sentry_interfaces/FusionResult',
    (msg) => {
-     store.fusionResults.push({
+     const alertName = ALERT_LEVEL_NAMES[msg.alert_level] || 'NORMAL';
+     store.fusionLatest = {
        time: new Date().toISOString(),
        risk_score: msg.risk_score,
-       alert_level: msg.alert_level,
+       alert_level: alertName,
+       mode: msg.mode,
+       evidence_chain: msg.evidence_chain || [],
+       lwd_hours: msg.lwd_hours,
+       confidence: msg.confidence,
+       vision_term: msg.vision_term || 0,
+       env_term: msg.env_term || 0,
+       interaction_term: msg.interaction_term || 0,
+     };
+     store.fusionResults.push({
+       time: store.fusionLatest.time,
+       risk_score: msg.risk_score,
+       alert_level: alertName,
        mode: msg.mode,
        evidence_chain: msg.evidence_chain,
        lwd_hours: msg.lwd_hours,
@@ -269,6 +319,7 @@ const TOPICS = [
   ['/sensor/environment_fixed', 'sentry_interfaces/Environment',
    (msg) => {
      lastRealEnvTime = Date.now();
+     if (store.mockFieldOn) return;  // MOCK 演示期间由 mock-field.js 驱动
      store.envAirTemp = msg.air_temp;
      store.envAirHumidity = msg.air_humidity;
      store.envCO2 = msg.air_co2;
@@ -276,6 +327,7 @@ const TOPICS = [
      store.envSoilHumidity = msg.soil_humidity;
      store.envLeafWetness = msg.leaf_wetness;
      store.envDataSource = msg.data_source;
+     store.envTs = Date.now();
    }],
   ['/mission/status', 'sentry_interfaces/MissionStatus',
    (msg) => {
@@ -730,12 +782,7 @@ function callSetCropType(cropType) {
   store.diagnosisProbabilities = [];
   store.diagnosisCropType = 'tomato';
 
-  // Advisory
-  // === MOCK START: advisory (remove after test) ===
-  store.advisoryText = '建议 24h 内喷施嘧菌酯 250g/L SC 800 倍液，间隔 7-10 天二次喷施。重点喷洒中下部叶片，注意正反面均匀着药。';
-  store.advisoryUrgency = 24;
-  store.advisoryFungicide = '嘧菌酯 250g/L SC 800x';
-  // === MOCK END ===
+  // Advisory — real data via /advisory/action subscription
 
   // Environment — Xuzhou July 11:00 overcast scenario: bounded random walk, 60s tick.
   // Real /sensor/environment_fixed data overrides sim for 90s after the last message.
@@ -753,6 +800,7 @@ function callSetCropType(cropType) {
     ['envSoilPH',        6.5,  6.3,   6.8, 0.05, 2],
   ];
   function envSimTick() {
+    if (store.mockFieldOn) return;  // mock-field.js 接管环境数据
     if (Date.now() - lastRealEnvTime < 90000) return;  // real sensor active
     ENV_SIM.forEach(([key, , min, max, maxStep, decimals]) => {
       let v = store[key] + (Math.random() * 2 - 1) * maxStep;
@@ -817,118 +865,7 @@ function callSetCropType(cropType) {
     store.publishWeatherLocation = publishWeatherLocation;
   })();
 
-  // === MOCK START: forecast alerts (remove after test) ===
-  const now = Date.now();
-  const BASE_HOUR = 1;  // data starts at 01:00 today
-  const totalSpan = 21 * 60;  // 01:00 → 22:00 = 21 hours = 1260 min
-  const forecastData = [
-    { hour: 1,  level: 'SUSPICION', prob: 0.35, risk: 0.35, mode: 'LATENT_SUSPICION', conf: 0.42, lwd: 9.2,
-      humidity: 92, temp: 19.2, soilTemp: 21.0, soilHumidity: 62, disease: 'healthy', diagConf: 0,
-      desc: '凌晨高湿，LWD 达 9.2h，叶面持续湿润',
-      evidence: ['环境: 湿度 92% > 阈值 85%', 'LWD: 9.2h > 阈值 6.0h', '模式: LATENT_SUSPICION'] },
-    { hour: 3,  level: 'WARNING',   prob: 0.48, risk: 0.48, mode: 'HIGH_HUMIDITY_PATHOGEN', conf: 0.52, lwd: 11.0,
-      humidity: 94, temp: 18.5, soilTemp: 20.8, soilHumidity: 63, disease: 'healthy', diagConf: 0,
-      desc: '凌晨气温降至最低 18.5°C，湿度峰值 94%，LWD 达 11h',
-      evidence: ['环境: 湿度 94% > 阈值 85%', 'LWD: 11.0h > 阈值 6.0h', '温度: 18.5°C 适宜病原', '模式: HIGH_HUMIDITY_PATHOGEN'] },
-    { hour: 6,  level: 'SUSPICION', prob: 0.38, risk: 0.38, mode: 'LATENT_SUSPICION', conf: 0.45, lwd: 5.8,
-      humidity: 88, temp: 19.8, soilTemp: 20.9, soilHumidity: 62, disease: 'healthy', diagConf: 0,
-      desc: '日出升温，湿度回落至 88%，LWD 降至 5.8h',
-      evidence: ['环境: 湿度 88%', 'LWD: 5.8h < 阈值 6.0h', '趋势: 湿度下降 -6%'] },
-    { hour: 8,  level: 'NORMAL',    prob: 0.18, risk: 0.18, mode: 'BALANCED', conf: 0.55, lwd: 3.2,
-      humidity: 82, temp: 22.0, soilTemp: 21.2, soilHumidity: 61, disease: 'healthy', diagConf: 0,
-      desc: '叶片表面开始干燥，LWD 降至 3.2h，风险回落',
-      evidence: ['环境: 湿度 82% < 阈值 85%', 'LWD: 3.2h', '模式: BALANCED'] },
-    { hour: 11, level: 'NORMAL',    prob: 0.10, risk: 0.10, mode: 'BALANCED', conf: 0.65, lwd: 0.8,
-      humidity: 68, temp: 25.8, soilTemp: 22.5, soilHumidity: 58, disease: 'healthy', diagConf: 0,
-      desc: '午间升温至 25.8°C，湿度降至 68%，叶面完全干燥',
-      evidence: ['环境: 湿度 68% < 阈值 85%', 'LWD: 0.8h', '温度: 25.8°C 不利病原', '模式: BALANCED'] },
-    { hour: 14, level: 'NORMAL',    prob: 0.08, risk: 0.08, mode: 'BALANCED', conf: 0.70, lwd: 0.3,
-      humidity: 62, temp: 28.1, soilTemp: 23.8, soilHumidity: 55, disease: 'healthy', diagConf: 0,
-      desc: '午后温度峰值 28.1°C，湿度最低 62%，病害风险最低',
-      evidence: ['环境: 湿度 62% 远低于阈值', 'LWD: 0.3h', '温度: 28.1°C 抑制病原', '模式: BALANCED'] },
-    { hour: 17, level: 'NORMAL',    prob: 0.14, risk: 0.14, mode: 'BALANCED', conf: 0.60, lwd: 0.5,
-      humidity: 72, temp: 25.2, soilTemp: 23.5, soilHumidity: 56, disease: 'healthy', diagConf: 0,
-      desc: '傍晚温度回落，湿度开始回升至 72%',
-      evidence: ['环境: 湿度 72% < 阈值 85%', 'LWD: 0.5h', '模式: BALANCED'] },
-    { hour: 19, level: 'SUSPICION', prob: 0.32, risk: 0.32, mode: 'LATENT_SUSPICION', conf: 0.48, lwd: 3.8,
-      humidity: 84, temp: 22.3, soilTemp: 22.8, soilHumidity: 59, disease: 'healthy', diagConf: 0,
-      desc: '入夜降温，湿度升至 84%，LWD 开始累积至 3.8h',
-      evidence: ['环境: 湿度 84% 接近阈值', 'LWD: 3.8h 上升中', '模式: LATENT_SUSPICION'] },
-    { hour: 22, level: 'WARNING',   prob: 0.58, risk: 0.58, mode: 'HIGH_HUMIDITY_PATHOGEN', conf: 0.55, lwd: 7.2,
-      humidity: 89, temp: 20.5, soilTemp: 22.0, soilHumidity: 61, disease: 'healthy', diagConf: 0,
-      desc: '夜间高湿 89%，LWD 突破阈值达 7.2h，早疫病风险预警',
-      evidence: ['环境: 湿度 89% > 阈值 85%', 'LWD: 7.2h > 阈值 6.0h', '温度: 20.5°C 适宜病原', '模式: HIGH_HUMIDITY_PATHOGEN'] },
-  ];
-  forecastData.forEach(d => {
-    const minOffset = totalSpan - (d.hour - BASE_HOUR) * 60;
-    store.forecastAlerts.push({
-      time: new Date(now - minOffset * 60000).toISOString(),
-      active: d.level !== 'NORMAL',
-      alert_type: d.level,
-      probability: d.prob,
-      description: d.desc,
-      hours_ahead: 3,
-      risk_score: d.risk,
-      mode: d.mode,
-      confidence: d.conf,
-      lwd_hours: d.lwd,
-      evidence_chain: d.evidence,
-      snapshot: {
-        frame: canvas.toDataURL('image/jpeg', 0.6),
-        diagnosisDisease: d.disease,
-        diagnosisConfidence: d.diagConf,
-        advisoryText: d.level === 'WARNING'
-          ? '建议 24h 内喷施嘧菌酯 250g/L SC 800 倍液，间隔 7-10 天二次喷施'
-          : d.level === 'SUSPICION'
-          ? '加强监测，若 LWD 持续上升考虑预防性施药'
-          : '暂无农艺建议，继续常规巡检',
-        advisoryFungicide: d.level === 'WARNING' ? '嘧菌酯 250g/L SC 800x' : '',
-        envAirTemp: d.temp,
-        envAirHumidity: d.humidity,
-        envSoilTemp: d.soilTemp,
-        envSoilHumidity: d.soilHumidity,
-        envLeafWetness: d.lwd,
-      },
-    });
-  });
-  // === MOCK END ===
 
-  // === MOCK START: fusion history (remove after test) ===
-  const fusionSnapshots = [
-    { hour: 3,  risk: 0.48, level: 'WARNING',  disease: 'healthy', conf: 0.52, lwd: 11.0, humidity: 94, temp: 18.5 },
-    { hour: 19, risk: 0.32, level: 'SUSPICION',disease: 'healthy', conf: 0.48, lwd: 3.8,  humidity: 84, temp: 22.3 },
-    { hour: 22, risk: 0.58, level: 'WARNING',  disease: 'healthy', conf: 0.55, lwd: 7.2,  humidity: 89, temp: 20.5 },
-  ];
-  fusionSnapshots.forEach(s => {
-    const minOffset = totalSpan - (s.hour - BASE_HOUR) * 60;
-    store.fusionResults.push({
-      time: new Date(now - minOffset * 60000).toISOString(),
-      risk_score: s.risk,
-      alert_level: s.level,
-      mode: 'VISION_DOMINANT',
-      evidence_chain: [
-        '视觉: ' + Math.round(s.conf * 100) + '% 早疫病 (early_blight)',
-        '环境: 湿度 ' + s.humidity + '% > 阈值 85%',
-        'LWD: ' + s.lwd + 'h > 阈值 6.0h',
-        '趋势: 过去 2h 湿度趋势 +0.15',
-      ],
-      lwd_hours: s.lwd,
-      confidence: s.conf,
-      snapshot: {
-        frame: canvas.toDataURL('image/jpeg', 0.6),
-        diagnosisDisease: s.disease,
-        diagnosisConfidence: s.conf,
-        advisoryText: '建议 24h 内喷施嘧菌酯 250g/L SC 800 倍液，间隔 7-10 天二次喷施',
-        advisoryFungicide: '嘧菌酯 250g/L SC 800x',
-        envAirTemp: s.temp,
-        envAirHumidity: s.humidity,
-        envSoilTemp: 22.1,
-        envSoilHumidity: 60.5,
-        envLeafWetness: s.lwd,
-      }
-    });
-  });
-  // === MOCK END (fusion history) ===
 })();
 
 // ── Diagnosis mock toggle: 'real' | 'healthy' | 'early_blight' | 'leaf_mold' ──

@@ -52,6 +52,16 @@ const SettingsModal = {
                  :disabled="store.settingsBusy"
                  @change="onOffsetChange" class="setting-slider" />
         </div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="setting-name">模拟田间数据（MOCK）</span>
+            <span class="setting-desc">开启后：①页面注入模拟环境读数 ②小车"启动栈"时融合节点回填24h模拟环境历史（南京8月模型），跳过冷启动</span>
+          </div>
+          <button class="setting-toggle" :class="{ on: store.mockFieldOn }"
+                  @click="store.toggleMockField()">
+            {{ store.mockFieldOn ? '开' : '关' }}
+          </button>
+        </div>
         <div class="settings-msg" v-if="store.settingsMsg">{{ store.settingsMsg }}</div>
         <div class="settings-hint">参数立即生效，栈重启后恢复默认值</div>
       </div>
@@ -69,7 +79,11 @@ const SettingsModal = {
   },
   watch: {
     visible(v) {
-      if (v) fetchSettings().catch(err => console.error(err));
+      if (v) {
+        fetchSettings()
+          .then(() => store.syncMockFromSettings && store.syncMockFromSettings())
+          .catch(err => console.error(err));
+      }
     }
   },
   methods: {

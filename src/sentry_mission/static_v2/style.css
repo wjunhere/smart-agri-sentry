@@ -127,14 +127,26 @@ body {
   bottom: var(--bottombar-h);
 }
 .left-panel  { display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+/* 右栏：两列网格，小卡（检测/诊断、预警/天气）两两一行，
+   大卡（融合决策链、农艺建议）占满整行；内容超出时栏内滚动。
+   高度占满：前三行按内容自适应，最后一行（预警/天气）拉伸填满剩余空间，
+   静态无数据时右栏也不会留空。 */
 .right-panel {
-  display: flex; flex-direction: column; gap: 6px;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto minmax(220px, 1fr);
+  gap: 6px;
+  overflow-y: auto;
+  height: 100%;
 }
-.right-panel .card:nth-child(1) { flex: 2; }  /* detection 20% */
-.right-panel .card:nth-child(2) { flex: 3; }  /* diagnosis 30% */
-.right-panel .card:nth-child(3) { flex: 2; }  /* advisory 20% */
-.right-panel .card:nth-child(4) { flex: 3; overflow-y: auto; }  /* forecast 30% */
+.right-panel > * { min-width: 0; }
+.right-panel .card:nth-child(3),   /* 融合决策链 */
+.right-panel .card:nth-child(4) {  /* 农艺建议 */
+  grid-column: 1 / -1;
+}
+@media (max-width: 1100px) {
+  .right-panel { grid-template-columns: 1fr; }
+}
 
 /* ============ CAMERA ============ */
 .camera-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -984,3 +996,95 @@ a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
 .settings-hint { font-size: 11px; color: var(--text-dim); }
 .settings-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; }
 .settings-btn:hover { color: var(--text); }
+
+/* ===== 融合决策链面板 ===== */
+.fusion-card.fusion-normal    { border-left: 3px solid var(--green); }
+.fusion-card.fusion-suspicion { border-left: 3px solid var(--amber); }
+.fusion-card.fusion-warning   { border-left: 3px solid #FB923C; }
+.fusion-card.fusion-critical  { border-left: 3px solid var(--red); }
+
+.fusion-age { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: auto; }
+
+.fs-sources { display: flex; flex-direction: column; }
+.fs-src {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--hairline-soft, rgba(255,255,255,0.06));
+}
+.fs-src:last-child { border-bottom: none; }
+.fs-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; }
+.fs-src-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fs-label { font-size: 11px; color: var(--text-muted); }
+.fs-value { font-size: 13px; color: var(--text); }
+.fs-age { flex-shrink: 0; font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+.fs-arrow {
+  text-align: center; font-size: 10px; letter-spacing: 0.2em;
+  color: var(--text-muted); padding: 6px 0 2px;
+}
+
+.fs-score-row { display: flex; align-items: center; gap: 16px; margin: 8px 0 14px; }
+.fs-score { font-size: 44px; font-weight: 800; line-height: 1; font-family: 'JetBrains Mono', monospace; }
+.fs-score.normal { color: var(--green); }
+.fs-score.suspicion { color: var(--amber); }
+.fs-score.warning { color: #FB923C; }
+.fs-score.critical { color: var(--red); }
+.fs-score-side { display: flex; flex-direction: column; gap: 6px; }
+.fs-mode { font-size: 12px; color: var(--text-dim); }
+
+.fs-badge {
+  align-self: flex-start; font-size: 11px; font-weight: 700;
+  padding: 3px 12px; border-radius: 999px;
+}
+.fs-badge.normal { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.4); }
+.fs-badge.suspicion { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.4); }
+.fs-badge.warning { background: rgba(251,146,60,0.15); color: #FB923C; border: 1px solid rgba(251,146,60,0.4); }
+.fs-badge.critical { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.4); }
+
+.risk-track {
+  position: relative; display: flex; height: 12px; border-radius: 999px;
+  background: rgba(255,255,255,0.06); overflow: hidden;
+}
+.risk-seg { height: 12px; transition: width 0.6s ease; }
+.risk-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.55); }
+.risk-tick.tick-red { background: rgba(239,68,68,0.8); }
+.risk-scale {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: var(--text-muted); margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.risk-legend {
+  display: flex; gap: 16px; font-size: 11px; color: var(--text-dim); margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.lg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.fs-meta { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+
+.fs-evidence { margin-top: 12px; }
+.fs-ev-title { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+.fs-ev-item {
+  position: relative; display: flex; align-items: flex-start; gap: 10px;
+  padding: 4px 0 4px 4px;
+}
+.fs-ev-item::before {
+  content: ''; position: absolute; left: 7px; top: 16px; bottom: -4px;
+  width: 1px; background: rgba(255,255,255,0.10);
+}
+.fs-ev-item:last-child::before { display: none; }
+.fs-ev-dot {
+  flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--blue); margin-top: 5px;
+}
+.fs-ev-text { font-size: 12px; color: var(--text-dim); line-height: 1.55; font-family: 'JetBrains Mono', monospace; }
+
+/* ===== 农艺建议卡（真实 AdvisoryAction） ===== */
+.action-badge {
+  font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 999px;
+  margin-left: 8px; vertical-align: middle;
+}
+.action-badge.prio-normal { background: rgba(56,189,248,0.15); color: var(--blue); border: 1px solid rgba(56,189,248,0.4); }
+.action-badge.prio-high { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.4); }
+.action-badge.prio-critical { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.4); }
+.adv-steps { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+
+/* 天气卡头部：半宽卡片里标题不换行挤竖排，控件放不下了整体折到第二行 */
+.weather-header { flex-wrap: wrap; row-gap: 6px; white-space: nowrap; }

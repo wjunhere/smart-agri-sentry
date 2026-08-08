@@ -277,6 +277,9 @@ class WebRemoteNode(Node):
         self.vision_inference_mode = 'triggered'
         self.vision_diagnosis_proc = None
         self.vision_diagnosis_log = None
+        # Demo support: >0 means robot-stack scripts start with
+        # MOCK_HISTORY_HOURS (fusion LWD backfill). Set via /api/settings.
+        self.mock_history_hours = 0.0
         # None | 'preheat' | 'start' | 'shutdown' — guards async stack ops
         self.stack_operation = None
         self.vision_pause_srv = self.create_client(
@@ -560,6 +563,10 @@ class WebRemoteNode(Node):
         path = Path(script_path)
         if not path.exists():
             return False, f'Script not found: {path}'
+        env = _stack_script_env()
+        # Frontend MOCK toggle decides whether the fusion node starts with a
+        # backfilled LWD window; scripts that don't read it are unaffected.
+        env['MOCK_HISTORY_HOURS'] = str(int(self.mock_history_hours))
         try:
             result = subprocess.run(
                 ['bash', str(path)],
@@ -567,7 +574,7 @@ class WebRemoteNode(Node):
                 stderr=subprocess.STDOUT,
                 text=True,
                 timeout=self.stack_script_timeout,
-                env=_stack_script_env())
+                env=env)
         except subprocess.TimeoutExpired as exc:
             output = exc.stdout or ''
             return False, f'Script timed out: {path}\n{output}'
@@ -1042,12 +1049,20 @@ def _get_app(node: WebRemoteNode):
             'type': 'float', 'min': 0.0, 'max': 45.0,
             'targets': [('/mission_control_node', 'servo_plant_stop_offset_deg')],
         },
+        # Web-local (no ROS target): hours of synthetic LWD history the
+        # fusion node backfills when the robot stack starts via /stack/*.
+        'mock_history_hours': {
+            'type': 'float', 'min': 0.0, 'max': 48.0, 'targets': [],
+        },
     }
 
     @_app.route('/api/settings', methods=['GET'])
     def api_settings_get():
         out = {}
         for key, spec in SETTINGS_SCHEMA.items():
+            if not spec['targets']:
+                out[key] = getattr(node, key, None)
+                continue
             node_name, param = spec['targets'][0]
             ok, value = node.get_ros_param(node_name, param)
             out[key] = value if ok else None
@@ -1074,6 +1089,11 @@ def _get_app(node: WebRemoteNode):
                         continue
             except (TypeError, ValueError):
                 results[key] = 'invalid value'
+                continue
+            if not spec['targets']:
+                # Web-local setting: stored on the node itself.
+                setattr(node, key, value)
+                results[key] = 'ok'
                 continue
             oks = [node.set_ros_param(n, p, value)[0]
                    for n, p in spec['targets']]
