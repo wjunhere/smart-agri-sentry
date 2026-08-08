@@ -60,6 +60,18 @@ function handleMessage(msg: { type: string; ts: number; data: any }) {
   const { type, data } = msg;
 
   switch (type) {
+    case 'weather':
+      updateStore({
+        weatherCity: data.city || '',
+        weatherLat: data.lat != null ? data.lat : null,
+        weatherLon: data.lon != null ? data.lon : null,
+        weatherDays: data.days || [],
+        weatherHours: data.hours || [],
+        weatherDisasterAlerts: data.disaster_alerts || [],
+        weatherStale: Boolean(data.stale),
+      });
+      break;
+
     case 'snapshot':
       updateStore({
         mode: data.mode,

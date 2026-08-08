@@ -13,7 +13,6 @@ from cryptography.hazmat.primitives import serialization
 QWEATHER_BASE = "https://devapi.qweather.com/v7"
 QWEATHER_PAID_BASE = "https://api.qweather.com/v7"
 
-
 def _make_jwt(project_id, credential_id, private_key_path):
     """Generate a short-lived JWT for QWeather API auth."""
     with open(private_key_path, "rb") as f:
@@ -73,6 +72,21 @@ class CMAClient:
             if title:
                 alerts.append(title)
         return alerts
+
+    def lookup_city(self, lat, lon):
+        """Reverse-geocode coordinates to a city name via QWeather GeoAPI.
+        Returns '' on failure — callers must not block weather fetch on it."""
+        if self.mock_mode:
+            return "MockCity"
+        data = self._qweather_get(f"https://{self.api_host}/geo/v2/city/lookup",
+                                  f"{lon:.2f},{lat:.2f}")
+        if not data:
+            return ""
+        locations = data.get("location") or []
+        if not locations:
+            return ""
+        top = locations[0]
+        return top.get("name", "") or top.get("adm2", "")
 
     def _qweather_get(self, url, location):
         full_url = f"{url}?location={location}"

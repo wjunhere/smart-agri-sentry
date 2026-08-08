@@ -1,6 +1,10 @@
 """Weather data ingestion node for Smart Agri Sentry."""
+import json
+import os
+
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import NavSatFix
 from sentry_interfaces.msg import WeatherForecast, WeatherDay, WeatherHour
 from .cma_client import CMAClient
 from .cache_manager import CacheManager
@@ -14,6 +18,8 @@ class WeatherNode(Node):
         self.declare_parameter('city', '')
         self.declare_parameter('fetch_interval_sec', 10800)
         self.declare_parameter('cache_path', '/tmp/sentry_weather_cache.json')
+        self.declare_parameter('location_cache_path',
+                               '~/.sentry/weather_location.json')
         self.declare_parameter('qweather_api_key', '')
         self.declare_parameter('qweather_api_host', 'devapi.qweather.com')
         self.declare_parameter('qweather_project_id', '')
@@ -26,6 +32,13 @@ class WeatherNode(Node):
         self.city = self.get_parameter('city').value
         self.fetch_interval_sec = self.get_parameter('fetch_interval_sec').value
         self.mock_mode = self.get_parameter('mock_mode').value
+
+        self.location_cache_path = os.path.expanduser(
+            self.get_parameter('location_cache_path').value)
+
+        # A location pushed at runtime (frontend / mini-program geolocation)
+        # overrides the configured parameters and survives restarts.
+        self._load_saved_location()
 
         cache_path = self.get_parameter('cache_path').value
         api_key = self.get_parameter('qweather_api_key').value
@@ -44,6 +57,8 @@ class WeatherNode(Node):
         self.last_published = None
 
         self.pub = self.create_publisher(WeatherForecast, '/weather/forecast', 10)
+        self.create_subscription(
+            NavSatFix, '/weather/set_location', self._on_set_location, 10)
 
         # Publish cached data on startup
         cached = self._load_from_cache()
@@ -63,6 +78,50 @@ class WeatherNode(Node):
         self.repub_timer = self.create_timer(60.0, self._on_republish)
         self.get_logger().info(f'Weather node ready (mock={self.mock_mode})')
 
+    def _on_set_location(self, msg):
+        lat = float(msg.latitude)
+        lon = float(msg.longitude)
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+            self.get_logger().warn(
+                f'Ignoring invalid location lat={lat}, lon={lon}')
+            return
+        self.lat = lat
+        self.lon = lon
+        city = self.client.lookup_city(lat, lon)
+        if city:
+            self.city = city
+        self._save_location()
+        self.get_logger().info(
+            f'Weather location updated: {self.city or "?"} '
+            f'({self.lat:.4f}, {self.lon:.4f}), refetching')
+        self._fetch_and_publish()
+
+    def _load_saved_location(self):
+        try:
+            with open(self.location_cache_path) as f:
+                saved = json.load(f)
+            lat = float(saved['lat'])
+            lon = float(saved['lon'])
+            if -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0:
+                self.lat = lat
+                self.lon = lon
+                self.city = saved.get('city', '') or self.city
+                self.get_logger().info(
+                    f'Restored saved location {self.city or "?"} '
+                    f'({lat:.4f}, {lon:.4f})')
+        except (OSError, KeyError, TypeError, ValueError):
+            pass
+
+    def _save_location(self):
+        try:
+            os.makedirs(os.path.dirname(self.location_cache_path),
+                        exist_ok=True)
+            with open(self.location_cache_path, 'w') as f:
+                json.dump({'lat': self.lat, 'lon': self.lon,
+                           'city': self.city}, f)
+        except OSError as e:
+            self.get_logger().warn(f'Failed to save location: {e}')
+
     def _on_timer(self):
         self._fetch_and_publish()
 
@@ -81,9 +140,9 @@ class WeatherNode(Node):
                 self.last_published = msg
             return
 
-        raw.setdefault("city", self.city)
-        raw.setdefault("lat", self.lat)
-        raw.setdefault("lon", self.lon)
+        raw["city"] = self.city or raw.get("city", "")
+        raw["lat"] = self.lat
+        raw["lon"] = self.lon
 
         alerts = self.client.fetch_disaster_warning(self.lat, self.lon)
         raw["disaster_alerts"] = alerts if alerts else []

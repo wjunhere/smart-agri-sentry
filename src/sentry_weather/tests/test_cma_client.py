@@ -29,3 +29,13 @@ def test_real_mode_returns_none_without_credentials():
     client = CMAClient(project_id="", credential_id="", private_key_path="", mock_mode=False)
     data = client.fetch_grid_forecast(39.9, 116.4)
     assert data is None
+
+
+def test_lookup_city_mock_mode():
+    client = CMAClient(mock_mode=True)
+    assert client.lookup_city(32.06, 118.79) == "MockCity"
+
+
+def test_lookup_city_returns_empty_without_credentials():
+    client = CMAClient(project_id="", credential_id="", private_key_path="", mock_mode=False)
+    assert client.lookup_city(32.06, 118.79) == ""

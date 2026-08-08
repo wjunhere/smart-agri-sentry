@@ -45,5 +45,13 @@
   },
   "componentFramework": "glass-easel",
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents"
+  "lazyCodeLoading": "requiredComponents",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于获取当前位置以查询当地天气"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ]
 }

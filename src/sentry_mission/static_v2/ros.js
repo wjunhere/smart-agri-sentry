@@ -237,6 +237,8 @@ const TOPICS = [
      store.weatherDisasterAlerts = msg.disaster_alerts || [];
      store.weatherStale = msg.stale;
      store.weatherCity = msg.city;
+     store.weatherLat = msg.lat;
+     store.weatherLon = msg.lon;
    }],
   ['/fusion/diagnosis', 'sentry_interfaces/FusionResult',
    (msg) => {
@@ -652,6 +654,21 @@ function publishCmdVel(linear, angular) {
   }));
 }
 
+// Geolocation button / manual lat-lon inputs → weather_node refetches for
+// the new coordinates and republishes /weather/forecast to all clients.
+function publishWeatherLocation(lat, lon) {
+  if (!ros || !store.connected) return false;
+  const topic = new ROSLIB.Topic({
+    ros, name: '/weather/set_location', messageType: 'sensor_msgs/NavSatFix'
+  });
+  topic.publish(new ROSLIB.Message({
+    header: { stamp: { sec: 0, nanosec: 0 }, frame_id: 'web_frontend' },
+    latitude: lat,
+    longitude: lon,
+  }));
+  return true;
+}
+
 function publishResumeNavigation() {
   const topic = new ROSLIB.Topic({
     ros, name: '/resume_navigation', messageType: 'std_msgs/Bool'
@@ -795,6 +812,8 @@ function callSetCropType(cropType) {
       store.weatherAutoFetch = Boolean(on);
       if (store.weatherAutoFetch) fetchWeather();
     };
+
+    store.publishWeatherLocation = publishWeatherLocation;
   })();
 
   // === MOCK START: forecast alerts (remove after test) ===

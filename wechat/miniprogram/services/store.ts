@@ -30,6 +30,8 @@ const store = {
   forecastHoursAhead: 0,
 
   weatherCity: '',
+  weatherLat: null as number | null,
+  weatherLon: null as number | null,
   weatherDays: [] as Array<{day_offset: number, temp_high: number, temp_low: number, humidity: number, precipitation: number, wind_speed: number, weather_desc: string}>,
   weatherHours: [] as Array<{hour_offset: number, temp: number, humidity: number, precipitation: number, wind_speed: number}>,
   weatherDisasterAlerts: [] as string[],
@@ -96,6 +98,7 @@ export function updateStore(partial: Partial<Store>) {
 
 export function onStoreChange(fn: (s: Store) => void) {
   listeners.push(fn);
+  return () => offStoreChange(fn);
 }
 
 export function offStoreChange(fn: (s: Store) => void) {

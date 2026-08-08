@@ -49,6 +49,10 @@ export function apiGetWeather() {
   return request<any>('GET', '/api/weather');
 }
 
+export function apiSetWeatherLocation(lat: number, lon: number) {
+  return request<{status: string}>('POST', '/api/weather/location', { lat, lon });
+}
+
 export function apiGetForecast() {
   return request<any>('GET', '/api/forecast');
 }

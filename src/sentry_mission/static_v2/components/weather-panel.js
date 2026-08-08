@@ -1,6 +1,6 @@
 const WeatherPanel = {
   data() {
-    return { collapsed: true };
+    return { collapsed: true, locating: false, locSent: false };
   },
   template: `
   <div class="card weather-card">
@@ -12,17 +12,21 @@ const WeatherPanel = {
       </span>
       <span class="stale-badge" v-if="store.weatherStale">缓存</span>
       <span style="margin-left:auto; display:flex; gap:4px; align-items:center;">
+        <button class="locate-btn" :disabled="locating" @click.stop="locate"
+                title="使用设备定位更新小车天气坐标">
+          {{ locating ? '定位中…' : (locSent ? '已发送 ✓' : '📍 定位') }}
+        </button>
         <label class="weather-toggle" @click.stop title="自动获取天气">
           <input type="checkbox" :checked="store.weatherAutoFetch"
                  @change="e => store.setWeatherAutoFetch(e.target.checked)">
           <span class="weather-toggle-slider"></span>
         </label>
         <input type="number" :value="store.weatherLat" step="0.01"
-               @change="e => store.weatherLat = parseFloat(e.target.value)"
+               @change="e => onManualLat(e.target.value)"
                @click.stop
                style="width:64px; background:#1E293B; border:1px solid #334155; color:#F8FAFC; padding:2px 6px; border-radius:3px; font-size:10px; font-family:JetBrains Mono;" placeholder="纬度">
         <input type="number" :value="store.weatherLon" step="0.01"
-               @change="e => store.weatherLon = parseFloat(e.target.value)"
+               @change="e => onManualLon(e.target.value)"
                @click.stop
                style="width:64px; background:#1E293B; border:1px solid #334155; color:#F8FAFC; padding:2px 6px; border-radius:3px; font-size:10px; font-family:JetBrains Mono;" placeholder="经度">
       </span>
@@ -47,6 +51,45 @@ const WeatherPanel = {
     </div>
   </div>`,
   methods: {
+    locate() {
+      if (this.locating) return;
+      if (!navigator.geolocation) {
+        alert('当前页面不支持浏览器定位（非 HTTPS），请用右侧输入框手动填写经纬度');
+        return;
+      }
+      this.locating = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          this.locating = false;
+          this.sendLocation(pos.coords.latitude, pos.coords.longitude);
+        },
+        () => {
+          this.locating = false;
+          alert('定位失败，请用右侧输入框手动填写经纬度');
+        },
+        { timeout: 10000, maximumAge: 60000 }
+      );
+    },
+    onManualLat(v) {
+      this.store.weatherLat = parseFloat(v);
+      this.sendLocation(this.store.weatherLat, this.store.weatherLon);
+    },
+    onManualLon(v) {
+      this.store.weatherLon = parseFloat(v);
+      this.sendLocation(this.store.weatherLat, this.store.weatherLon);
+    },
+    sendLocation(lat, lon) {
+      if (lat == null || lon == null || isNaN(lat) || isNaN(lon)
+          || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return;
+      }
+      if (!this.store.publishWeatherLocation(lat, lon)) {
+        alert('未连接到小车，坐标未发送');
+        return;
+      }
+      this.locSent = true;
+      setTimeout(() => { this.locSent = false; }, 2000);
+    },
     dayLabel(offset) {
       if (offset === 0) return '今天';
       if (offset === 1) return '明天';

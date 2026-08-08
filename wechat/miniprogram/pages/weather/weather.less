@@ -2,6 +2,17 @@
 
 /* 当前天气 hero */
 .wx-now { text-align: center; padding: 36rpx 28rpx; }
+.wx-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+.loc-btn {
+  font-size: 20rpx; color: #7DD3FC;
+  background: rgba(125,211,252,0.10);
+  border: 1rpx solid rgba(125,211,252,0.35);
+  border-radius: 999rpx; padding: 8rpx 22rpx;
+}
+.loc-btn.busy { opacity: 0.5; }
 .wx-hero { display: flex; align-items: baseline; justify-content: center; gap: 20rpx; }
 .wx-temp {
   font-size: 96rpx; font-weight: 800; line-height: 1.1;

@@ -1,5 +1,5 @@
 import { getStore, onStoreChange, updateStore } from '../../services/store';
-import { apiGetWeather } from '../../services/api';
+import { apiGetWeather, apiSetWeatherLocation } from '../../services/api';
 
 const WEATHER_ICONS: Record<string, string> = {
   '晴': '☀️', '少云': '🌤️', '多云': '⛅', '阴': '☁️',
@@ -66,6 +66,7 @@ Component({
     hBars: [] as any[],
     hMax: 40, hMin: 0,
     lineReady: false,
+    locating: false,
   },
   lifetimes: {
     attached() {
@@ -82,6 +83,8 @@ Component({
   },
   methods: {
     _lineTimer: null as any,
+    _unsub: null as any,
+    _pollTimer: null as any,
 
     sync(s: any) {
       const day0 = s.weatherDays && s.weatherDays[0];
@@ -207,6 +210,8 @@ Component({
         if (data && data.days) {
           updateStore({
             weatherCity: data.city,
+            weatherLat: data.lat != null ? data.lat : null,
+            weatherLon: data.lon != null ? data.lon : null,
             weatherDays: data.days,
             weatherHours: data.hours,
             weatherDisasterAlerts: data.disaster_alerts || [],
@@ -217,6 +222,34 @@ Component({
       } catch (_) {
         this.setData({ loadFailed: true });
       }
+    },
+
+    onUseLocation() {
+      if (this.data.locating) return;
+      this.setData({ locating: true });
+      wx.getLocation({
+        type: 'wgs84',
+        success: async (res) => {
+          try {
+            await apiSetWeatherLocation(res.latitude, res.longitude);
+            wx.showToast({ title: '定位已更新', icon: 'success' });
+            // 小车重新抓取需要几秒，延迟拉一次；WS 推送也会随后到达
+            setTimeout(() => this.fetchWeather(), 5000);
+          } catch (_) {
+            wx.showToast({ title: '小车未响应', icon: 'none' });
+          }
+        },
+        fail: (err) => {
+          const denied = err && err.errMsg && err.errMsg.indexOf('auth') >= 0;
+          wx.showToast({
+            title: denied ? '请在设置中允许定位' : '定位失败',
+            icon: 'none',
+          });
+        },
+        complete: () => {
+          this.setData({ locating: false });
+        },
+      });
     },
   },
 })

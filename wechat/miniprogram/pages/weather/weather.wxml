@@ -5,7 +5,12 @@
   <!-- 当前天气 hero -->
   <view class="shell">
     <view class="core wx-now">
-      <text class="eyebrow">NOW · 当前 {{city}}</text>
+      <view class="wx-title-row">
+        <text class="eyebrow">NOW · 当前 {{city}}</text>
+        <view class="loc-btn {{locating ? 'busy' : ''}}" bindtap="onUseLocation">
+          {{locating ? '定位中…' : '📍 当前位置'}}
+        </view>
+      </view>
       <view class="wx-hero">
         <text class="wx-temp">{{currentTemp}}</text>
         <text class="wx-desc">{{currentDesc}}</text>

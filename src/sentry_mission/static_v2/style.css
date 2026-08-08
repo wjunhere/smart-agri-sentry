@@ -670,6 +670,15 @@ body {
   transform: translateX(12px); background: var(--green);
 }
 
+/* ── Weather geolocation button ── */
+.locate-btn {
+  background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #7DD3FC; border-radius: 3px; padding: 2px 8px;
+  font-size: 10px; cursor: pointer; white-space: nowrap;
+}
+.locate-btn:disabled { opacity: 0.5; cursor: default; }
+.locate-btn:hover:not(:disabled) { background: rgba(56, 189, 248, 0.22); }
+
 /* ============================================================
    v2 深色精致化 Reskin（覆盖层，2026-07-22）
    Ethereal Glass：OLED 深底 + 微光晕 + 机械质感卡片 + 弹簧动效
