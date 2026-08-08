@@ -222,7 +222,11 @@ def generate_launch_description():
                 'forward_servo_cmd': False,
                 'left_speed_scale': 1.0,
                 'right_speed_scale': 1.00,
-                'swap_wheel_commands': True,
+                # Motors are wired correctly (firmware left = physical left);
+                # the encoder channels are the crossed pair. Keep commands
+                # unswapped so angular.z>0 really turns the car left.
+                'swap_wheel_commands': False,
+                'swap_encoder_channels': True,
             }],
             output='screen',
         ),

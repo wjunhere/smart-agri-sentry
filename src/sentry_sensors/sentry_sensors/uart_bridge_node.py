@@ -136,6 +136,12 @@ class UartBridgeNode(Node):
         self.declare_parameter('left_speed_scale', 1.0)
         self.declare_parameter('right_speed_scale', 1.0)
         self.declare_parameter('swap_wheel_commands', False)
+        # The two encoder channels on the current chassis wiring are crossed:
+        # the firmware's "left" pulse counter is attached to the physical
+        # right wheel and vice versa. Swap them here so downstream odometry
+        # sees physical-correct sides (d_theta = (right-left)/wheel_base
+        # then matches the real turn direction).
+        self.declare_parameter('swap_encoder_channels', False)
         self.declare_parameter('chassis_timeout_sec', 1.0)
         self.declare_parameter('motion_mode', MODE_AUTO)
         self.declare_parameter('min_effective_linear_speed', 0.08)  # m/s, boost floor
@@ -147,6 +153,8 @@ class UartBridgeNode(Node):
         self.right_speed_scale = self.get_parameter('right_speed_scale').value
         self.swap_wheel_commands = self.get_parameter(
             'swap_wheel_commands').value
+        self.swap_encoder_channels = self.get_parameter(
+            'swap_encoder_channels').value
         self.chassis_timeout_sec = self.get_parameter(
             'chassis_timeout_sec').value
         self.motion_mode = int(self.get_parameter('motion_mode').value)
@@ -263,12 +271,18 @@ class UartBridgeNode(Node):
             data = decode_chassis_frame(frame)
             if data:
                 msg = ChassisStatus()
-                msg.left_speed = data['left_speed']
-                msg.right_speed = data['right_speed']
+                if self.swap_encoder_channels:
+                    msg.left_speed = data['right_speed']
+                    msg.right_speed = data['left_speed']
+                    msg.left_pulse = data['right_pulse']
+                    msg.right_pulse = data['left_pulse']
+                else:
+                    msg.left_speed = data['left_speed']
+                    msg.right_speed = data['right_speed']
+                    msg.left_pulse = data['left_pulse']
+                    msg.right_pulse = data['right_pulse']
                 msg.battery_voltage = data['battery_voltage']
                 msg.alarm_bits = data['alarm_bits']
-                msg.left_pulse = data['left_pulse']
-                msg.right_pulse = data['right_pulse']
                 msg.encoder_timestamp = data['encoder_timestamp']
                 msg.comm_timeout = False
                 self.pub_chassis.publish(msg)

@@ -307,3 +307,46 @@ def test_invalid_chassis_frame_is_discarded(node):
     with patch.object(node.pub_chassis, 'publish') as mock_pub:
         node.handle_frame(bytes(frame))
         assert not mock_pub.called
+
+
+def test_swap_encoder_channels_swaps_pulses_and_speeds(ros_context):
+    """With swap_encoder_channels=True the published ChassisStatus maps the
+    firmware's crossed channels back onto physical left/right."""
+    from sentry_sensors.uart_bridge_node import encode_frame
+    import struct
+
+    with patch('sentry_sensors.uart_bridge_node.serial.Serial'):
+        n = UartBridgeNode(parameter_overrides=[
+            rclpy.parameter.Parameter(
+                'swap_encoder_channels', rclpy.Parameter.Type.BOOL, True),
+        ])
+    payload = struct.pack('<hhHBiiI',
+                          500, -300, 1234, 0x04,
+                          100000, -100000, 0x12345678)
+    frame = encode_frame(0x03, payload)
+    with patch.object(n.pub_chassis, 'publish') as mock_pub:
+        n.handle_frame(frame)
+    published = mock_pub.call_args[0][0]
+    assert published.left_speed == -0.3
+    assert published.right_speed == 0.5
+    assert published.left_pulse == -100000
+    assert published.right_pulse == 100000
+    assert published.battery_voltage == 12.34
+    n.destroy_node()
+
+
+def test_swap_encoder_channels_off_by_default(node):
+    """Default wiring assumption: firmware left = physical left, no swap."""
+    from sentry_sensors.uart_bridge_node import encode_frame
+    import struct
+
+    assert node.swap_encoder_channels is False
+    payload = struct.pack('<hhHBiiI',
+                          500, -300, 1234, 0x04,
+                          100000, -100000, 0x12345678)
+    frame = encode_frame(0x03, payload)
+    with patch.object(node.pub_chassis, 'publish') as mock_pub:
+        node.handle_frame(frame)
+    published = mock_pub.call_args[0][0]
+    assert published.left_pulse == 100000
+    assert published.right_pulse == -100000
