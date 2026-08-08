@@ -226,7 +226,38 @@ void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_m
     tx_buf[24] = (uint8_t)(crc & 0xFF);
 
     tx_busy = 1;
-    HAL_UART_Transmit_DMA(&huart2, tx_buf, 25);
+    if (HAL_UART_Transmit_DMA(&huart2, tx_buf, 25) != HAL_OK) {
+        /* UART/DMA not ready (typically a previous transfer errored out
+         * without firing TxCplt). Dropping the frame is fine — wedging
+         * telemetry until the next power cycle is not. */
+        tx_busy = 0;
+        huart2.gState = HAL_UART_STATE_READY;
+    }
+}
+
+/**
+ * @brief  UART error recovery.
+ *
+ *         Without this, any USART2 error (line glitch when the RDK side
+ *         closes/reopens its port, noise, DMA fault) leaves tx_busy set
+ *         and/or gState stuck at BUSY_TX forever: chassis status frames
+ *         stop completely while motor commands keep working, and only a
+ *         power cycle recovers. Clear the error flags, reset both HAL
+ *         states and re-arm the idle-line DMA reception.
+ */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == &huart2) {
+        tx_busy = 0;
+        huart2.gState  = HAL_UART_STATE_READY;
+        huart2.RxState = HAL_UART_STATE_READY;
+        __HAL_UART_CLEAR_OREFLAG(&huart2);
+        __HAL_UART_CLEAR_NEFLAG(&huart2);
+        __HAL_UART_CLEAR_FEFLAG(&huart2);
+        __HAL_UART_CLEAR_PEFLAG(&huart2);
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_buff, RX_BUFF_SIZE);
+        __HAL_UART_ENABLE_IT(&huart2, UART_IT_IDLE);
+    }
 }
 
 /**
