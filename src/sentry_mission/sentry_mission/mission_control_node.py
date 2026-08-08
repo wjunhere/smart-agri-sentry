@@ -131,6 +131,11 @@ class MissionControlNode(Node):
         self.declare_parameter('min_row_segment_length', 0.0)
         self.declare_parameter('servo_flip_cooldown_sec', 8.0)
         self.declare_parameter('servo_flip_cooldown_distance', 0.8)
+        # When a plant stop triggers, the car has usually coasted past the
+        # plant by the time it halts. Pan the camera this many degrees from
+        # the current side toward the front (from the 180 extreme that means
+        # decreasing yaw, from 0 increasing) so the plant is back in frame.
+        self.declare_parameter('servo_plant_stop_offset_deg', 10.0)
         # Plants already scanned are expected obstacles near the row; don't
         # run the avoidance maneuver when passing them again.
         self.declare_parameter('avoidance_scanned_radius', 1.0)
@@ -218,6 +223,8 @@ class MissionControlNode(Node):
             'servo_flip_cooldown_sec').value
         self.servo_flip_cooldown_distance = self.get_parameter(
             'servo_flip_cooldown_distance').value
+        self.servo_plant_stop_offset_deg = self.get_parameter(
+            'servo_plant_stop_offset_deg').value
         self.avoidance_scanned_radius = self.get_parameter(
             'avoidance_scanned_radius').value
 
@@ -338,6 +345,7 @@ class MissionControlNode(Node):
         self._servo_side = self.servo_start_side
         self._servo_flip_time = None
         self._servo_flip_position = None
+        self._servo_offset_active = False
         self._mission_start_pose = (0.0, 0.0)
         self.odom_x = 0.0
         self.odom_y = 0.0
@@ -618,10 +626,12 @@ class MissionControlNode(Node):
         camera would start the next cruise facing the wrong way.
         """
         if not self.enable_servo_auto_flip:
+            self._servo_offset_active = False
             return
         home = self.servo_start_side
-        if self._servo_side == home:
+        if self._servo_side == home and not self._servo_offset_active:
             return
+        self._servo_offset_active = False
         msg = ServoCmd()
         msg.yaw = self._servo_yaw_for(home)
         msg.pitch = int(self.servo_pitch_hold)
@@ -631,6 +641,47 @@ class MissionControlNode(Node):
         self._servo_flip_position = None
         self.get_logger().info(
             f'Servo restored to home side={home} (yaw={msg.yaw})')
+
+    def _offset_servo_for_plant_stop(self) -> None:
+        """Pan the camera toward the direction of travel on a plant stop.
+
+        Braking takes a while, so by the time the car halts the plant has
+        drifted toward the front edge of the frame (or out of it). Offset
+        the yaw from the current side toward the front: from the 180
+        extreme that means decreasing the angle, from 0 increasing it.
+        """
+        if not self.enable_servo_auto_flip:
+            return
+        offset = int(round(self.servo_plant_stop_offset_deg))
+        if offset <= 0:
+            return
+        base = self._servo_yaw_for(self._servo_side)
+        target = base - offset if base >= 90 else base + offset
+        target = max(0, min(180, target))
+        if target == base:
+            return
+        msg = ServoCmd()
+        msg.yaw = target
+        msg.pitch = int(self.servo_pitch_hold)
+        self.pub_servo_cmd.publish(msg)
+        self._servo_offset_active = True
+        self.get_logger().info(
+            f'Servo plant-stop offset: side={self._servo_side} '
+            f'yaw {base} -> {target}')
+
+    def _restore_servo_from_offset(self) -> None:
+        """Undo the plant-stop offset before the patrol resumes."""
+        if not self._servo_offset_active:
+            return
+        self._servo_offset_active = False
+        if not self.enable_servo_auto_flip:
+            return
+        msg = ServoCmd()
+        msg.yaw = self._servo_yaw_for(self._servo_side)
+        msg.pitch = int(self.servo_pitch_hold)
+        self.pub_servo_cmd.publish(msg)
+        self.get_logger().info(
+            f'Servo plant-stop offset released (yaw={msg.yaw})')
 
     # ---- Callbacks ----
 
@@ -803,6 +854,7 @@ class MissionControlNode(Node):
             # of continued motion before the chassis sees a zero command.
             self._publish_stop()
             self._transition(STATE_STOPPED, now)
+            self._offset_servo_for_plant_stop()
             return True
 
     def _find_unhandled_fixed_point_stop(self):
@@ -1358,6 +1410,7 @@ class MissionControlNode(Node):
             cmd.angular.z = 0.0
             elapsed = now - self.state_enter_time
             if elapsed >= self.resume_delay:
+                self._restore_servo_from_offset()
                 self._transition(STATE_PATROL, now)
                 self.current_wp_idx = self._saved_patrol_index()
                 self._send_next_waypoint()

@@ -367,3 +367,103 @@ def test_runtime_start_side_rejects_bad_value(node):
     result = node._on_param_change([param])
     assert result.successful is False
     assert node.servo_start_side == 'right'
+
+
+# ---- Plant-stop servo offset ----
+
+def _trigger_plant_stop(node):
+    from sentry_interfaces.msg import PlantDetection
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    detection = PlantDetection()
+    detection.detected = True
+    detection.confidence = 0.9
+    detection.area_ratio = 0.2
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node, 'pub_cmd'):
+        node.on_plant_detected(detection)
+
+
+def test_plant_stop_offsets_servo_from_right_side(node):
+    """Robot mapping: right side yaw=180 -> offset decreases the angle."""
+    node.enable_servo_auto_flip = True
+    node.servo_yaw_right = 180
+    node.servo_yaw_left = 0
+    node._servo_side = 'right'
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        _trigger_plant_stop(node)
+    assert node.state == 'STOPPED'
+    mock_pub.assert_called_once()
+    msg = mock_pub.call_args[0][0]
+    assert msg.yaw == 170
+    assert msg.pitch == int(node.servo_pitch_hold)
+    assert node._servo_offset_active is True
+
+
+def test_plant_stop_offsets_servo_from_left_side(node):
+    """Left side yaw=0 -> offset increases the angle."""
+    node.enable_servo_auto_flip = True
+    node.servo_yaw_right = 180
+    node.servo_yaw_left = 0
+    node._servo_side = 'left'
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        _trigger_plant_stop(node)
+    assert node.state == 'STOPPED'
+    assert mock_pub.call_args[0][0].yaw == 10
+    assert node._servo_offset_active is True
+
+
+def test_plant_stop_offset_disabled_without_auto_flip(node):
+    node.enable_servo_auto_flip = False
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        _trigger_plant_stop(node)
+    assert node.state == 'STOPPED'
+    mock_pub.assert_not_called()
+    assert node._servo_offset_active is False
+
+
+def test_plant_stop_offset_zero_is_noop(node):
+    node.enable_servo_auto_flip = True
+    node.servo_plant_stop_offset_deg = 0.0
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        _trigger_plant_stop(node)
+    assert node.state == 'STOPPED'
+    mock_pub.assert_not_called()
+    assert node._servo_offset_active is False
+
+
+def test_resume_releases_servo_offset(node):
+    """Leaving RESUME back to PATROL returns the servo to the side yaw."""
+    node.enable_servo_auto_flip = True
+    node.servo_yaw_right = 180
+    node.servo_yaw_left = 0
+    node._servo_side = 'right'
+    node._servo_offset_active = True
+    node.state = 'RESUME'
+    node.state_enter_time = 1.0  # tick() treats 0.0 as "unset" and resets it
+    node.waypoints = [{'x': 1.0, 'y': 0.0, 'yaw': 0.0}]
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub, \
+         patch.object(node, '_send_next_waypoint'), \
+         patch.object(node, 'pub_status'), \
+         patch.object(node, 'pub_cmd'):
+        node.tick()
+    assert node._servo_offset_active is False
+    mock_pub.assert_called_once()
+    assert mock_pub.call_args[0][0].yaw == 180
+
+
+def test_restore_home_republishes_when_offset_active(node):
+    """Manual stop while offset: servo must be commanded home even though
+    the logical side already equals home."""
+    node.enable_servo_auto_flip = True
+    node.servo_yaw_right = 180
+    node.servo_yaw_left = 0
+    node._servo_side = 'right'
+    node._servo_offset_active = True
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        node._restore_servo_home()
+    mock_pub.assert_called_once()
+    assert mock_pub.call_args[0][0].yaw == 180
+    assert node._servo_offset_active is False
