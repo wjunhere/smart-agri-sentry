@@ -123,6 +123,9 @@ class MissionControlNode(Node):
         self.declare_parameter('enable_servo_auto_flip', False)
         self.declare_parameter('servo_yaw_right', 0)
         self.declare_parameter('servo_yaw_left', 180)
+        # Which side the camera faces when a patrol starts and where the
+        # servo returns when the patrol ends or is stopped manually.
+        self.declare_parameter('servo_start_side', 'right')
         self.declare_parameter('servo_pitch_hold', 0)
         self.declare_parameter('flip_heading_threshold', 2.09)
         self.declare_parameter('min_row_segment_length', 0.0)
@@ -205,6 +208,7 @@ class MissionControlNode(Node):
             'enable_servo_auto_flip').value
         self.servo_yaw_right = self.get_parameter('servo_yaw_right').value
         self.servo_yaw_left = self.get_parameter('servo_yaw_left').value
+        self.servo_start_side = self.get_parameter('servo_start_side').value
         self.servo_pitch_hold = self.get_parameter('servo_pitch_hold').value
         self.flip_heading_threshold = self.get_parameter(
             'flip_heading_threshold').value
@@ -331,7 +335,7 @@ class MissionControlNode(Node):
         self.reference_x = 0.0
         self.reference_y = 0.0
         self.has_scan_reference = False
-        self._servo_side = 'right'
+        self._servo_side = self.servo_start_side
         self._servo_flip_time = None
         self._servo_flip_position = None
         self._mission_start_pose = (0.0, 0.0)
@@ -345,8 +349,39 @@ class MissionControlNode(Node):
         # -- Timer --
         self.timer = self.create_timer(0.1, self.tick)
 
+        self.add_on_set_parameters_callback(self._on_param_change)
+
         self._send_next_waypoint()
         self.get_logger().info('Mission control node ready')
+
+    def _on_param_change(self, params):
+        """Runtime parameter updates (frontend settings panel)."""
+        from rcl_interfaces.msg import SetParametersResult
+        for p in params:
+            value = p.value
+            if p.name == 'servo_start_side':
+                if value not in ('left', 'right'):
+                    return SetParametersResult(
+                        successful=False,
+                        reason='servo_start_side must be left or right')
+                self.servo_start_side = value
+                self._servo_side = value
+                if self.enable_servo_auto_flip:
+                    msg = ServoCmd()
+                    msg.yaw = self._servo_yaw_for(value)
+                    msg.pitch = int(self.servo_pitch_hold)
+                    self.pub_servo_cmd.publish(msg)
+                self.get_logger().info(
+                    f'Servo start side set to {value} '
+                    f'(yaw={self._servo_yaw_for(value)})')
+            elif p.name == 'detection_confidence_threshold':
+                self.det_conf_th = float(value)
+                self.get_logger().info(f'det_conf_th -> {self.det_conf_th}')
+            elif p.name == 'min_area_ratio':
+                self.min_area_ratio = float(value)
+                self.get_logger().info(
+                    f'min_area_ratio -> {self.min_area_ratio}')
+        return SetParametersResult(successful=True)
 
     # ---- Waypoint helpers ----
 
@@ -572,26 +607,30 @@ class MissionControlNode(Node):
         self.reference_y = self.odom_y
         self.has_scan_reference = True
 
-    def _restore_servo_home(self) -> None:
-        """Return the servo to its home (right) position after patrol.
+    def _servo_yaw_for(self, side: str) -> int:
+        return int(self.servo_yaw_left if side == 'left'
+                   else self.servo_yaw_right)
 
-        Row-switch flips leave the yaw at servo_yaw_left; without this the
-        camera would start the next cruise facing the wrong side.
+    def _restore_servo_home(self) -> None:
+        """Return the servo to its home (start-side) position.
+
+        Row-switch flips leave the yaw on the far side; without this the
+        camera would start the next cruise facing the wrong way.
         """
         if not self.enable_servo_auto_flip:
             return
-        if self._servo_side == 'right':
+        home = self.servo_start_side
+        if self._servo_side == home:
             return
         msg = ServoCmd()
-        msg.yaw = int(self.servo_yaw_right)
+        msg.yaw = self._servo_yaw_for(home)
         msg.pitch = int(self.servo_pitch_hold)
         self.pub_servo_cmd.publish(msg)
-        self._servo_side = 'right'
+        self._servo_side = home
         self._servo_flip_time = None
         self._servo_flip_position = None
         self.get_logger().info(
-            f'Patrol finished, servo restored to home '
-            f'(yaw={int(self.servo_yaw_right)})')
+            f'Servo restored to home side={home} (yaw={msg.yaw})')
 
     # ---- Callbacks ----
 
@@ -1376,6 +1415,15 @@ class MissionControlNode(Node):
     def _prepare_autonomous_start(self):
         self._publish_stop()
         self._load_waypoints()
+        if (self.enable_servo_auto_flip
+                and self._servo_side != self.servo_start_side):
+            # A previous run may have left the camera flipped; always start
+            # the patrol from the configured home side.
+            msg = ServoCmd()
+            msg.yaw = self._servo_yaw_for(self.servo_start_side)
+            msg.pitch = int(self.servo_pitch_hold)
+            self.pub_servo_cmd.publish(msg)
+            self._servo_side = self.servo_start_side
         self.sending_goal = False
         self.last_goal_sent_time = 0.0
         with self._plant_lock:

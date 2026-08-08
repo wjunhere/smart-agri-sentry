@@ -100,6 +100,14 @@ window.store = Vue.reactive({
   messageUnread: 0,
   messageBatches: [],
   showMessages: false,
+  showSettings: false,
+  settings: {
+    low_light_enhancement: null,
+    detection_confidence: null,
+    servo_start_side: null,
+  },
+  settingsBusy: false,
+  settingsMsg: '',
 });
 const store = window.store;  // local alias for internal use in this file
 
@@ -486,6 +494,39 @@ function callCaptureImage() {
       return data;
     })
     .finally(() => { store.cameraCaptureBusy = false; });
+}
+
+function fetchSettings() {
+  store.settingsBusy = true;
+  return fetch(API_BASE + '/api/settings')
+    .then(async (resp) => {
+      const data = await resp.json().catch(() => ({}));
+      Object.assign(store.settings, data);
+      return data;
+    })
+    .finally(() => { store.settingsBusy = false; });
+}
+
+function updateSetting(key, value) {
+  store.settingsBusy = true;
+  store.settingsMsg = '';
+  return fetch(API_BASE + '/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [key]: value }),
+  }).then(async (resp) => {
+    const data = await resp.json().catch(() => ({}));
+    const result = data.results && data.results[key];
+    if (!resp.ok || result !== 'ok') {
+      throw new Error(result || '设置失败');
+    }
+    store.settings[key] = value;
+    store.settingsMsg = '已生效';
+    return data;
+  }).catch((err) => {
+    store.settingsMsg = String(err.message || err);
+    throw err;
+  }).finally(() => { store.settingsBusy = false; });
 }
 
 function callSetCruiseSpeed(speed) {

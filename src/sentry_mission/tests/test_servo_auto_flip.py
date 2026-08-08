@@ -268,13 +268,14 @@ def test_launch_wires_servo_auto_flip_params():
         assert key in text, f'{key} not wired in sentry_v2.launch.py'
 
 
-def test_servo_config_initial_angle_is_zero():
+def test_servo_config_initial_angle_is_physical_right():
     import pathlib
     import yaml
     cfg = pathlib.Path(__file__).parents[2].joinpath(
         'sentry_servo', 'config', 'servo_config.yaml')
     data = yaml.safe_load(cfg.resolve().read_text(encoding='utf-8'))
-    assert data['servos']['yaw']['initial_angle'] == 0
+    # 180 deg = physical right on the current servo mount
+    assert data['servos']['yaw']['initial_angle'] == 180
 
 
 # ---- Servo restore-to-home after patrol ----
@@ -331,3 +332,38 @@ def test_manual_stop_restores_servo_home(node):
     mock_pub.assert_called_once()
     assert mock_pub.call_args[0][0].yaw == node.servo_yaw_right
     assert node._servo_side == 'right'
+
+
+# ---- Configurable servo start side ----
+
+def test_restore_uses_start_side_left(node):
+    """With start side 'left', restore targets servo_yaw_left."""
+    node.enable_servo_auto_flip = True
+    node.servo_start_side = 'left'
+    node._servo_side = 'right'
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        node._restore_servo_home()
+    msg = mock_pub.call_args[0][0]
+    assert msg.yaw == node.servo_yaw_left
+    assert node._servo_side == 'left'
+
+
+def test_runtime_start_side_change_commands_servo(node):
+    """Setting servo_start_side at runtime re-homes the servo immediately."""
+    from rclpy.parameter import Parameter as RosParameter
+    node.enable_servo_auto_flip = True
+    param = RosParameter('servo_start_side', value='left')
+    with patch.object(node.pub_servo_cmd, 'publish') as mock_pub:
+        result = node._on_param_change([param])
+    assert result.successful is True
+    assert node.servo_start_side == 'left'
+    assert node._servo_side == 'left'
+    assert mock_pub.call_args[0][0].yaw == node.servo_yaw_left
+
+
+def test_runtime_start_side_rejects_bad_value(node):
+    from rclpy.parameter import Parameter as RosParameter
+    param = RosParameter('servo_start_side', value='up')
+    result = node._on_param_change([param])
+    assert result.successful is False
+    assert node.servo_start_side == 'right'

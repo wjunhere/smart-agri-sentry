@@ -39,3 +39,12 @@ def test_single_weak_frame_waits_for_voting(node):
     detected, _, conf, _ = node._vote(True, [0.1, 0.1, 0.5, 0.5], 0.4, 0.02)
     assert detected is True
     assert conf == pytest.approx(0.4)
+
+
+def test_param_callback_updates_thresholds(node):
+    """Runtime settings panel changes apply without a restart."""
+    from rclpy.parameter import Parameter as RosParameter
+    param = RosParameter('confidence_threshold', value=0.6)
+    result = node._on_param_change([param])
+    assert result.successful is True
+    assert node.conf_threshold == pytest.approx(0.6)

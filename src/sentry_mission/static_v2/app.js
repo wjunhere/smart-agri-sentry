@@ -23,6 +23,7 @@ app.component('AdvisoryCard', AdvisoryCard);
 app.component('ForecastPanel', ForecastPanel);
 app.component('WeatherPanel', WeatherPanel);
 app.component('AlertDetailModal', AlertDetailModal);
+app.component('SettingsModal', SettingsModal);
 app.component('EnvDataBar', EnvDataBar);
 app.component('Dpad', Dpad);
 app.component('CropSelector', CropSelector);

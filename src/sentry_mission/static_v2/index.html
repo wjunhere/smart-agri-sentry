@@ -31,6 +31,7 @@
     </div>
     <env-data-bar></env-data-bar>
     <alert-detail-modal></alert-detail-modal>
+    <settings-modal :visible="store.showSettings" @close="store.showSettings = false"></settings-modal>
     <message-center :visible="store.showMessages" @close="store.showMessages = false"></message-center>
     <waypoint-editor :visible="store.showWpEditor" @close="store.showWpEditor = false"></waypoint-editor>
   </div>
@@ -45,6 +46,7 @@
   <script src="components/forecast-panel.js"></script>
 	  <script src="components/weather-panel.js"></script>
   <script src="components/alert-detail-modal.js"></script>
+  <script src="components/settings-modal.js"></script>
   <script src="components/env-data-bar.js"></script>
   <script src="components/dpad.js"></script>
   <script src="components/crop-selector.js"></script>

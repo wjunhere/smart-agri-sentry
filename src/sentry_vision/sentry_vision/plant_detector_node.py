@@ -58,7 +58,26 @@ class PlantDetectorNode(Node):
             self._sim_timer = self.create_timer(0.5, self._sim_tick)
             self.get_logger().info('Simulation mode: publishing at 2 Hz')
 
+        self.add_on_set_parameters_callback(self._on_param_change)
         self.get_logger().info('Plant detector node ready (YOLOv8n BPU)')
+
+    def _on_param_change(self, params):
+        """Apply runtime parameter updates from the settings panel."""
+        from rcl_interfaces.msg import SetParametersResult
+        for p in params:
+            value = p.value
+            if p.name == 'confidence_threshold':
+                self.conf_threshold = float(value)
+            elif p.name == 'min_area_ratio':
+                self.min_area_ratio = float(value)
+            elif p.name == 'fast_confidence':
+                self.fast_confidence = float(value)
+            elif p.name == 'fast_area_ratio':
+                self.fast_area_ratio = float(value)
+            else:
+                continue
+            self.get_logger().info(f'param {p.name} -> {value}')
+        return SetParametersResult(successful=True)
 
     def _load_model(self, model_path: str):
         from hobot_dnn import pyeasy_dnn as dnn

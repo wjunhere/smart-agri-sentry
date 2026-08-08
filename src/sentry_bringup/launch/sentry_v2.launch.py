@@ -394,8 +394,11 @@ def generate_launch_description():
                 'enable_servo_auto_flip': ParameterValue(
                     LaunchConfiguration('enable_servo_auto_flip'),
                     value_type=bool),
-                'servo_yaw_right': 0,
-                'servo_yaw_left': 180,
+                # Yaw angles for the two row sides; on the current mount
+                # 180 deg faces the physical right side of the car.
+                'servo_yaw_right': 180,
+                'servo_yaw_left': 0,
+                'servo_start_side': 'right',
                 'servo_pitch_hold': 0,
                 'flip_heading_threshold': 2.09,
                 'min_row_segment_length': 0.0,

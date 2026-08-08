@@ -157,6 +157,28 @@ class MipiCameraNode(Node):
         self.timer = self.create_timer(timer_period, self.capture)
         self.frame_count = 0
 
+        self.add_on_set_parameters_callback(self._on_param_change)
+
+    def _on_param_change(self, params):
+        """Apply runtime parameter updates from the settings panel."""
+        from rcl_interfaces.msg import SetParametersResult
+        for p in params:
+            value = p.value
+            if p.name == 'enable_low_light_enhancement':
+                self.enable_low_light_enhancement = bool(value)
+            elif p.name == 'gamma':
+                self.gamma = max(0.1, float(value))
+            elif p.name == 'saturation_scale':
+                self.saturation_scale = max(0.0, float(value))
+            elif p.name == 'sharpen_amount':
+                self.sharpen_amount = max(0.0, float(value))
+            elif p.name == 'denoise_h':
+                self.denoise_h = max(0.0, float(value))
+            else:
+                continue
+            self.get_logger().info(f'param {p.name} -> {value}')
+        return SetParametersResult(successful=True)
+
     def _init_undistort_maps(self):
         """Load calibration YAML and precompute undistort remap tables."""
         fs = cv2.FileStorage(self.undistort_calib_file, cv2.FILE_STORAGE_READ)

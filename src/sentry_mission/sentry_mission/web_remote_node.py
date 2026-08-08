@@ -914,6 +914,62 @@ class WebRemoteNode(Node):
                 'message_unread': self.batch_recorder.unread,
             }
 
+    # ---- Runtime settings (frontend settings panel) ----
+
+    def _param_client(self, node_name: str, srv_type, suffix: str):
+        if not hasattr(self, '_param_clients'):
+            self._param_clients = {}
+        key = (node_name, suffix)
+        if key not in self._param_clients:
+            self._param_clients[key] = self.create_client(
+                srv_type, f'{node_name}/{suffix}')
+        return self._param_clients[key]
+
+    def set_ros_param(self, node_name: str, param_name: str, value):
+        """Set a parameter on another node; returns (ok, detail)."""
+        from rcl_interfaces.srv import SetParameters
+        from rclpy.parameter import Parameter as RosParameter
+        client = self._param_client(
+            node_name, SetParameters, 'set_parameters')
+        if not client.service_is_ready():
+            return False, f'{node_name} unavailable'
+        req = SetParameters.Request()
+        req.parameters = [
+            RosParameter(param_name, value=value).to_parameter_msg()]
+        done = threading.Event()
+        future = client.call_async(req)
+        future.add_done_callback(lambda _f: done.set())
+        if not done.wait(timeout=3.0):
+            return False, 'set_parameters timeout'
+        try:
+            result = future.result().results[0]
+            return result.successful, result.reason or 'ok'
+        except Exception as exc:
+            return False, str(exc)
+
+    def get_ros_param(self, node_name: str, param_name: str):
+        """Read a parameter from another node; returns (ok, value)."""
+        from rcl_interfaces.srv import GetParameters
+        from rcl_interfaces.msg import Parameter as ParameterMsg
+        from rclpy.parameter import Parameter as RosParameter
+        client = self._param_client(
+            node_name, GetParameters, 'get_parameters')
+        if not client.service_is_ready():
+            return False, None
+        req = GetParameters.Request()
+        req.names = [param_name]
+        done = threading.Event()
+        future = client.call_async(req)
+        future.add_done_callback(lambda _f: done.set())
+        if not done.wait(timeout=3.0):
+            return False, None
+        try:
+            msg = ParameterMsg(
+                name=param_name, value=future.result().values[0])
+            return True, RosParameter.from_parameter_msg(msg).value
+        except Exception:
+            return False, None
+
     def destroy_node(self):
         with self.stack_lock:
             self._stop_independent_diagnosis_locked()
@@ -955,6 +1011,63 @@ def _get_app(node: WebRemoteNode):
         node.cruise_speed = _read_cruise_speed_file(CRUISE_SPEED_FILE)
     except (OSError, ValueError, yaml.YAMLError) as exc:
         node.get_logger().warning(f'Using default cruise speed: {exc}')
+
+    # Curated runtime-tunable settings for the frontend panel. Each entry
+    # maps a UI key to one or more (node, parameter) targets; detector and
+    # mission thresholds must move together or triggers desync.
+    SETTINGS_SCHEMA = {
+        'low_light_enhancement': {
+            'type': 'bool',
+            'targets': [('/mipi_camera_node', 'enable_low_light_enhancement')],
+        },
+        'detection_confidence': {
+            'type': 'float', 'min': 0.1, 'max': 0.9,
+            'targets': [
+                ('/plant_detector_node', 'confidence_threshold'),
+                ('/mission_control_node', 'detection_confidence_threshold'),
+            ],
+        },
+        'servo_start_side': {
+            'type': 'str', 'choices': ['left', 'right'],
+            'targets': [('/mission_control_node', 'servo_start_side')],
+        },
+    }
+
+    @_app.route('/api/settings', methods=['GET'])
+    def api_settings_get():
+        out = {}
+        for key, spec in SETTINGS_SCHEMA.items():
+            node_name, param = spec['targets'][0]
+            ok, value = node.get_ros_param(node_name, param)
+            out[key] = value if ok else None
+        return jsonify(out)
+
+    @_app.route('/api/settings', methods=['POST'])
+    def api_settings_post():
+        data = request.get_json(force=True) or {}
+        results = {}
+        for key, value in data.items():
+            spec = SETTINGS_SCHEMA.get(key)
+            if spec is None:
+                results[key] = 'unknown setting'
+                continue
+            try:
+                if spec['type'] == 'bool':
+                    value = bool(value)
+                elif spec['type'] == 'float':
+                    value = max(spec['min'], min(spec['max'], float(value)))
+                elif spec['type'] == 'str':
+                    value = str(value)
+                    if value not in spec['choices']:
+                        results[key] = 'invalid choice'
+                        continue
+            except (TypeError, ValueError):
+                results[key] = 'invalid value'
+                continue
+            oks = [node.set_ros_param(n, p, value)[0]
+                   for n, p in spec['targets']]
+            results[key] = 'ok' if all(oks) else 'failed'
+        return jsonify({'results': results})
 
     @_app.route('/')
     def index():

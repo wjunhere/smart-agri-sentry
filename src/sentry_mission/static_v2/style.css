@@ -954,3 +954,24 @@ a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
 .crop-selector {
   padding-right: 200px;
 }
+
+/* Settings modal */
+.settings-modal { max-width: 440px; }
+.settings-modal .modal-body { display: flex; flex-direction: column; gap: 14px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.setting-label { display: flex; flex-direction: column; gap: 2px; }
+.setting-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.setting-desc { font-size: 11px; color: var(--text-dim); }
+.setting-toggle {
+  min-width: 52px; padding: 5px 12px; border-radius: 999px; font-size: 12px;
+  background: var(--bg-input); color: var(--text-dim); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.setting-toggle.on { background: var(--blue); border-color: var(--blue); color: #000; font-weight: 600; }
+.setting-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+.setting-slider { flex: 0 0 150px; accent-color: var(--blue); }
+.setting-pills { display: flex; gap: 4px; }
+.settings-msg { font-size: 12px; color: var(--green, #22c55e); }
+.settings-hint { font-size: 11px; color: var(--text-dim); }
+.settings-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; }
+.settings-btn:hover { color: var(--text); }

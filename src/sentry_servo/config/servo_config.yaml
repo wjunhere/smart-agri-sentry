@@ -9,5 +9,5 @@ servos:
     channel: 0
     min_angle: 0
     max_angle: 180
-    initial_angle: 0
+    initial_angle: 180
     step_deg: 5
