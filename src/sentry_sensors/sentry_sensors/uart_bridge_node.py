@@ -1,4 +1,5 @@
 import math
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -143,10 +144,16 @@ class UartBridgeNode(Node):
         # then matches the real turn direction).
         self.declare_parameter('swap_encoder_channels', False)
         self.declare_parameter('chassis_timeout_sec', 1.0)
+        # If no valid chassis frame arrives for this long, close and reopen
+        # the serial port: a wedged kernel-side UART path (driver/FIFO
+        # state surviving a killed process) recovers this way without a
+        # stack restart. Also a diagnostic: if reopening restores comm,
+        # the fault was on the RDK side, not the STM32.
+        self.declare_parameter('chassis_reopen_after_sec', 5.0)
         self.declare_parameter('motion_mode', MODE_AUTO)
         self.declare_parameter('min_effective_linear_speed', 0.08)  # m/s, boost floor
-        port = self.get_parameter('uart_port').value
-        baud = self.get_parameter('baudrate').value
+        self.uart_port = self.get_parameter('uart_port').value
+        self.baud = self.get_parameter('baudrate').value
         forward_servo = self.get_parameter('forward_servo_cmd').value
         self.wheel_base = self.get_parameter('wheel_base').value
         self.left_speed_scale = self.get_parameter('left_speed_scale').value
@@ -157,17 +164,15 @@ class UartBridgeNode(Node):
             'swap_encoder_channels').value
         self.chassis_timeout_sec = self.get_parameter(
             'chassis_timeout_sec').value
+        self.chassis_reopen_after = self.get_parameter(
+            'chassis_reopen_after_sec').value
+        self._last_reopen_monotonic = 0.0
         self.motion_mode = int(self.get_parameter('motion_mode').value)
         self.min_effective_v = self.get_parameter(
             'min_effective_linear_speed').value
         self._last_sent_mode = None
 
-        try:
-            self.ser = serial.Serial(port, baud, timeout=0)
-            self.get_logger().info(f'UART open: {port} @ {baud}')
-        except serial.SerialException as e:
-            self.get_logger().error(f'Failed to open UART: {e}')
-            self.ser = None
+        self._open_serial()
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.pub_env = self.create_publisher(
@@ -294,6 +299,23 @@ class UartBridgeNode(Node):
                 self.get_logger().debug(
                     f'Invalid chassis frame discarded: {frame.hex()}')
 
+    def _open_serial(self):
+        try:
+            self.ser = serial.Serial(self.uart_port, self.baud, timeout=0)
+            self.get_logger().info(
+                f'UART open: {self.uart_port} @ {self.baud}')
+        except serial.SerialException as e:
+            self.get_logger().error(f'Failed to open UART: {e}')
+            self.ser = None
+
+    def _reopen_serial(self):
+        try:
+            if self.ser is not None:
+                self.ser.close()
+        except serial.SerialException:
+            pass
+        self._open_serial()
+
     def check_chassis_timeout(self):
         elapsed = (
             self.get_clock().now() - self.last_chassis_time).nanoseconds / 1e9
@@ -302,6 +324,16 @@ class UartBridgeNode(Node):
                 self.get_logger().warning(
                     f'No chassis status frame for {elapsed:.1f}s')
                 self.chassis_timed_out = True
+            if (elapsed > self.chassis_reopen_after
+                    and time.monotonic() - self._last_reopen_monotonic
+                        >= self.chassis_reopen_after):
+                self._last_reopen_monotonic = time.monotonic()
+                self.get_logger().warning(
+                    f'Reopening UART after {elapsed:.1f}s without frames '
+                    '(if this restores comm, the wedge was RDK-side)')
+                self._reopen_serial()
+                # Give the fresh port a full window before the next reopen.
+                self.last_chassis_time = self.get_clock().now()
             msg = ChassisStatus()
             msg.left_speed = float('nan')
             msg.right_speed = float('nan')

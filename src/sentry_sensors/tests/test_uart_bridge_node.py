@@ -350,3 +350,28 @@ def test_swap_encoder_channels_off_by_default(node):
     published = mock_pub.call_args[0][0]
     assert published.left_pulse == 100000
     assert published.right_pulse == -100000
+
+
+def test_prolonged_timeout_reopens_serial(node):
+    """After chassis_reopen_after_sec without frames the port is reopened."""
+    from rclpy.duration import Duration
+
+    node.last_chassis_time = node.get_clock().now() - Duration(seconds=30)
+    node._last_reopen_monotonic = 0.0
+    with patch('sentry_sensors.uart_bridge_node.serial.Serial') as mock_serial, \
+         patch.object(node.pub_chassis, 'publish'):
+        node.check_chassis_timeout()
+        assert mock_serial.called  # port reopened
+
+
+def test_reopen_has_cooldown(node):
+    """A second prolonged timeout within the window must not reopen again."""
+    import time as _time
+    from rclpy.duration import Duration
+
+    node.last_chassis_time = node.get_clock().now() - Duration(seconds=30)
+    node._last_reopen_monotonic = _time.monotonic()  # just reopened
+    with patch('sentry_sensors.uart_bridge_node.serial.Serial') as mock_serial, \
+         patch.object(node.pub_chassis, 'publish'):
+        node.check_chassis_timeout()
+        assert not mock_serial.called
