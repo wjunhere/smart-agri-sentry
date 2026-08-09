@@ -183,7 +183,7 @@ class UartBridgeNode(Node):
             ChassisStatus, '/sentry/chassis/status', qos)
 
         self.sub_cmd_vel = self.create_subscription(
-            Twist, '/cmd_vel', self.on_cmd_vel, 10)
+            Twist, '/sentry/cmd_vel', self.on_cmd_vel, 10)
         self.sub_config = self.create_subscription(
             ChassisConfig, '/sentry/chassis/config', self.on_chassis_config, 10)
         if forward_servo:

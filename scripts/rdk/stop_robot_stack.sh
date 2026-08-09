@@ -55,8 +55,8 @@ publish_zero_velocity() {
   if ! ros_available; then
     return 0
   fi
-  log "Publishing zero /cmd_vel for 1 second..."
-  timeout 1.2 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
+  log "Publishing zero /sentry/cmd_vel for 1 second..."
+  timeout 1.2 ros2 topic pub -r 10 /sentry/cmd_vel geometry_msgs/msg/Twist \
     "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" \
     >/dev/null 2>&1 || true
 }

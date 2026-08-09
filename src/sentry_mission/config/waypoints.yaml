@@ -2,8 +2,8 @@
 # Robot starts at (0,0), initial heading 0 deg (positive X)
 waypoints:
   # Row 1 end: arrive at (x=2.0, y=0.0), then face +Y for the turn
-  - {x: 2.0, y: 0.0, yaw: 1.5708}
+  - {x: 2.0, y: 0.0, yaw: 1.5708, arrival_yaw: 0.0, departure_yaw: 1.5708}
   # Row 2 start: arrive at (x=2.0, y=1.0), then face -X for the return row
-  - {x: 2.0, y: 1.0, yaw: 3.1416}
+  - {x: 2.0, y: 1.0, yaw: 3.1416, arrival_yaw: 1.5708, departure_yaw: 3.1416}
   # Row 2: reverse, end at (x=0.0, y=1.0), heading 180 deg
-  - {x: 0.0, y: 1.0, yaw: 3.1416}
+  - {x: 0.0, y: 1.0, yaw: 3.1416, arrival_yaw: 3.1416}

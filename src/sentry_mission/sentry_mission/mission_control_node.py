@@ -47,6 +47,8 @@ STATE_OBSTACLE_ARC_DRIVE = 'OBSTACLE_ARC_DRIVE'
 STATE_OBSTACLE_TURN_BACK = 'OBSTACLE_TURN_BACK'
 STATE_OBSTACLE_REJOIN_FORWARD = 'OBSTACLE_REJOIN_FORWARD'
 STATE_AVOIDING = 'AVOIDING'
+STATE_WAYPOINT_TURN = 'WAYPOINT_TURN'
+STATE_WAYPOINT_ARRIVAL_ALIGN = 'WAYPOINT_ARRIVAL_ALIGN'
 
 DEFAULT_FIXED_POINT_RADIUS = 0.20
 FIXED_POINT_DIAGNOSIS_CLASS_ID = 254
@@ -64,7 +66,8 @@ _CMDV_OWNER_STATES = {
     STATE_STOPPED, STATE_SCANNING, STATE_ANALYZING, STATE_ACTION, STATE_RESUME,
     STATE_OBSTACLE_STOP, STATE_OBSTACLE_BACKUP, STATE_OBSTACLE_TURN,
     STATE_OBSTACLE_ARC_DRIVE, STATE_OBSTACLE_TURN_BACK,
-    STATE_OBSTACLE_REJOIN_FORWARD
+    STATE_OBSTACLE_REJOIN_FORWARD, STATE_WAYPOINT_TURN,
+    STATE_WAYPOINT_ARRIVAL_ALIGN
 }
 
 
@@ -136,9 +139,13 @@ class MissionControlNode(Node):
         # the current side toward the front (from the 180 extreme that means
         # decreasing yaw, from 0 increasing) so the plant is back in frame.
         self.declare_parameter('servo_plant_stop_offset_deg', 10.0)
-        # Plants already scanned are expected obstacles near the row; don't
-        # run the avoidance maneuver when passing them again.
-        self.declare_parameter('avoidance_scanned_radius', 1.0)
+        # Nav2 owns waypoint position. Final heading is aligned here with a
+        # latched direction so small yaw noise cannot make the tracks fight.
+        self.declare_parameter('waypoint_turn_speed', 0.25)
+        self.declare_parameter('waypoint_turn_tolerance', 0.08)
+        self.declare_parameter('waypoint_turn_settle_sec', 0.3)
+        self.declare_parameter('waypoint_turn_correction_speed', 0.12)
+        self.declare_parameter('waypoint_turn_overshoot_threshold', 0.12)
 
         self.cruise_speed = self.get_parameter('cruise_speed').value
         self.det_conf_th = self.get_parameter(
@@ -225,8 +232,16 @@ class MissionControlNode(Node):
             'servo_flip_cooldown_distance').value
         self.servo_plant_stop_offset_deg = self.get_parameter(
             'servo_plant_stop_offset_deg').value
-        self.avoidance_scanned_radius = self.get_parameter(
-            'avoidance_scanned_radius').value
+        self.waypoint_turn_speed = self.get_parameter(
+            'waypoint_turn_speed').value
+        self.waypoint_turn_tolerance = self.get_parameter(
+            'waypoint_turn_tolerance').value
+        self.waypoint_turn_settle_sec = self.get_parameter(
+            'waypoint_turn_settle_sec').value
+        self.waypoint_turn_correction_speed = self.get_parameter(
+            'waypoint_turn_correction_speed').value
+        self.waypoint_turn_overshoot_threshold = self.get_parameter(
+            'waypoint_turn_overshoot_threshold').value
 
         # -- Waypoints --
         self.waypoints_file = self.get_parameter('waypoints_file').value
@@ -271,7 +286,7 @@ class MissionControlNode(Node):
             callback_group=self.velocity_callback_group)
 
         # -- Publishers --
-        self.pub_cmd = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.pub_cmd = self.create_publisher(Twist, '/sentry/cmd_vel', 10)
         self.pub_status = self.create_publisher(
             MissionStatus, '/mission/status', 10)
         self.pub_diag = self.create_publisher(Diagnosis, '/vision/diagnosis', 10)
@@ -307,14 +322,16 @@ class MissionControlNode(Node):
         self.last_plant = None
         self.pending_plant = None
         self.pending_plant_time = 0.0
-        self._scanned_plant_positions = []
         self.last_fusion = None
         self.active_fixed_point_disease = None
         self.handled_fixed_point_stops = set()
         self._diagnosis_published_at_ns = 0
         self.sending_goal = False
         self.last_goal_sent_time = 0.0
+        self.waypoint_turn_target_yaw = None
+        self.waypoint_turn_settle_start = 0.0
         self._cancel_in_progress = False
+        self._nav_recovery_hold_until = 0.0
         self._nav_goal_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._plant_lock = threading.Lock()
@@ -337,6 +354,10 @@ class MissionControlNode(Node):
         self.avoidance_drive_start_x = 0.0
         self.avoidance_drive_start_y = 0.0
         self.avoidance_suppress_until = 0.0
+        self.waypoint_turn_target_yaw = None
+        self.waypoint_turn_direction = 0.0
+        self.waypoint_turn_correction_used = False
+        self.waypoint_turn_settle_start = 0.0
 
         # -- De-duplication --
         self.reference_x = 0.0
@@ -416,7 +437,7 @@ class MissionControlNode(Node):
             return
 
         wp = self.waypoints[self.current_wp_idx]
-        yaw = wp.get('yaw', 0.0)
+        yaw = wp.get('departure_yaw', wp.get('yaw', 0.0))
 
         goal = PoseStamped()
         goal.header.frame_id = 'odom'
@@ -427,6 +448,7 @@ class MissionControlNode(Node):
 
         self.sending_goal = True
         self.last_goal_sent_time = self.get_clock().now().nanoseconds / 1e9
+        self._nav_recovery_hold_until = 0.0
         self._go_to_pose_async(goal, f'waypoint {self.current_wp_idx}')
         self.get_logger().info(
             f'Sent waypoint {self.current_wp_idx}: '
@@ -840,8 +862,6 @@ class MissionControlNode(Node):
             self.last_fusion = None
             self._diagnosis_published_at_ns = 0
             self.plants_detected += 1
-            self._scanned_plant_positions.append(
-                (self.odom_x, self.odom_y))
             self.get_logger().info(
                 'Plant stop trigger accepted: '
                 f'confidence={pending_plant.confidence:.3f}, '
@@ -888,6 +908,8 @@ class MissionControlNode(Node):
         self._cancel_nav2_task_async()
         self.sending_goal = False
         self.last_goal_sent_time = 0.0
+        self.waypoint_turn_target_yaw = None
+        self.waypoint_turn_settle_start = 0.0
         self._transition(STATE_STOPPED, now)
 
     # ---- Obstacle avoidance helpers ----
@@ -898,10 +920,6 @@ class MissionControlNode(Node):
         now = self.get_clock().now().nanoseconds / 1e9
         if now < self.avoidance_suppress_until:
             return False
-        for px, py in self._scanned_plant_positions:
-            if math.hypot(self.odom_x - px,
-                          self.odom_y - py) < self.avoidance_scanned_radius:
-                return False
         dist = self.last_obstacle.front_min_distance
         if not (
             math.isfinite(dist)
@@ -993,6 +1011,67 @@ class MissionControlNode(Node):
 
     def _angle_diff(self, target: float, source: float) -> float:
         return math.atan2(math.sin(target - source), math.cos(target - source))
+
+    def _start_waypoint_heading(
+            self, now: float, target_yaw, state: str, phase: str) -> bool:
+        """Start one latched heading phase after Nav2 has reached waypoint xy."""
+        if target_yaw is None:
+            return False
+        target_yaw = float(target_yaw)
+        error = self._angle_diff(target_yaw, self.odom_yaw)
+        if abs(error) <= self.waypoint_turn_tolerance:
+            return False
+        self.waypoint_turn_target_yaw = target_yaw
+        self.waypoint_turn_direction = 1.0 if error > 0.0 else -1.0
+        self.waypoint_turn_correction_used = False
+        self.waypoint_turn_settle_start = 0.0
+        self.last_nav_cmd = None
+        self.last_nav_cmd_time = 0.0
+        self._transition(state, now)
+        self.get_logger().info(
+            f'Waypoint {self.current_wp_idx} {phase}: '
+            f'target={target_yaw:.3f}, initial_error={error:.3f}')
+        return True
+
+    def _start_waypoint_arrival_alignment(self, now: float) -> bool:
+        """Align to the incoming segment before the prescribed corner turn."""
+        if self.current_wp_idx >= len(self.waypoints):
+            return False
+        target = self.waypoints[self.current_wp_idx].get('arrival_yaw')
+        return self._start_waypoint_heading(
+            now, target, STATE_WAYPOINT_ARRIVAL_ALIGN, 'arrival alignment')
+
+    def _start_waypoint_departure_turn(self, now: float) -> bool:
+        """Perform the prescribed outgoing turn after arrival alignment."""
+        if self.current_wp_idx >= len(self.waypoints):
+            return False
+        wp = self.waypoints[self.current_wp_idx]
+        target = wp.get('departure_yaw', wp.get('yaw'))
+        return self._start_waypoint_heading(
+            now, target, STATE_WAYPOINT_TURN, 'departure turn')
+
+    def _finish_waypoint_heading_phase(self, now: float) -> None:
+        """Advance from arrival alignment to departure turn, then waypoint done."""
+        if self.state == STATE_WAYPOINT_ARRIVAL_ALIGN:
+            if not self._start_waypoint_departure_turn(now):
+                self._complete_current_waypoint(now)
+        else:
+            self._complete_current_waypoint(now)
+
+    def _complete_current_waypoint(self, now: float) -> None:
+        """Advance only after waypoint heading phases have completed."""
+        reached_idx = self.current_wp_idx
+        self.waypoint_turn_target_yaw = None
+        self.waypoint_turn_settle_start = 0.0
+        self.current_wp_idx += 1
+        self.get_logger().info(f'Reached waypoint {reached_idx}')
+        self._maybe_flip_servo(now)
+        self._transition(STATE_PATROL, now)
+        if self.current_wp_idx < len(self.waypoints):
+            self._send_next_waypoint()
+        else:
+            self.get_logger().info('All waypoints completed')
+            self._restore_servo_home()
 
     def _prepare_avoidance_maneuver(self):
         self.avoidance_side = self._choose_avoidance_side()
@@ -1182,15 +1261,9 @@ class MissionControlNode(Node):
                 self.last_goal_sent_time = 0.0
                 result = self.navigator.getResult()
                 if result == TaskResult.SUCCEEDED:
-                    self.current_wp_idx += 1
-                    self.get_logger().info(
-                        f'Reached waypoint {self.current_wp_idx - 1}')
-                    self._maybe_flip_servo(now)
-                    if self.current_wp_idx < len(self.waypoints):
-                        self._send_next_waypoint()
-                    else:
-                        self.get_logger().info('All waypoints completed')
-                        self._restore_servo_home()
+                    if not self._start_waypoint_arrival_alignment(now):
+                        if not self._start_waypoint_departure_turn(now):
+                            self._complete_current_waypoint(now)
                 else:
                     self.get_logger().warn(
                         f'Nav2 task failed ({result}), '
@@ -1201,6 +1274,53 @@ class MissionControlNode(Node):
             # callback; whichever runs first wins).
             self._maybe_trigger_plant_stop(now)
 
+        elif self.state in (
+                STATE_WAYPOINT_ARRIVAL_ALIGN, STATE_WAYPOINT_TURN):
+            status.state = self.state
+            is_arrival_alignment = self.state == STATE_WAYPOINT_ARRIVAL_ALIGN
+            status.current_action = (
+                'aligning incoming waypoint heading'
+                if is_arrival_alignment else 'turning to outgoing waypoint heading')
+            cmd.linear.x = 0.0
+            if self.waypoint_turn_target_yaw is None:
+                self.get_logger().warn(
+                    'Waypoint heading target missing; advancing heading phase')
+                self._finish_waypoint_heading_phase(now)
+            else:
+                error = self._angle_diff(
+                    self.waypoint_turn_target_yaw, self.odom_yaw)
+                if abs(error) <= self.waypoint_turn_tolerance:
+                    cmd.angular.z = 0.0
+                    if self.waypoint_turn_settle_start == 0.0:
+                        self.waypoint_turn_settle_start = now
+                    elif (now - self.waypoint_turn_settle_start
+                          >= self.waypoint_turn_settle_sec):
+                        self._finish_waypoint_heading_phase(now)
+                else:
+                    self.waypoint_turn_settle_start = 0.0
+                    # Reverse at most once, and only on a material overshoot.
+                    if (error * self.waypoint_turn_direction < 0.0
+                            and abs(error)
+                            > self.waypoint_turn_overshoot_threshold):
+                        if not self.waypoint_turn_correction_used:
+                            self.waypoint_turn_direction = (
+                                1.0 if error > 0.0 else -1.0)
+                            self.waypoint_turn_correction_used = True
+                            self.get_logger().warn(
+                                'Waypoint heading overshoot; applying one '
+                                'low-speed correction')
+                        else:
+                            self.get_logger().warn(
+                                'Waypoint heading remained outside tolerance '
+                                'after correction; stopping oscillation')
+                            self._finish_waypoint_heading_phase(now)
+                    if self.state in (
+                            STATE_WAYPOINT_ARRIVAL_ALIGN,
+                            STATE_WAYPOINT_TURN):
+                        speed = (self.waypoint_turn_correction_speed
+                                 if self.waypoint_turn_correction_used
+                                 else self.waypoint_turn_speed)
+                        cmd.angular.z = self.waypoint_turn_direction * speed
         elif self.state == STATE_OBSTACLE_STOP:
             status.state = STATE_OBSTACLE_STOP
             status.current_action = 'stopping for obstacle'
@@ -1442,13 +1562,28 @@ class MissionControlNode(Node):
                 'Blocked Nav2 reverse cmd in PATROL; mission owns avoidance')
             self._publish_stop()
             return
-        if (abs(self.last_nav_cmd.angular.z) > 0.6
-                and abs(self.last_nav_cmd.linear.x) < 0.02):
-            self.get_logger().warn(
-                'Blocked Nav2 recovery spin cmd in PATROL; mission owns avoidance')
+        if now < self._nav_recovery_hold_until:
             self._publish_stop()
             return
+        if (abs(self.last_nav_cmd.angular.z) > 0.6
+                and abs(self.last_nav_cmd.linear.x) < 0.02):
+            self._handle_nav_recovery_spin(now)
+            return
         self.pub_cmd.publish(self.last_nav_cmd)
+
+    def _handle_nav_recovery_spin(self, now: float):
+        self.get_logger().warn(
+            'Nav2 recovery spin suppressed; stopping and retrying current waypoint')
+        self._publish_stop()
+        self.last_nav_cmd = None
+        self.last_nav_cmd_time = 0.0
+        self.sending_goal = False
+        self.last_goal_sent_time = 0.0
+        self.waypoint_turn_target_yaw = None
+        self.waypoint_turn_settle_start = 0.0
+        self._nav_recovery_hold_until = now + 2.0
+        self._next_goal_time = self._nav_recovery_hold_until
+        self._cancel_nav2_task_async()
     def _transition(self, new_state: str, now: float = None):
         if now is None:
             now = self.get_clock().now().nanoseconds / 1e9
@@ -1484,11 +1619,12 @@ class MissionControlNode(Node):
             self._servo_side = self.servo_start_side
         self.sending_goal = False
         self.last_goal_sent_time = 0.0
+        self.waypoint_turn_target_yaw = None
+        self.waypoint_turn_settle_start = 0.0
         with self._plant_lock:
             self.last_plant = None
             self.pending_plant = None
             self.pending_plant_time = 0.0
-        self._scanned_plant_positions.clear()
         self.active_fixed_point_disease = None
         self.handled_fixed_point_stops.clear()
         self.has_scan_reference = False

@@ -39,7 +39,7 @@ class ImuTurnController(Node):
     def __init__(self):
         super().__init__('imu_turn_controller')
 
-        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.pub = self.create_publisher(Twist, '/sentry/cmd_vel', 10)
         self.imu_sub = self.create_subscription(
             Imu, '/sensor/imu/data_raw', self._on_imu, 10)
 

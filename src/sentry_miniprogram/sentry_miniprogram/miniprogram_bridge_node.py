@@ -65,7 +65,7 @@ class MiniProgramBridgeNode(Node):
         super().__init__('miniprogram_bridge_node')
 
         # Publishers
-        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, '/sentry/cmd_vel', 10)
 
         # Services
         self.mode_srv = self.create_client(SetBool, '/set_auto_mode')

@@ -208,7 +208,7 @@ check_cmd_vel_route() {
   # Verify route ownership by node presence, not exact publisher count:
   # miniprogram_bridge may legitimately add a third publisher.
   for attempt in $(seq 1 10); do
-    info="$(ros2 topic info /cmd_vel -v 2>&1 || true)"
+    info="$(ros2 topic info /sentry/cmd_vel -v 2>&1 || true)"
     if printf '%s' "$info" | grep -q "mission_control_node" \
       && printf '%s' "$info" | grep -q "uart_bridge_node"; then
       if ! control_web_expected || printf '%s' "$info" | grep -q "web_remote_node"; then
@@ -216,12 +216,12 @@ check_cmd_vel_route() {
         return
       fi
     fi
-    warn "Waiting for /cmd_vel publishers to reach ROS graph (${attempt}/10)..."
+    warn "Waiting for /sentry/cmd_vel publishers to reach ROS graph (${attempt}/10)..."
     sleep 2
   done
 
   printf '%s\n' "$info" | grep -E 'Publisher count|Subscription count|Node name' || true
-  fail "/cmd_vel route did not reach expected publishers/subscribers within 20 seconds"
+  fail "/sentry/cmd_vel route did not reach expected publishers/subscribers within 20 seconds"
 }
 
 ensure_preserved_rosbridge() {
@@ -316,7 +316,7 @@ main() {
     check_param_contains /uart_bridge_node right_speed_scale "1.0"
     check_param_contains /uart_bridge_node left_speed_scale "1.0"
     check_param_contains /wheel_odom_node pulses_per_meter "11552"
-    check_param_contains /wheel_odom_node wheel_base "0.244"
+    check_param_contains /wheel_odom_node wheel_base "0.23"
     check_param_contains /mission_control_node obstacle_resume_delay_sec "0.5"
     check_param_contains /mission_control_node avoidance_retrigger_suppression_sec "2.5"
     check_param_contains /mission_control_node avoidance_drive_distance "0.55"

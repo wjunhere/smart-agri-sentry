@@ -88,6 +88,46 @@ def test_nav2_task_succeeded_advances_waypoint(node):
     assert node.sending_goal == True  # Re-set by _send_next_waypoint
 
 
+def test_waypoint_heading_uses_latched_single_direction(node):
+    """Final yaw alignment owns cmd_vel and does not depend on Nav2 spins."""
+    node.state = 'PATROL'
+    node._nav2_ready = True
+    node.current_wp_idx = 0
+    node.sending_goal = True
+    node.odom_yaw = 0.0
+    node.waypoints = [{'x': 1.0, 'y': 0.0, 'yaw': 1.57}]
+
+    with patch.object(node.navigator, 'isTaskComplete', return_value=True), \
+         patch.object(node.navigator, 'getResult', return_value=TaskResult.SUCCEEDED), \
+         patch.object(node.pub_cmd, 'publish') as mock_publish:
+        node.tick()
+        assert node.state == 'WAYPOINT_TURN'
+        assert node.current_wp_idx == 0
+        node.tick()
+
+    cmd = mock_publish.call_args[0][0]
+    assert cmd.linear.x == 0.0
+    assert cmd.angular.z > 0.0
+
+def test_waypoint_arrival_alignment_precedes_departure_turn(node):
+    """A corner first restores incoming heading, then commands outgoing yaw."""
+    node.current_wp_idx = 0
+    node.odom_yaw = 0.0
+    node.waypoints = [{
+        'x': 1.0, 'y': 0.0,
+        'arrival_yaw': 0.40,
+        'departure_yaw': 1.57,
+    }]
+
+    assert node._start_waypoint_arrival_alignment(1.0) is True
+    assert node.state == 'WAYPOINT_ARRIVAL_ALIGN'
+    assert node.waypoint_turn_target_yaw == pytest.approx(0.40)
+
+    node.odom_yaw = 0.40
+    assert node._start_waypoint_departure_turn(2.0) is True
+    assert node.state == 'WAYPOINT_TURN'
+    assert node.waypoint_turn_target_yaw == pytest.approx(1.57)
+
 def test_auto_mode_prepares_autonomous_start(node):
     """AUTO transition should reset odometry/encoders before sending a goal."""
     from std_srvs.srv import SetBool
@@ -787,7 +827,7 @@ def test_normal_diagnosis_is_unchanged_without_active_fixed_point(node):
     assert result.confidence == 0.72
 
 
-# ---- Avoidance suppression for already-scanned plants ----
+# ---- Front obstacles are never suppressed by prior plant scans ----
 
 def _arm_obstacle(node):
     """Set up a front obstacle that would normally trigger avoidance."""
@@ -803,32 +843,10 @@ def _arm_obstacle(node):
     node.last_obstacle = obstacle
 
 
-def test_scanned_plant_suppresses_obstacle_avoidance(node):
-    """Within avoidance_scanned_radius of a scanned plant: no avoidance."""
+def test_front_obstacle_always_triggers_avoidance(node):
+    """Plant detection history must not disable collision avoidance."""
     _arm_obstacle(node)
-    node._scanned_plant_positions = [(0.2, 0.1)]
-    assert node._front_obstacle_too_close() is False
-
-
-def test_unscanned_obstacle_still_triggers_avoidance(node):
-    """Away from any scanned plant: avoidance triggers as before."""
-    _arm_obstacle(node)
-    node._scanned_plant_positions = [(5.0, 5.0)]
     assert node._front_obstacle_too_close() is True
-
-
-def test_scanned_positions_cleared_on_mission_start(node):
-    """New cruise resets odometry, so stale scan positions must be dropped."""
-    node._scanned_plant_positions = [(1.0, 2.0)]
-    with patch.object(node, 'pub_cmd'), \
-         patch.object(node, 'reset_wheel_odom_client') as c1, \
-         patch.object(node, 'reset_encoder_client') as c2, \
-         patch.object(node, '_reset_ekf_pose_async'):
-        c1.wait_for_service.return_value = False
-        c2.wait_for_service.return_value = False
-        node._prepare_autonomous_start()
-    assert node._scanned_plant_positions == []
-
 
 def test_patrol_start_resumes_detector(node):
     """Entering AUTO must unpause the plant detector when it is available."""

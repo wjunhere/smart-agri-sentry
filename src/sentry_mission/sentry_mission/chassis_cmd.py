@@ -56,7 +56,7 @@ class ChassisController:
     def __init__(self):
         self.node = Node('chassis_cmd')
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
-        self.pub = self.node.create_publisher(Twist, '/cmd_vel', 10)
+        self.pub = self.node.create_publisher(Twist, '/sentry/cmd_vel', 10)
         self.last_status = None
         self.sub = self.node.create_subscription(
             ChassisStatus, '/sentry/chassis/status', self._on_status, qos)

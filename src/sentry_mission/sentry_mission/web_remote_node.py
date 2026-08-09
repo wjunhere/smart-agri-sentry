@@ -206,7 +206,7 @@ def _write_waypoints_file(path: Path, waypoints):
 class WebRemoteNode(Node):
     def __init__(self):
         super().__init__('web_remote_node')
-        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, '/sentry/cmd_vel', 10)
         self.mode_srv = self.create_client(SetBool, '/set_auto_mode')
         self.crop_type_client = self.create_client(SetCropType, '/set_crop_type')
         # Latched crop-type channel for the monitoring plane: the streaming

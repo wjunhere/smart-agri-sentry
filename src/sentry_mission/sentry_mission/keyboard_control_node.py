@@ -76,7 +76,7 @@ class KeyboardControlNode(Node):
         self.step_linear = self.get_parameter('step_linear').value
         self.step_angular = self.get_parameter('step_angular').value
 
-        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, '/sentry/cmd_vel', 10)
 
         self.linear = 0.0
         self.angular = 0.0

@@ -699,7 +699,7 @@ store.saveFixedPointStops = async function() {
 
 function publishCmdVel(linear, angular) {
   const topic = new ROSLIB.Topic({
-    ros, name: '/cmd_vel', messageType: 'geometry_msgs/Twist'
+    ros, name: '/sentry/cmd_vel', messageType: 'geometry_msgs/Twist'
   });
   topic.publish(new ROSLIB.Message({
     linear: { x: linear, y: 0, z: 0 },
