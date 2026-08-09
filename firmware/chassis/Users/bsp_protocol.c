@@ -24,6 +24,11 @@ volatile float target_speed_right = 0.0f;
 /* DMA TX buffer and busy flag (non-blocking telemetry) */
 static uint8_t tx_buf[32];
 static volatile uint8_t tx_busy = 0;
+static uint32_t tx_busy_since = 0;
+
+/* Diagnostics: readable from the debugger or the USART1 debug console. */
+volatile uint32_t uart2_error_count = 0;   /* HAL_UART_ErrorCallback hits */
+volatile uint32_t uart2_txstall_count = 0; /* TX watchdog forced recoveries */
 
 /* CRC16-CCITT (polynomial 0x1021, initial value 0xFFFF) */
 uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
@@ -184,7 +189,23 @@ void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_m
                                    int16_t battery_x100, uint8_t alarm_bits,
                                    int32_t left_pulse, int32_t right_pulse)
 {
-    if (tx_busy) return;  /* previous TX still in progress, skip this frame */
+    if (tx_busy) {
+        /* TX watchdog: a DMA transfer that never completes (no TC, no
+         * error event) would wedge telemetry exactly like the original
+         * bug. Force-abort after 200 ms and drop the frame. */
+        if (HAL_GetTick() - tx_busy_since > 200U) {
+            if (huart2.hdmatx != NULL) {
+                HAL_DMA_Abort(huart2.hdmatx);
+            }
+            tx_busy = 0;
+            huart2.gState = HAL_UART_STATE_READY;
+            uart2_txstall_count++;
+            printf("\r\n[WARN] USART2 TX stall, forced recovery (#%lu)\r\n",
+                   (unsigned long)uart2_txstall_count);
+        } else {
+            return;  /* previous TX still in progress, skip this frame */
+        }
+    }
 
     tx_buf[0] = FRAME_HEADER_0;                      /* Header */
     tx_buf[1] = FRAME_HEADER_1;
@@ -226,6 +247,7 @@ void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_m
     tx_buf[24] = (uint8_t)(crc & 0xFF);
 
     tx_busy = 1;
+    tx_busy_since = HAL_GetTick();
     if (HAL_UART_Transmit_DMA(&huart2, tx_buf, 25) != HAL_OK) {
         /* UART/DMA not ready (typically a previous transfer errored out
          * without firing TxCplt). Dropping the frame is fine — wedging
@@ -248,6 +270,7 @@ void Protocol_Send_Chassis_Status(int16_t left_speed_mm_s, int16_t right_speed_m
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart == &huart2) {
+        uart2_error_count++;
         tx_busy = 0;
         huart2.gState  = HAL_UART_STATE_READY;
         huart2.RxState = HAL_UART_STATE_READY;
@@ -257,6 +280,9 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         __HAL_UART_CLEAR_PEFLAG(&huart2);
         HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_buff, RX_BUFF_SIZE);
         __HAL_UART_ENABLE_IT(&huart2, UART_IT_IDLE);
+        printf("\r\n[WARN] USART2 error 0x%08lX, recovered (#%lu)\r\n",
+               (unsigned long)huart2.ErrorCode,
+               (unsigned long)uart2_error_count);
     }
 }
 
