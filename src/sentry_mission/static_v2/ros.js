@@ -117,6 +117,13 @@ window.store = Vue.reactive({
   },
   settingsBusy: false,
   settingsMsg: '',
+  historyFilters: {
+    limit: 10, datePreset: '7d', startDate: '', endDate: '',
+    cropType: '', disease: '',
+  },
+  historyBatches: [],
+  historyBusy: false,
+  historyMsg: '',
 });
 const store = window.store;  // local alias for internal use in this file
 
@@ -961,6 +968,93 @@ setInterval(fetchMockMode, 1000);
 refreshStackStatus();
 setInterval(refreshStackStatus, 3000);
 
+// ── Persistent cruise history ──
+function historyFiltersToParams() {
+  const f = store.historyFilters;
+  const params = new URLSearchParams({ limit: String(f.limit || 10) });
+  let start = f.startDate ? new Date(f.startDate + 'T00:00:00').getTime() / 1000 : null;
+  let end = f.endDate ? new Date(f.endDate + 'T23:59:59').getTime() / 1000 : null;
+  if (!start && f.datePreset && f.datePreset !== 'all') {
+    const days = Number(f.datePreset.replace('d', ''));
+    if (Number.isFinite(days)) start = (Date.now() - days * 86400000) / 1000;
+  }
+  if (start) params.set('start_at', String(start));
+  if (end) params.set('end_at', String(end));
+  if (f.cropType) params.set('crop_type', f.cropType);
+  if (f.disease) params.set('disease', f.disease);
+  return params;
+}
+
+function replayHistoryBatches(batches) {
+  const chronological = [...batches].reverse();
+  const fusion = chronological.flatMap(batch => (batch.fusion_results || []).map(item => ({
+    ...item,
+    time: new Date((item.timestamp || batch.ended_at || batch.started_at) * 1000).toISOString(),
+    alert_level: ({ 0: 'NORMAL', 1: 'SUSPICION', 2: 'WARNING', 3: 'CRITICAL' })[item.alert_level] || item.alert_level || 'NORMAL',
+    vision_term: Number(item.vision_term || 0), env_term: Number(item.env_term || 0),
+    interaction_term: Number(item.interaction_term || 0), evidence_chain: item.evidence_chain || [],
+  })));
+  const alerts = chronological.flatMap(batch => (batch.alerts || []).map(item => ({
+    ...item, time: new Date((item.timestamp || batch.ended_at || batch.started_at) * 1000).toISOString(),
+  })));
+  const advisories = chronological.flatMap(batch => batch.advisories || []);
+  store.fusionResults = fusion.slice(-200);
+  store.fusionLatest = fusion.length ? fusion[fusion.length - 1] : null;
+  store.forecastAlerts = alerts.slice(-200);
+  const last = advisories.length ? advisories[advisories.length - 1] : null;
+  store.advisoryText = last ? (last.description || '') : '';
+  store.advisoryPriority = last ? (last.priority || '') : '';
+  store.advisoryActionType = last ? (last.action_type || '') : '';
+  store.advisorySteps = last ? (last.steps || []) : [];
+}
+
+store.loadHistory = async function() {
+  store.historyBusy = true;
+  store.historyMsg = '';
+  try {
+    const resp = await fetch(API_BASE + '/api/history/batches?' + historyFiltersToParams());
+    if (!resp.ok) throw new Error('读取失败 (' + resp.status + ')');
+    const data = await resp.json();
+    store.historyBatches = data.batches || [];
+    replayHistoryBatches(store.historyBatches);
+    store.historyMsg = `已载入 ${store.historyBatches.length} 个巡航批次`;
+  } catch (err) {
+    store.historyMsg = err.message || '读取历史失败';
+  } finally {
+    store.historyBusy = false;
+  }
+};
+
+store.clearHistoryView = function() {
+  store.historyBatches = [];
+  store.fusionResults = [];
+  store.fusionLatest = null;
+  store.forecastAlerts = [];
+  store.advisoryText = '';
+  store.advisoryPriority = '';
+  store.advisoryActionType = '';
+  store.advisorySteps = [];
+  store.historyMsg = '已清空当前网页显示；板端归档未删除。';
+};
+
+store.deleteBoardHistory = async function() {
+  store.historyBusy = true;
+  store.historyMsg = '';
+  try {
+    const resp = await fetch(API_BASE + '/api/history/batches', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...Object.fromEntries(historyFiltersToParams()), confirm: true }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '清理失败');
+    store.clearHistoryView();
+    store.historyMsg = `已从板端删除 ${data.removed || 0} 个符合当前筛选条件的批次。`;
+  } catch (err) {
+    store.historyMsg = err.message || '清理板端历史失败';
+  } finally {
+    store.historyBusy = false;
+  }
+};
 // ── Mission message center ──
 function fetchMessages() {
   return fetch(API_BASE + '/api/messages')

@@ -31,7 +31,7 @@ const WeatherPanel = {
                style="width:64px; background:#1E293B; border:1px solid #334155; color:#F8FAFC; padding:2px 6px; border-radius:3px; font-size:10px; font-family:JetBrains Mono;" placeholder="经度">
       </span>
     </h3>
-    <div v-show="!collapsed">
+    <div v-show="!collapsed" class="weather-content">
       <div ref="chart" class="forecast-chart" style="height:140px"></div>
       <div class="weather-days">
         <div v-for="d in store.weatherDays" :key="d.day_offset"

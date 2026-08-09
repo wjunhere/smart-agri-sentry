@@ -148,6 +148,25 @@ def test_auto_mode_prepares_autonomous_start(node):
     mock_prepare.assert_called_once()
 
 
+def test_manual_stop_resets_next_cruise_to_wp0(node):
+    """Ending a frontend cruise is a new-run boundary, not a pause."""
+    from std_srvs.srv import SetBool
+
+    node.state = 'PATROL'
+    node.current_wp_idx = 2
+    node.saved_wp_idx = 2
+
+    with patch.object(node, '_cancel_nav2_task_async'), \
+         patch.object(node, '_restore_servo_home'):
+        request = SetBool.Request()
+        request.data = False
+        response = node.set_auto_mode_cb(request, SetBool.Response())
+
+    assert response.success is True
+    assert node.state == 'MANUAL'
+    assert node.current_wp_idx == 0
+    assert node.saved_wp_idx == 0
+
 def test_prepare_autonomous_start_calls_reset_services(node):
     """Verify autonomous start asynchronously requests odom, encoder, and EKF resets."""
     reset_odom = MagicMock()

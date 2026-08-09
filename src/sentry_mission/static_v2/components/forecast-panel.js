@@ -1,6 +1,6 @@
 const ForecastPanel = {
   template: `
-  <div class="card">
+  <div class="card forecast-card">
     <h3>
       预警趋势
       <span class="count-badge" v-if="alarmCount > 0">{{ alarmCount }}</span>

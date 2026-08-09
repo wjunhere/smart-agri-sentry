@@ -20,8 +20,10 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
-from sentry_interfaces.msg import MissionStatus, PlantDetection, Diagnosis
+from sentry_interfaces.msg import (MissionStatus, PlantDetection, Diagnosis,
+                                   FusionResult, AdvisoryAction, ForecastAlert)
 from sentry_mission.batch_recorder import BatchRecorder, draw_bbox_on_jpeg
+from sentry_mission.cruise_history import CruiseHistoryStore
 from sentry_interfaces.srv import SetCropType
 from std_srvs.srv import SetBool
 
@@ -293,11 +295,19 @@ class WebRemoteNode(Node):
         self.latest_plant_time = 0.0
         self._last_mission_state = None
         self.batch_recorder = BatchRecorder()
+        self.history_store = CruiseHistoryStore(
+            os.path.expanduser('~/.local/state/sentry/cruise_history'))
         self.plant_sub = self.create_subscription(
             PlantDetection, '/vision/plant_detected',
             self._on_plant_detected, 10)
         self.diagnosis_sub = self.create_subscription(
             Diagnosis, '/vision/diagnosis', self._on_diagnosis, 10)
+        self.fusion_sub = self.create_subscription(
+            FusionResult, '/fusion/diagnosis', self._on_fusion_history, 10)
+        self.advisory_sub = self.create_subscription(
+            AdvisoryAction, '/advisory/action', self._on_advisory_history, 10)
+        self.alert_sub = self.create_subscription(
+            ForecastAlert, '/forecast/alert', self._on_alert_history, 10)
         self.timer = self.create_timer(0.05, self.timer_cb)
         self.watchdog_timer = self.create_timer(5.0, self._watchdog_tick)
 
@@ -321,6 +331,28 @@ class WebRemoteNode(Node):
             return
         self.batch_recorder.on_diagnosis(
             msg.disease_class, float(msg.confidence))
+        self.history_store.add_diagnosis(msg.disease_class, float(msg.confidence))
+
+    def _on_fusion_history(self, msg):
+        self.history_store.add_event('fusion', {
+            'risk_score': float(msg.risk_score), 'alert_level': int(msg.alert_level),
+            'mode': msg.mode, 'confidence': float(msg.confidence),
+            'lwd_hours': float(msg.lwd_hours),
+            'vision_term': float(msg.vision_term),
+            'env_term': float(msg.env_term),
+            'interaction_term': float(msg.interaction_term),
+            'evidence_chain': list(msg.evidence_chain)})
+
+    def _on_advisory_history(self, msg):
+        self.history_store.add_event('advisory', {
+            'action_type': msg.action_type, 'description': msg.description,
+            'priority': msg.priority, 'steps': list(msg.steps)})
+
+    def _on_alert_history(self, msg):
+        self.history_store.add_event('alert', {
+            'active': bool(msg.active), 'alert_type': msg.alert_type,
+            'probability': float(msg.probability), 'description': msg.description,
+            'hours_ahead': int(msg.hours_ahead)})
 
     def _record_detection_snapshot(self):
         with self.lock:
@@ -341,6 +373,7 @@ class WebRemoteNode(Node):
             self.get_logger().warn(f'bbox draw failed: {exc}')
             snap = jpeg
         self.batch_recorder.on_stop_trigger(bbox, conf, snap)
+        self.history_store.add_detection(bbox, conf, snap)
         self.get_logger().info(
             f'Detection snapshot recorded (conf={conf:.2f})')
 
@@ -379,6 +412,9 @@ class WebRemoteNode(Node):
             self._record_detection_snapshot()
         if state == 'MANUAL':
             self.batch_recorder.on_mode_change('MANUAL')
+            self.history_store.finish('manual')
+        elif state and prev_state == 'MANUAL':
+            self.history_store.start(self.current_crop_type)
         # Mirror mission state into the control-plane mode both ways: in
         # every non-MANUAL state mission_control or Nav2 owns /cmd_vel, so
         # the joystick watchdog must stay silent. A MANUAL status racing
@@ -425,6 +461,10 @@ class WebRemoteNode(Node):
                 self.last_cmd_time = time.time()
         self.get_logger().info(f"Switched to {self.mode}")
         self.batch_recorder.on_mode_change('AUTO' if auto else 'MANUAL')
+        if auto:
+            self.history_store.start(self.current_crop_type)
+        else:
+            self.history_store.finish('manual')
         self._set_vision_paused(not auto)
         return True
 
@@ -463,6 +503,7 @@ class WebRemoteNode(Node):
             self.angular = 0.0
             self.last_cmd_time = time.time()
         self.batch_recorder.on_mode_change('MANUAL')
+        self.history_store.finish('emergency_stop')
         self._set_vision_paused(True)
         self.get_logger().warn('EMERGENCY STOP triggered')
 
@@ -1005,7 +1046,7 @@ def _get_app(node: WebRemoteNode):
     @_app.after_request
     def _add_cors_headers(resp):
         resp.headers['Access-Control-Allow-Origin'] = '*'
-        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
         resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         return resp
 
@@ -1129,6 +1170,50 @@ def _get_app(node: WebRemoteNode):
     def api_messages_clear():
         node.batch_recorder.clear()
         return jsonify({'status': 'ok'})
+    def _history_query_args(source):
+        try:
+            limit = max(1, min(30, int(source.get('limit', 10))))
+        except (TypeError, ValueError):
+            limit = 10
+        def optional_time(key):
+            value = source.get(key)
+            if value in (None, ''):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f'invalid {key}')
+        return (limit, optional_time('start_at'), optional_time('end_at'),
+                str(source.get('crop_type', '')).strip(),
+                str(source.get('disease', '')).strip())
+
+    @_app.route('/api/history/batches', methods=['GET'])
+    def api_history_batches():
+        try:
+            args = _history_query_args(request.args)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        return jsonify({'batches': node.history_store.query(*args)})
+
+    @_app.route('/api/history/batches/<batch_id>/snapshot/<int:seq>', methods=['GET'])
+    def api_history_snapshot(batch_id, seq):
+        from flask import Response
+        jpeg = node.history_store.snapshot(batch_id, seq)
+        if jpeg is None:
+            return jsonify({'error': 'not found'}), 404
+        return Response(jpeg, mimetype='image/jpeg')
+
+    @_app.route('/api/history/batches', methods=['DELETE'])
+    def api_history_clear():
+        data = request.get_json(silent=True) or {}
+        if data.get('confirm') is not True:
+            return jsonify({'error': 'explicit confirmation required'}), 400
+        try:
+            _, start_at, end_at, crop_type, disease = _history_query_args(data)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        removed = node.history_store.clear(start_at, end_at, crop_type, disease)
+        return jsonify({'status': 'ok', 'removed': removed})
 
     @_app.route('/<path:filename>')
     def v2_static(filename):

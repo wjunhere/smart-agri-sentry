@@ -134,18 +134,50 @@ body {
 .right-panel {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto auto auto minmax(220px, 1fr);
+  /* The last row owns only the remaining viewport height.  Its cards scroll
+     internally instead of enlarging the whole status column. */
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 6px;
-  overflow-y: auto;
+  overflow: hidden;
   height: 100%;
+  min-height: 0;
 }
 .right-panel > * { min-width: 0; }
+.right-panel .forecast-card,
+.right-panel .weather-card {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+/* Reserve a readable strip for alert records even in a short status row.
+   ECharts follows the flex height, while the records scroll independently. */
+.forecast-card .forecast-chart {
+  height: auto;
+  flex: 0 1 120px;
+  min-height: 80px;
+}
+.forecast-card .alert-list {
+  margin-top: 8px;
+  max-height: none;
+  min-height: 48px;
+  flex: 1 1 48px;
+}
+.forecast-card .alert-list,
+.weather-card .weather-content {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.weather-card .weather-content { min-height: 0; }
+.weather-card .weather-content { padding-right: 3px; }
 .right-panel .card:nth-child(3),   /* 融合决策链 */
 .right-panel .card:nth-child(4) {  /* 农艺建议 */
   grid-column: 1 / -1;
 }
 @media (max-width: 1100px) {
-  .right-panel { grid-template-columns: 1fr; }
+  .right-panel { grid-template-columns: 1fr; grid-template-rows: none; overflow-y: auto; }
+  .right-panel .forecast-card,
+  .right-panel .weather-card { min-height: 220px; }
 }
 
 /* ============ CAMERA ============ */
@@ -1088,3 +1120,21 @@ a, button, .crop-pill, .diag-pill, .wp-item, .env-item, .alert-row {
 
 /* 天气卡头部：半宽卡片里标题不换行挤竖排，控件放不下了整体折到第二行 */
 .weather-header { flex-wrap: wrap; row-gap: 6px; white-space: nowrap; }
+
+/* Persistent cruise-history controls in settings */
+.settings-modal { max-width: 640px; }
+.history-settings { border-top: 1px solid var(--hairline-soft); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.history-title { display: flex; flex-direction: column; gap: 2px; }
+.history-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; }
+.history-grid label { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 11px; }
+.history-grid select, .history-grid input { min-width: 0; background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.history-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-danger { color: var(--red); border-color: rgba(239,68,68,.5); }
+@media (max-width: 560px) { .history-grid { grid-template-columns: 1fr; } }
+.history-batches { max-height: 260px; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 3px; }
+.history-batch { padding: 8px; border: 1px solid var(--hairline-soft); border-radius: 7px; background: rgba(255,255,255,.018); }
+.history-batch-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; color: var(--text-dim); font-size: 11px; }
+.history-batch-head strong { color: var(--text); font-weight: 600; }
+.history-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.history-thumbs a { display: block; width: 72px; height: 54px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+.history-thumbs img { display: block; width: 100%; height: 100%; object-fit: cover; }

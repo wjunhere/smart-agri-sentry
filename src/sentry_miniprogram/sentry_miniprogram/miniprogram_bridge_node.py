@@ -111,8 +111,12 @@ class MiniProgramBridgeNode(Node):
         self.declare_parameter('stack_script_timeout_sec', 180.0)
         # Fusion risk history (JSONL, one point per minute) for the
         # mini-program risk-trend chart. Survives bridge restarts.
-        self.declare_parameter('fusion_history_path',
-                               'logs/fusion_history.jsonl')
+        # The systemd service has no stable writable working directory.
+        # Keep history under the service user's home directory instead of a
+        # relative logs path that may resolve to a root-owned directory.
+        self.declare_parameter(
+            'fusion_history_path',
+            os.path.expanduser('~/.local/state/sentry/fusion_history.jsonl'))
         self.fusion_history_path = self.get_parameter(
             'fusion_history_path').value
         self._last_history_append = 0.0

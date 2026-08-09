@@ -781,7 +781,11 @@ class MissionControlNode(Node):
             response.message = 'Switched to AUTO mode'
         else:
             if self.state != STATE_MANUAL:
-                self.saved_wp_idx = self.current_wp_idx
+                # A frontend/manual stop ends this run rather than pausing it.
+                # The next AUTO request must always start the configured route
+                # from WP0, not resume the waypoint active at the stop.
+                self.saved_wp_idx = 0
+                self.current_wp_idx = 0
                 self.sending_goal = False
                 self.last_goal_sent_time = 0.0
                 self._transition(STATE_MANUAL)

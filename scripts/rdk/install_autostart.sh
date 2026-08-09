@@ -8,6 +8,8 @@ WS_DIR="${SENTRY_WS:-/home/sunrise/dev_ws}"
 ROS_DISTRO_NAME="${ROS_DISTRO:-humble}"
 SERVICE_NAME="sentry-bridge.service"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
+ROSBRIDGE_SERVICE_NAME="sentry-rosbridge.service"
+ROSBRIDGE_SERVICE_FILE="/etc/systemd/system/${ROSBRIDGE_SERVICE_NAME}"
 RUN_USER="${SENTRY_USER:-sunrise}"
 
 if [ ! -f "${WS_DIR}/install/setup.bash" ]; then
@@ -34,8 +36,27 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+# rosbridge must inherit the workspace overlay or it cannot import
+# sentry_interfaces and the browser receives only standard ROS messages.
+sudo tee "${ROSBRIDGE_SERVICE_FILE}" >/dev/null <<EOF
+[Unit]
+Description=Sentry rosbridge websocket control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${RUN_USER}
+ExecStart=/bin/bash -lc 'source /opt/ros/${ROS_DISTRO_NAME}/setup.bash && source ${WS_DIR}/install/setup.bash && exec ros2 run rosbridge_server rosbridge_websocket'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 sudo systemctl daemon-reload
-sudo systemctl enable --now "${SERVICE_NAME}"
-echo "Installed and started ${SERVICE_NAME}."
-echo "Check: systemctl status ${SERVICE_NAME}"
+sudo systemctl enable --now "${SERVICE_NAME}" "${ROSBRIDGE_SERVICE_NAME}"
+echo "Installed and started ${SERVICE_NAME} and ${ROSBRIDGE_SERVICE_NAME}."
+echo "Check: systemctl status ${SERVICE_NAME} ${ROSBRIDGE_SERVICE_NAME}"
 echo "Logs:  journalctl -u ${SERVICE_NAME} -f"
