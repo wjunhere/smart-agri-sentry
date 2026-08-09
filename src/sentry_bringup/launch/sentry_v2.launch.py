@@ -197,7 +197,7 @@ def generate_launch_description():
                 'fast_confidence': 0.5,
                 'fast_area_ratio': 0.03,
                 'use_simulation': LaunchConfiguration('use_sim_plant'),
-                'model_path': '/home/sunrise/dev_ws/models/best_plant_11s_bayese_640x640_nv12.bin',
+                'model_path': '/home/sunrise/dev_ws/models/yolo_quantize/output_11s/best_bayese_640x640_nv12.bin',
             }],
             condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
@@ -209,7 +209,7 @@ def generate_launch_description():
             respawn=True,
             respawn_delay=2.0,
             parameters=[{
-                'yolo_model_path': '/home/sunrise/dev_ws/models/best_plant_11s_bayese_640x640_nv12.bin',
+                'yolo_model_path': '/home/sunrise/dev_ws/models/yolo_quantize/output_11s/best_bayese_640x640_nv12.bin',
             }],
             condition=IfCondition(LaunchConfiguration('enable_vision')),
             output='screen',
