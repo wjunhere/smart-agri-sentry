@@ -41,10 +41,13 @@ const ForecastPanel = {
 
       this._chart = echarts.init(dom, null, { devicePixelRatio: 2 });
       const labels = data.map(a => this.formatTime(a.time));
-      const values = data.map(a => a.probability || 0);
-      const colors = data.map(a => {
-        const level = a.alert_type || 'NORMAL';
-        return { NORMAL: '#10B981', SUSPICION: '#F59E0B', WARNING: '#F59E0B', CRITICAL: '#EF4444' }[level] || '#10B981';
+      const values = data.map(a => Number(a.probability) || 0);
+      // Point color represents the predicted probability itself. Alert type
+      // has additional trend conditions and cannot be used as a risk color.
+      const colors = values.map(probability => {
+        if (probability >= 0.7) return '#EF4444';
+        if (probability >= 0.4) return '#F59E0B';
+        return '#10B981';
       });
 
       this._chart.setOption({
@@ -78,6 +81,14 @@ const ForecastPanel = {
           backgroundColor: '#0F172A',
           borderColor: '#1F2937',
           textStyle: { color: '#F8FAFC', fontSize: 11, fontFamily: 'JetBrains Mono' },
+          formatter(params) {
+            const index = params[0] && params[0].dataIndex;
+            const alert = data[index];
+            if (!alert) return '';
+            const probability = (Number(alert.probability) || 0) * 100;
+            const level = alert.alert_type || 'NONE';
+            return `${labels[index]}<br/>预测风险：${probability.toFixed(2)}%<br/>预警状态：${level}`;
+          },
         },
       });
     }
