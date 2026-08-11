@@ -17,6 +17,11 @@ function apiFullUrl(path) {
   return API_BASE + path;
 }
 
+function roundPrecipitation(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : 0;
+}
+
 const ROS_CONFIG = {
   url: 'ws://' + CAR_HOST + ':9090'
 };
@@ -276,7 +281,9 @@ const TOPICS = [
    }],
   ['/weather/forecast', 'sentry_interfaces/WeatherForecast',
    (msg) => {
-     store.weatherDays = msg.days || [];
+     store.weatherDays = (msg.days || []).map(day => ({
+       ...day, precipitation: roundPrecipitation(day.precipitation),
+     }));
      store.weatherHours = msg.hours || [];
      store.weatherDisasterAlerts = msg.disaster_alerts || [];
      store.weatherStale = msg.stale;
@@ -842,7 +849,7 @@ function callSetCropType(cropType) {
     function applyWeather(data) {
       store.weatherDays = (data.days || []).map(d => ({
         day_offset: d.day_offset, temp_high: d.temp_high, temp_low: d.temp_low,
-        humidity: d.humidity, precipitation: d.precipitation,
+        humidity: d.humidity, precipitation: roundPrecipitation(d.precipitation),
         wind_speed: d.wind_speed, weather_desc: d.weather_desc,
       }));
       store.weatherDisasterAlerts = data.disaster_alerts || [];

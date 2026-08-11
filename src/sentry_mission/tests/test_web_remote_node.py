@@ -59,6 +59,12 @@ def mock_ros2():
     modules['sentry_interfaces.msg'].PlantDetection = PlantDetection
     Diagnosis = type('Diagnosis', (), {})
     modules['sentry_interfaces.msg'].Diagnosis = Diagnosis
+    FusionResult = type('FusionResult', (), {})
+    modules['sentry_interfaces.msg'].FusionResult = FusionResult
+    AdvisoryAction = type('AdvisoryAction', (), {})
+    modules['sentry_interfaces.msg'].AdvisoryAction = AdvisoryAction
+    ForecastAlert = type('ForecastAlert', (), {})
+    modules['sentry_interfaces.msg'].ForecastAlert = ForecastAlert
     CompressedImage = type('CompressedImage', (), {})
     modules['sensor_msgs.msg'].CompressedImage = CompressedImage
     String = type('String', (), {})
@@ -110,6 +116,8 @@ def test_set_mode_auto_adds_done_callback():
         web.get_logger = node.get_logger
         from sentry_mission.batch_recorder import BatchRecorder
         web.batch_recorder = BatchRecorder()
+        web.history_store = mock.MagicMock()
+        web.current_crop_type = 'tomato'
 
         result = web.set_mode_auto(False)
 
@@ -526,6 +534,7 @@ def _make_wired_node():
 
     node = WebRemoteNode.__new__(WebRemoteNode)
     node.batch_recorder = BatchRecorder()
+    node.history_store = mock.MagicMock()
     node.latest_plant = None
     node.latest_plant_time = 0.0
     node.latest_camera_jpeg = b'frame'
@@ -624,6 +633,18 @@ def test_mission_status_flips_mode_to_auto_on_patrol():
 
     assert node.mode == 'AUTO'
 
+
+def test_stale_manual_status_does_not_close_active_recording_batch():
+    node = _make_wired_node()
+    node.mode = 'AUTO'
+    node.frontend_started_auto = True
+    node.completion_stop_started = False
+    node.batch_recorder.on_mode_change('AUTO')
+
+    node.on_mission_status(_status('MANUAL'))
+
+    assert node.batch_recorder.current is not None
+    node.history_store.finish.assert_not_called()
 
 def test_manual_status_racing_set_mode_auto_does_not_stick():
     # set_mode_auto just ran, then a stale MANUAL status lands before

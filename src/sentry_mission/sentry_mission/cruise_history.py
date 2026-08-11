@@ -34,6 +34,9 @@ class CruiseHistoryStore:
                 'records': [], 'fusion_results': [], 'advisories': [],
                 'alerts': [], 'risk_points': [], 'dropped_images': 0,
             }
+            # Checkpoint immediately so a service restart cannot orphan later screenshots.
+            self._write_batch(self.active)
+            self._prune()
             return batch_id
 
     def finish(self, reason):
@@ -52,7 +55,7 @@ class CruiseHistoryStore:
             if self.active is None:
                 return None
             seq = len(self.active['records'])
-            record = {'seq': seq, 'timestamp': self.now(), 'bbox': list(bbox),
+            record = {'seq': seq, 'timestamp': self.now(), 'bbox': [float(value) for value in bbox],
                       'plant_confidence': float(plant_confidence),
                       'disease_class': None, 'disease_confidence': None,
                       'snapshot_seq': None}
@@ -65,6 +68,7 @@ class CruiseHistoryStore:
             elif jpeg_bytes:
                 self.active['dropped_images'] += 1
             self.active['records'].append(record)
+            self._write_batch(self.active)
             return seq
 
     def add_diagnosis(self, disease_class, confidence):
@@ -75,6 +79,7 @@ class CruiseHistoryStore:
                 if record['disease_class'] is None:
                     record['disease_class'] = disease_class
                     record['disease_confidence'] = float(confidence)
+                    self._write_batch(self.active)
                     return
 
     def add_event(self, kind, payload):
@@ -92,6 +97,7 @@ class CruiseHistoryStore:
                 self.active['advisories'].append(event)
             elif kind == 'alert':
                 self.active['alerts'].append(event)
+            self._write_batch(self.active)
 
     def query(self, limit=10, start_at=None, end_at=None, crop_type='', disease=''):
         with self.lock:
@@ -125,8 +131,17 @@ class CruiseHistoryStore:
         self.batches_dir.mkdir(parents=True, exist_ok=True)
         target = self.batches_dir / f"{batch['id']}.json"
         temp = target.with_suffix('.tmp')
-        temp.write_text(json.dumps(batch, ensure_ascii=False), encoding='utf-8')
+        temp.write_text(json.dumps(batch, ensure_ascii=False,
+                                   default=self._json_default), encoding='utf-8')
         temp.replace(target)
+
+    @staticmethod
+    def _json_default(value):
+        """Convert ROS/numpy scalar values before writing a checkpoint."""
+        item = getattr(value, 'item', None)
+        if callable(item):
+            return item()
+        raise TypeError(f'Object of type {type(value).__name__} is not JSON serializable')
 
     def _prune(self):
         batches = [self._read(path) for path in self.batches_dir.glob('*.json')]

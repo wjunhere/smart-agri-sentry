@@ -410,11 +410,9 @@ class WebRemoteNode(Node):
         self._last_mission_state = state
         if prev_state == 'PATROL' and state == 'STOPPED':
             self._record_detection_snapshot()
-        if state == 'MANUAL':
-            self.batch_recorder.on_mode_change('MANUAL')
-            self.history_store.finish('manual')
-        elif state and prev_state == 'MANUAL':
-            self.history_store.start(self.current_crop_type)
+        # Batch lifecycle is deliberately owned by set_mode_auto()/emergency_stop().
+        # MissionStatus is latched and may deliver a stale MANUAL state after
+        # AUTO was accepted; using it here would close the newly opened batch.
         # Mirror mission state into the control-plane mode both ways: in
         # every non-MANUAL state mission_control or Nav2 owns /cmd_vel, so
         # the joystick watchdog must stay silent. A MANUAL status racing

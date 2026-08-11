@@ -113,7 +113,10 @@ const FusionPanel = {
     weatherText() {
       const d = (this.store.weatherDays || [])[0];
       if (!d) return '--';
-      return `${d.weather_desc || ''} ${d.temp_low}~${d.temp_high}°C · 降水${d.precipitation}mm`;
+      const precipitation = Number(d.precipitation);
+      const rain = Number.isFinite(precipitation)
+        ? precipitation.toFixed(2).replace(/\.?0+$/, '') : '--';
+      return `${d.weather_desc || ''} ${d.temp_low}~${d.temp_high}°C · 降水${rain}mm`;
     },
   },
   methods: {

@@ -40,7 +40,7 @@ const WeatherPanel = {
           <span class="day-icon">{{ weatherIcon(d.weather_desc) }}</span>
           <span class="day-desc">{{ d.weather_desc }}</span>
           <span class="day-temp">{{ (d.temp_low || 0).toFixed(0) }}° / {{ (d.temp_high || 0).toFixed(0) }}°</span>
-          <span class="day-rain" v-if="d.precipitation > 0">{{ (d.precipitation || 0).toFixed(0) }}mm</span>
+          <span class="day-rain" v-if="d.precipitation > 0">{{ precipitationText(d.precipitation) }}mm</span>
         </div>
       </div>
       <div v-if="store.weatherDisasterAlerts.length > 0" class="disaster-alerts">
@@ -104,6 +104,11 @@ const WeatherPanel = {
         if (desc && desc.includes(k)) return v;
       }
       return '🌤️';
+    },
+    precipitationText(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric)
+        ? numeric.toFixed(2).replace(/\.?0+$/, '') : '0';
     },
     renderChart() {
       const dom = this.$refs.chart;
